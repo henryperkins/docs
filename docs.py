@@ -895,6 +895,14 @@ async def process_file(session: aiohttp.ClientSession, file_path: str, skip_type
 
 
 async def process_all_files(file_paths: List[str], skip_types: Set[str], output_file: str) -> None:
+    """
+    Processes all files asynchronously.
+
+    Args:
+        file_paths (List[str]): List of file paths to process.
+        skip_types (Set[str]): Set of file extensions to skip.
+        output_file (str): Output Markdown file.
+    """
     global OUTPUT_LOCK
     OUTPUT_LOCK = asyncio.Lock()
 
@@ -911,6 +919,10 @@ async def process_all_files(file_paths: List[str], skip_types: Set[str], output_
                 logger.error(f"Error processing a file: {e}")
 
 def main() -> None:
+    """
+    The main function that orchestrates the documentation generation process.
+    It parses command-line arguments, loads configurations, collects files, and initiates asynchronous processing.
+    """
     parser = argparse.ArgumentParser(
         description="Automatically generate and insert comments/docstrings into source files using OpenAI's GPT-4 API."
     )
