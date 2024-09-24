@@ -1,127 +1,474 @@
-import argparse
-import ast
-import json
-import logging
 import os
-import re
 import sys
-from typing import List, Set, Optional, Dict
-import time
+import argparse
 import asyncio
 import aiohttp
-import javalang
+import aiofiles
+import ast
+import logging
+import astor
+import json
+from typing import List, Set, Optional, Dict
+from tqdm.asyncio import tqdm
 from dotenv import load_dotenv
-from tqdm.asyncio import tqdm  # For asynchronous progress bar
+from bs4 import BeautifulSoup, Comment
+import tinycss2
+from tree_sitter import Language, Parser
 
-# Load environment variables from .env file
+# Module Configuration
 load_dotenv()
 
-# Configure logging to write to a file with rotation
-from logging.handlers import RotatingFileHandler
+logging.basicConfig(
+    filename='docs_generation.log',
+    level=logging.INFO,
+    format='%(asctime)s:%(levelname)s:%(message)s'
+)
+logger = logging.getLogger(__name__)
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-handler = RotatingFileHandler('docs_generation.log', maxBytes=10**6, backupCount=5)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
-# Retrieve the OpenAI API key from environment variables
-openai_api_key = os.getenv('OPENAI_API_KEY')
-
-if not openai_api_key:
-    logger.error("OpenAI API key not found. Please set the 'OPENAI_API_KEY' environment variable.")
+if not OPENAI_API_KEY:
+    logger.error("OPENAI_API_KEY is not set. Ensure it's present in the environment or in a .env file.")
     sys.exit(1)
 
-# OpenAI API endpoint
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+try:
+    if not os.path.exists('build/my-languages.so'):
+        Language.build_library(
+            'build/my-languages.so',
+            [
+                'vendor/tree-sitter-javascript',
+                'vendor/tree-sitter-typescript/typescript',
+            ]
+        )
+except Exception as e:
+    logger.error(f"Failed to build Tree-sitter language library: {e}")
+    sys.exit(1)
 
-# Mapping of file extensions to programming languages
-LANGUAGE_MAPPING = {
-    '.py': 'python',
-    '.js': 'javascript',
-    '.jsx': 'javascript',
-    '.ts': 'typescript',
-    '.tsx': 'typescript',
-    '.java': 'java',
-    '.cpp': 'cpp',
-    '.hpp': 'cpp',
-    '.h': 'cpp',
-    '.c': 'c',
-    '.cs': 'csharp',
-    '.rb': 'ruby',
-    '.go': 'go',
-    '.php': 'php',
-    '.html': 'html',
-    '.css': 'css',
-    '.swift': 'swift',
-    '.kt': 'kotlin',
-    '.json': 'json',
-    '.md': '',  # No language specified for Markdown
-    # Add more mappings as needed
-}
+JAVASCRIPT_LANGUAGE = Language('build/my-languages.so', 'javascript')
+TYPESCRIPT_LANGUAGE = Language('build/my-languages.so', 'typescript')
 
-# Default directories to exclude from traversal
-DEFAULT_EXCLUDED_DIRS = {
-    'node_modules',
-    '.git',
-    '__pycache__',
-    'venv',
-    'dist',
-    'build',
-    '.venv',
-    '.idea',
-    '.vscode',
-    '.turbo',
-    '.next',
-}
-
-# Default files to exclude from processing
-DEFAULT_EXCLUDED_FILES = {
-    '.DS_Store',
-    'Thumbs.db',
-}
-
-# Global semaphore and lock (to be initialized in main based on concurrency)
 SEMAPHORE = None
 OUTPUT_LOCK = None
+MODEL_NAME = 'gpt-4' 
+
+DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules'}
+DEFAULT_EXCLUDED_FILES = {'.DS_Store'}
+DEFAULT_SKIP_TYPES = {'.json', '.md', '.txt', '.csv'} 
+
+def get_language(ext: str) -> str:
+    language_mapping = {
+        '.py': 'python',
+        '.js': 'javascript',
+        '.jsx': 'javascript',
+        '.ts': 'typescript',
+        '.tsx': 'typescript',
+        '.html': 'html',
+        '.htm': 'html',
+        '.css': 'css',
+    }
+    language = language_mapping.get(ext.lower(), 'plaintext')
+    if language == 'plaintext':
+        logger.debug(f"Unrecognized file extension '{ext}'. Skipping.")
+    return language
+
 
 def is_binary(file_path: str) -> bool:
-    """
-    Checks if a file is binary.
-
-    Args:
-        file_path (str): Path to the file.
-
-    Returns:
-        bool: True if the file is binary, False otherwise.
-    """
     try:
         with open(file_path, 'rb') as file:
             chunk = file.read(1024)
-            if b'\0' in chunk:
-                return True
-        return False
+            return b'\0' in chunk
     except Exception as e:
-        logging.error(f"Error checking if file is binary '{file_path}': {e}")
+        logger.error(f"Error checking if file is binary '{file_path}': {e}")
+        return True 
+
+def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> None:
+    try:
+        with open(config_path, 'r', encoding='utf-8') as config_file:
+            config = json.load(config_file)
+            additional_dirs = config.get('excluded_dirs', [])
+            additional_files = config.get('excluded_files', [])
+            additional_skip_types = config.get('skip_types', [])
+            
+            if isinstance(additional_dirs, list):
+                excluded_dirs.update(additional_dirs)
+            else:
+                logger.error(f"'excluded_dirs' should be a list in '{config_path}'.")
+            
+            if isinstance(additional_files, list):
+                excluded_files.update(additional_files)
+            else:
+                logger.error(f"'excluded_files' should be a list in '{config_path}'.")
+            
+            if isinstance(additional_skip_types, list):
+                skip_types.update(additional_skip_types)
+            else:
+                logger.error(f"'skip_types' should be a list in '{config_path}'.")
+            
+            logger.info(f"Loaded config from {config_path}.")
+    except FileNotFoundError:
+        logger.warning(f"Configuration file '{config_path}' not found. Using default exclusions.")
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing configuration file '{config_path}': {e}")
+    except Exception as e:
+        logger.error(f"Error loading configuration file '{config_path}': {e}")
+
+
+def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> List[str]:
+    file_paths = []
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = [
+            d for d in dirs if d not in excluded_dirs and not d.startswith('.')]
+        for file in files:
+            if file in excluded_files or file.startswith('.'):
+                continue
+            file_path = os.path.join(root, file)
+            file_paths.append(file_path)
+    logger.info(f"Collected {len(file_paths)} files from '{repo_path}'.")
+    return file_paths
+
+def is_valid_python_code(code: str) -> bool:
+    try:
+        ast.parse(code)
+        return True
+    except SyntaxError as e:
+        logger.error(f"Syntax error in Python code: {e}")
         return False
 
-async def fetch_openai(session: aiohttp.ClientSession, prompt: str, language: str, semaphore: asyncio.Semaphore, retry: int = 3) -> Optional[str]:
+def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
+    return ext.lower() not in skip_types
+
+
+def extract_python_structure(file_content: str) -> Optional[Dict]:
+    try:
+        tree = ast.parse(file_content)
+        parent_map = {}
+
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parent_map[child] = node
+
+        functions = []
+        classes = []
+
+        def get_node_source(node):
+            try:
+                return ast.unparse(node)
+            except AttributeError:
+                return astor.to_source(node).strip()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                func_info = {
+                    "name": node.name,
+                    "args": [],
+                    "returns": {"type": "Any"},
+                    "decorators": [],
+                    "docstring": ast.get_docstring(node) or ""
+                }
+
+                for arg in node.args.args:
+                    arg_type = "Any"
+                    if arg.annotation:
+                        arg_type = get_node_source(arg.annotation)
+                    func_info["args"].append({
+                        "name": arg.arg,
+                        "type": arg_type
+                    })
+
+                if node.returns:
+                    func_info["returns"]["type"] = get_node_source(
+                        node.returns)
+
+                for decorator in node.decorator_list:
+                    func_info["decorators"].append(get_node_source(decorator))
+
+                parent = parent_map.get(node)
+                if isinstance(parent, ast.ClassDef):
+                    class_name = parent.name
+                    class_obj = next(
+                        (cls for cls in classes if cls["name"] == class_name), None)
+                    if not class_obj:
+                        class_obj = {
+                            "name": class_name,
+                            "bases": [get_node_source(base) for base in parent.bases],
+                            "methods": [],
+                            "decorators": [],
+                            "docstring": ast.get_docstring(parent) or ""
+                        }
+                        for decorator in parent.decorator_list:
+                            class_obj["decorators"].append(
+                                get_node_source(decorator))
+                        classes.append(class_obj)
+                    class_obj["methods"].append(func_info)
+                else:
+                    functions.append(func_info)
+
+            elif isinstance(node, ast.ClassDef):
+                class_exists = any(cls["name"] == node.name for cls in classes)
+                if not class_exists:
+                    class_info = {
+                        "name": node.name,
+                        "bases": [get_node_source(base) for base in node.bases],
+                        "methods": [],
+                        "decorators": [],
+                        "docstring": ast.get_docstring(node) or ""
+                    }
+                    for decorator in node.decorator_list:
+                        class_info["decorators"].append(
+                            get_node_source(decorator))
+                    classes.append(class_info)
+
+        return {
+            "language": "python",
+            "functions": functions,
+            "classes": classes
+        }
+    except Exception as e:
+        logger.error(f"Error parsing Python code: {e}")
+        return None
+
+def extract_js_ts_structure(file_content: str, language: str) -> Optional[Dict]:
+    try:
+        parser = Parser()
+        if language == 'javascript':
+            parser.set_language(JAVASCRIPT_LANGUAGE)
+        elif language == 'typescript':
+            parser.set_language(TYPESCRIPT_LANGUAGE)
+        else:
+            logger.error(f"Unsupported language: {language}")
+            return None
+
+        tree = parser.parse(bytes(file_content, "utf8"))
+        root_node = tree.root_node
+
+        functions = []
+        classes = []
+
+        code_bytes = file_content.encode('utf8')
+
+        def extract_function_info(node, existing_docstring):
+            func_name_node = node.child_by_field_name('name') or node.child_by_field_name('property')
+            func_name = func_name_node.text.decode('utf8') if func_name_node else 'anonymousFunction'
+            params = []
+            params_node = node.child_by_field_name('parameters')
+            if params_node:
+                for param in params_node.named_children:
+                    param_info = extract_parameter_info(param)
+                    params.append(param_info)
+            return_type = "Any"
+            return_type_node = None
+            for child in node.children:
+                if child.type == 'type_annotation':
+                    return_type_node = child
+                    break
+            if return_type_node:
+                return_type = code_bytes[return_type_node.start_byte:return_type_node.end_byte].decode('utf8').lstrip(':').strip()
+            func_info = {
+                "name": func_name,
+                "args": params,
+                "returns": {"type": return_type},
+                "docstring": "",
+                "existing_docstring": existing_docstring,
+                "start_byte": node.start_byte,
+                "end_byte": node.end_byte
+            }
+            return func_info
+
+        def extract_parameter_info(param_node):
+            param_name = code_bytes[param_node.start_byte:param_node.end_byte].decode('utf8')
+            param_type = "Any"
+            type_annotation_node = None
+            for child in param_node.children:
+                if child.type == 'type_annotation':
+                    type_annotation_node = child
+                    break
+            if type_annotation_node:
+                param_type = code_bytes[type_annotation_node.start_byte:type_annotation_node.end_byte].decode('utf8').lstrip(':').strip()
+            return {"name": param_name, "type": param_type}
+
+        def traverse(node, parent_class=None):
+            existing_docstring = extract_preceding_jsdoc(node)
+
+            if node.type in ['function_declaration', 'method_definition']:
+                func_info = extract_function_info(node, existing_docstring)
+                if parent_class:
+                    parent_class['methods'].append(func_info)
+                else:
+                    functions.append(func_info)
+            elif node.type == 'class_declaration':
+                class_name_node = node.child_by_field_name('name')
+                class_name = class_name_node.text.decode('utf8') if class_name_node else 'AnonymousClass'
+                class_info = {
+                    "name": class_name,
+                    "methods": [],
+                    "docstring": "",
+                    "existing_docstring": existing_docstring,
+                    "start_byte": node.start_byte,
+                    "end_byte": node.end_byte
+                }
+                classes.append(class_info)
+                body = node.child_by_field_name('body')
+                if body:
+                    for child in body.named_children:
+                        traverse(child, parent_class=class_info)
+            else:
+                for child in node.named_children:
+                    traverse(child, parent_class=parent_class)
+
+        def extract_preceding_jsdoc(node):
+            preceding_comments = []
+            cursor = node.walk()
+            while cursor.goto_prev_sibling():
+                sibling = cursor.node
+                if sibling.type == 'comment':
+                    comment_text = code_bytes[sibling.start_byte:sibling.end_byte].decode('utf8')
+                    if comment_text.strip().startswith('/**'):
+                        preceding_comments.insert(0, comment_text.strip())
+                    else:
+                        break
+                elif sibling.is_named:
+                    break
+                else:
+                    continue
+            existing_docstring = '\n'.join(preceding_comments)
+            return existing_docstring
+
+        traverse(root_node)
+
+        return {
+            "language": language,
+            "functions": functions,
+            "classes": classes,
+            "tree": tree,
+            "source_code": file_content
+        }
+
+    except Exception as e:
+        logger.error(f"Error parsing {language} code: {e}")
+        return None
+
+def extract_html_structure(file_content: str) -> Optional[Dict]:
+    try:
+        soup = BeautifulSoup(file_content, 'html.parser')
+        elements = []
+
+        def traverse(node):
+            for child in node.children:
+                if isinstance(child, str):
+                    continue
+                if child.name:
+                    element_info = {
+                        'tag': child.name,
+                        'attributes': dict(child.attrs),
+                        'text': child.get_text(strip=True),
+                        'docstring': ''
+                    }
+                    elements.append(element_info)
+                    traverse(child)
+
+        traverse(soup)
+
+        return {
+            'language': 'html',
+            'elements': elements
+        }
+
+    except Exception as e:
+        logger.error(f"Error parsing HTML code: {e}")
+        return None
+
+def extract_css_structure(file_content: str) -> Optional[Dict]:
+    try:
+        rules = tinycss2.parse_stylesheet(file_content)
+        style_rules = []
+
+        for rule in rules:
+            if rule.type == 'qualified-rule':
+                prelude = tinycss2.serialize(rule.prelude).strip()
+                content = tinycss2.serialize(rule.content).strip()
+                rule_info = {
+                    'selector': prelude,
+                    'declarations': content,
+                    'docstring': ''
+                }
+                style_rules.append(rule_info)
+
+        return {
+            'language': 'css',
+            'rules': style_rules
+        }
+
+    except Exception as e:
+        logger.error(f"Error parsing CSS code: {e}")
+        return None
+
+def generate_documentation_prompt(
+    code_structure: Dict,
+    project_info: Optional[str] = None,
+    style_guidelines: Optional[str] = None
+) -> str:
     """
-    Asynchronously fetches the generated Google-style docstrings in JSON format from OpenAI API.
-    Implements retry mechanism for handling rate limits and connection errors.
+    Generates a prompt for the OpenAI API to create documentation based on the code structure.
+
+    Args:
+        code_structure (Dict): The structured representation of the code.
+        project_info (Optional[str]): Additional information about the project.
+        style_guidelines (Optional[str]): Specific documentation style guidelines to follow.
+
+    Returns:
+        str: The prompt to send to the OpenAI API.
+    """
+    language = code_structure.get('language', 'code')
+    json_structure = json.dumps(code_structure, indent=2)
+
+    prompt_parts = [
+        f"You are an expert {language} developer and technical writer.",
+    ]
+
+    if project_info:
+        prompt_parts.append(f"The code belongs to a project that {project_info}.")
+
+    if style_guidelines:
+        prompt_parts.append(f"Please follow these documentation style guidelines: {style_guidelines}")
+
+    # Include existing docstrings/comments to allow the AI to enhance them
+    prompt_parts.append(
+        f"""
+Given the following {language} code structure in JSON format, generate detailed docstrings or comments for each function, method, class, element, or rule. Include descriptions of all parameters, return types, and any relevant details. Preserve and enhance existing documentation where applicable.
+
+Code Structure:
+{json_structure}
+
+Please provide the updated docstrings or comments in the same JSON format, with the 'docstring' fields filled in.
+"""
+    )
+
+    prompt = '\n'.join(prompt_parts)
+    return prompt
+
+
+async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, retry: int = 3) -> Optional[str]:
+    """
+    Fetches generated documentation from the OpenAI API based on the prompt.
+
+    Args:
+        session (aiohttp.ClientSession): The aiohttp session for making requests.
+        prompt (str): The prompt to send to the API.
+        retry (int): Number of retry attempts.
+
+    Returns:
+        Optional[str]: Generated documentation in JSON format if successful, None otherwise.
     """
     headers = {
-        "Authorization": f"Bearer {openai_api_key}",
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
     }
 
     payload = {
-        "model": "gpt-4o-mini",  # Ensure this is the correct model name
+        "model": MODEL_NAME,
         "messages": [
-            {"role": "system", "content": "You are an expert software developer specializing in writing detailed Google-style docstrings and comments."},
-            {"role": "user", "content": f"Generate a detailed Google-style docstring for the following {language} code. Output the docstring in the following JSON format:\n\n{{\n  \"docstring\": {{\n    \"summary\": \"\",\n    \"extended_summary\": \"\",\n    \"args\": [{{\n      \"name\": \"\",\n      \"type\": \"\",\n      \"description\": \"\"\n    }}],\n    \"returns\": {{\n      \"type\": \"\",\n      \"description\": \"\"\n    }},\n    \"raises\": [{{\n      \"exception\": \"\",\n      \"description\": \"\"\n    }}],\n    \"examples\": [{{\n      \"code\": \"\",\n      \"explanation\": \"\"\n    }}],\n    \"notes\": \"\",\n    \"references\": [{{\n      \"text\": \"\",\n      \"link\": \"\"\n    }}]\n  }}\n}}"}
+            {"role": "user", "content": prompt}
         ],
         "max_tokens": 1500,
         "temperature": 0.2
@@ -129,1344 +476,517 @@ async def fetch_openai(session: aiohttp.ClientSession, prompt: str, language: st
 
     for attempt in range(1, retry + 1):
         try:
-            async with semaphore:
-                async with session.post(OPENAI_API_URL, headers=headers, json=payload) as response:
+            async with SEMAPHORE:
+                async with session.post(
+                    OPENAI_API_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=120
+                ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        documentation = data['choices'][0]['message']['content'].strip()
-                        try:
-                            doc_json = json.loads(documentation)
-                            logger.info("Successfully generated GPT-4 Google-style JSON comments.")
-                            return json.dumps(doc_json, indent=2)  # Ensure it's a JSON string
-                        except json.JSONDecodeError as e:
-                            logger.error(f"JSON decoding error: {e}")
+                        # Enhanced response validation
+                        if 'choices' in data and len(data['choices']) > 0 and 'message' in data['choices'][0]:
+                            documentation = data['choices'][0]['message']['content'].strip()
+                            logger.info(f"Generated documentation:\n{documentation}")
+                            return documentation
+                        else:
+                            logger.error("Unexpected API response structure.")
                             return None
                     elif response.status in {429, 500, 502, 503, 504}:
-                        logger.warning(f"API rate limit or server error (status {response.status}). Attempt {attempt}/{retry}.")
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        # Handle rate limiting and server errors with exponential backoff
+                        error_text = await response.text()
+                        logger.warning(
+                            f"API rate limit or server error (status {response.status}). "
+                            f"Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds. "
+                            f"Response: {error_text}"
+                        )
+                        await asyncio.sleep(2 ** attempt)
                     else:
                         error_text = await response.text()
                         logger.error(f"API request failed with status {response.status}: {error_text}")
                         return None
-        except aiohttp.ClientError as e:
-            logger.error(f"API connection error: {e}. Attempt {attempt}/{retry}.")
-            await asyncio.sleep(2 ** attempt)  # Exponential backoff
-    logger.error("Failed to generate comments after multiple attempts.")
-    return None
-
-async def fetch_refined_documentation(session: aiohttp.ClientSession, doc_json: Dict, language: str, retry: int = 3) -> Optional[Dict]:
-    """
-    Uses GPT-4 to refine previously generated Google-style docstrings and comments in JSON format.
-
-    Args:
-        session (aiohttp.ClientSession): The aiohttp client session for the API request.
-        doc_json (Dict): The initial docstring JSON generated by fetch_openai.
-        language (str): The programming language of the code snippet.
-        retry (int, optional): Retry attempts for rate limits/errors. Defaults to 3.
-
-    Returns:
-        Optional[Dict]: The refined documentation JSON if successful, otherwise None.
-    """
-    headers = {
-        "Authorization": f"Bearer {openai_api_key}",
-        "Content-Type": "application/json"
-    }
-
-    feedback_prompt = f"""
-    Refine the following Google-style docstring JSON for better clarity, correctness, and adherence to best practices. Ensure all sections are properly formatted according to Google's Python Style Guide.
-
-    Original Docstring JSON:
-    {json.dumps(doc_json, indent=2)}
-
-    Provide the refined version of the docstring JSON.
-    """
-
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "You are an expert software developer."},
-            {"role": "user", "content": feedback_prompt}
-        ],
-        "max_tokens": 1500,
-        "temperature": 0.2
-    }
-
-    for attempt in range(1, retry + 1):
-        try:
-            async with SEMAPHORE:
-                async with session.post(OPENAI_API_URL, headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        refined = data['choices'][0]['message']['content'].strip()
-                        try:
-                            refined_json = json.loads(refined)
-                            logger.info("Successfully refined Google-style JSON comments.")
-                            return refined_json
-                        except json.JSONDecodeError as e:
-                            logger.error(f"JSON decoding error during refinement: {e}")
-                            return None
-                    elif response.status in {429, 500, 502, 503, 504}:
-                        logger.warning(f"API rate limit or server error during refinement (status {response.status}). Attempt {attempt}/{retry}.")
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"API request failed during refinement with status {response.status}: {error_text}")
-                        return None
-        except aiohttp.ClientError as e:
-            logger.error(f"API connection error during refinement: {e}. Attempt {attempt}/{retry}.")
-            await asyncio.sleep(2 ** attempt)  # Exponential backoff
-    logger.error("Failed to refine comments after multiple attempts.")
-    return None
-
-def generate_google_docstring_from_json(
-    summary: str,
-    extended_summary: str,
-    args: List[dict],
-    returns: dict,
-    raises: List[dict],
-    examples: List[dict],
-    notes: str,
-    references: List[dict]
-) -> str:
-    """
-    Constructs a Google-style docstring from JSON data.
-
-    Args:
-        summary (str): The summary of the function or class.
-        extended_summary (str): The extended description.
-        args (List[dict]): List of arguments with their details.
-        returns (dict): Return type and description.
-        raises (List[dict]): Exceptions raised with descriptions.
-        examples (List[dict]): Examples and explanations.
-        notes (str): Additional notes.
-        references (List[dict]): References with text and links.
-
-    Returns:
-        str: Formatted Google-style docstring.
-    """
-    docstring = f"{summary}\n\n"
-    if extended_summary:
-        docstring += f"{extended_summary}\n\n"
-    if args:
-        docstring += "Args:\n"
-        for arg in args:
-            docstring += f"    {arg['name']} ({arg['type']}): {arg['description']}\n"
-        docstring += "\n"
-    if returns:
-        docstring += "Returns:\n"
-        docstring += f"    {returns['type']}: {returns['description']}\n\n"
-    if raises:
-        docstring += "Raises:\n"
-        for raise_info in raises:
-            docstring += f"    {raise_info['exception']}: {raise_info['description']}\n"
-        docstring += "\n"
-    if examples:
-        docstring += "Examples:\n"
-        for example in examples:
-            docstring += f"    {example['code']}\n    {example['explanation']}\n"
-        docstring += "\n"
-    if notes:
-        docstring += f"Notes:\n    {notes}\n\n"
-    if references:
-        docstring += "References:\n"
-        for ref in references:
-            docstring += f"    {ref['text']}: {ref['link']}\n"
-        docstring += "\n"
-    return docstring.strip()
-
-
-async def fetch_refined_documentation(session: aiohttp.ClientSession, doc_json: Dict, language: str, retry: int = 3) -> Optional[Dict]:
-    """
-    Uses GPT-4 to refine previously generated Google-style docstrings and comments in JSON format.
-
-    Args:
-        session (aiohttp.ClientSession): The aiohttp client session for the API request.
-        doc_json (Dict): The initial docstring JSON generated by fetch_openai.
-        language (str): The programming language of the code snippet.
-        retry (int, optional): Retry attempts for rate limits/errors. Defaults to 3.
-
-    Returns:
-        Optional[Dict]: The refined documentation JSON if successful, otherwise None.
-    """
-    headers = {
-        "Authorization": f"Bearer {openai_api_key}",
-        "Content-Type": "application/json"
-    }
-
-    feedback_prompt = f"""
-    Refine the following Google-style docstring JSON for better clarity, correctness, and adherence to best practices. Ensure all sections are properly formatted according to Google's Python Style Guide.
-
-    Original Docstring JSON:
-    {json.dumps(doc_json, indent=2)}
-
-    Provide the refined version of the docstring JSON.
-    """
-
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "You are an expert software developer."},
-            {"role": "user", "content": feedback_prompt}
-        ],
-        "max_tokens": 1500,
-        "temperature": 0.2
-    }
-
-    for attempt in range(1, retry + 1):
-        try:
-            async with SEMAPHORE:
-                async with session.post(OPENAI_API_URL, headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        refined = data['choices'][0]['message']['content'].strip()
-                        try:
-                            refined_json = json.loads(refined)
-                            logger.info("Successfully refined Google-style JSON comments.")
-                            return refined_json
-                        except json.JSONDecodeError as e:
-                            logger.error(f"JSON decoding error during refinement: {e}")
-                            return None
-                    elif response.status in {429, 500, 502, 503, 504}:
-                        logger.warning(f"API rate limit or server error during refinement (status {response.status}). Attempt {attempt}/{retry}.")
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"API request failed during refinement with status {response.status}: {error_text}")
-                        return None
-        except aiohttp.ClientError as e:
-            logger.error(f"API connection error during refinement: {e}. Attempt {attempt}/{retry}.")
-            await asyncio.sleep(2 ** attempt)  # Exponential backoff
-    logger.error("Failed to refine comments after multiple attempts.")
-    return None
-
-def get_language(file_extension: str) -> str:
-    """
-    Returns the corresponding programming language for the given file extension.
-    """
-    return LANGUAGE_MAPPING.get(file_extension, '')
-
-def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> None:
-    """
-    Loads exclusion configurations from a JSON file.
-    Updates excluded_dirs and excluded_files based on the config.
-    """
-    if not os.path.exists(config_path):
-        logger.warning(
-            f"Configuration file '{config_path}' not found. Using default exclusions."
-        )
-        return
-    try:
-        with open(config_path, 'r', encoding='utf-8') as config_file:
-            config = json.load(config_file)
-        excluded_dirs.update(config.get("excluded_dirs", []))
-        excluded_files.update(config.get("excluded_files", []))
-        logger.info(f"Loaded exclusions from '{config_path}'")
-    except json.JSONDecodeError as json_err:
-        logger.error(
-            f"JSON decode error in configuration file '{config_path}': {json_err}"
-        )
-    except Exception as e:
-        logger.error(f"Error loading configuration file '{config_path}': {e}")
-
-async def extract_description(file_path: str, file_extension: str) -> Optional[Dict]:
-    """
-    Extracts a brief description of the file based on its content.
-    Supports multiple programming languages.
-
-    Args:
-        file_path (str): Path to the source file.
-        file_extension (str): File extension to determine the programming language.
-
-    Returns:
-        Optional[Dict]: A dictionary containing extracted components if successful, otherwise None.
-    """
-    language = get_language(file_extension)
-    if language == 'python':
-        return extract_python_description(file_path)
-    elif language in ['javascript', 'typescript']:
-        return await extract_javascript_description(file_path)
-    elif language == 'java':
-        return extract_java_description(file_path)
-    elif language in ['cpp', 'c', 'hpp', 'h']:
-        return extract_cpp_description(file_path)
-    elif language == 'go':
-        return extract_go_description(file_path)
-    elif file_extension == '.md':
-        try:
-            with open(file_path, 'r', encoding='utf-8') as md_file:
-                content = md_file.read()
-            return {"summary": "Markdown Content", "extended_summary": content}
-        except (FileNotFoundError, IOError) as e:
-            logger.error(f"Could not read Markdown file '{file_path}': {e}")
-            return None
-    else:
-        return extract_generic_description(file_path, file_extension)
-
-def extract_python_description(file_path: str) -> Optional[Dict]:
-    """
-    Parses a Python file to extract class and function declarations along with docstrings.
-    Returns a dictionary containing extracted components.
-
-    Args:
-        file_path (str): Path to the Python file.
-
-    Returns:
-        Optional[Dict]: Dictionary with classes and functions information if successful, otherwise None.
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as python_file:
-            content = python_file.read()
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Could not read Python file '{file_path}': {e}")
-        return None
-
-    try:
-        tree = ast.parse(content)
-    except SyntaxError as e:
-        logger.error(f"Syntax error parsing Python file '{file_path}': {e}")
-        return None
-
-    classes = []
-    functions = []
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            doc = ast.get_docstring(node) or 'No description.'
-            methods = []
-            for body_item in node.body:
-                if isinstance(body_item, ast.FunctionDef):
-                    method_doc = ast.get_docstring(body_item) or 'No description.'
-                    params = [arg.arg for arg in body_item.args.args if arg.arg != 'self']
-                    methods.append({
-                        "name": body_item.name,
-                        "params": params,
-                        "description": method_doc
-                    })
-            classes.append({
-                "name": node.name,
-                "description": doc,
-                "methods": methods
-            })
-        elif isinstance(node, ast.FunctionDef):
-            doc = ast.get_docstring(node) or 'No description.'
-            params = [arg.arg for arg in node.args.args]
-            if 'self' in params:
-                params.remove('self')
-            functions.append({
-                "name": node.name,
-                "params": params,
-                "description": doc
-            })
-
-    if not classes and not functions:
-        return None
-
-    return {
-        "classes": classes,
-        "functions": functions
-    }
-
-async def extract_javascript_description(file_path: str) -> Optional[Dict]:
-    """
-    Parses a JavaScript/TypeScript file to extract class and function declarations along with comments.
-    Returns a dictionary containing extracted components.
-
-    Args:
-        file_path (str): Path to the JavaScript/TypeScript file.
-
-    Returns:
-        Optional[Dict]: Dictionary with classes and functions information if successful, otherwise None.
-    """
-    parser_script_path = os.path.join(os.path.dirname(__file__), 'js-ts-parser', 'parse.js')
-
-    if not os.path.exists(parser_script_path):
-        logger.error(f"Parser script not found at '{parser_script_path}'.")
-        return None
-
-    logger.info(f"Starting subprocess for JavaScript/TypeScript file: {file_path}")
-
-    try:
-        # Start the subprocess
-        process = await asyncio.create_subprocess_exec(
-            'node', parser_script_path, file_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)  # 60 seconds timeout
         except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
-            logger.error(f"Parsing JavaScript/TypeScript file '{file_path}' timed out.")
-            return None
+            logger.error(
+                f"Request timed out during attempt {attempt}/{retry}. "
+                f"Retrying in {2 ** attempt} seconds."
+            )
+            await asyncio.sleep(2 ** attempt)
+        except aiohttp.ClientError as e:
+            logger.error(
+                f"Client error during API request: {e}. "
+                f"Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds."
+            )
+            await asyncio.sleep(2 ** attempt)
 
-        if process.returncode != 0:
-            try:
-                error_json = json.loads(stderr.decode().strip())
-                error_detail = error_json.get('error', 'Unknown error.')
-            except json.JSONDecodeError:
-                error_detail = stderr.decode().strip()
-            logger.error(f"Error parsing JavaScript/TypeScript file '{file_path}': {error_detail}")
-            return None
+    logger.error("Failed to generate documentation after multiple attempts.")
+    return None
 
-        # Parse the JSON output
-        descriptions = json.loads(stdout.decode())
 
-        if not descriptions:
-            return None
+def insert_python_docstrings(file_content: str, docstrings: Dict) -> str:
+    """
+    Inserts docstrings into Python code using the AST.
 
-        return descriptions
+    Args:
+        file_content (str): Original Python source code.
+        docstrings (Dict): Generated docstrings to insert.
+
+    Returns:
+        str: Modified Python source code with docstrings inserted.
+    """
+    try:
+        tree = ast.parse(file_content)
+        parent_map = {}
+
+        # Implement parent tracking
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parent_map[child] = node
+
+        # Map function and class names to docstrings
+        func_doc_map = {func['name']: func['docstring'] for func in docstrings.get('functions', [])}
+        class_doc_map = {cls['name']: cls['docstring'] for cls in docstrings.get('classes', [])}
+        method_doc_map = {}
+        for cls in docstrings.get('classes', []):
+            for method in cls.get('methods', []):
+                method_doc_map[(cls['name'], method['name'])] = method['docstring']
+
+        class DocstringInserter(ast.NodeTransformer):
+            def visit_FunctionDef(self, node):
+                self.generic_visit(node)
+                parent = parent_map.get(node)
+                if isinstance(parent, ast.ClassDef):
+                    # It's a method
+                    key = (parent.name, node.name)
+                    docstring = method_doc_map.get(key)
+                    if docstring:
+                        if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, (ast.Str, ast.Constant))):
+                            # Insert docstring if not present
+                            node.body.insert(0, ast.Expr(value=ast.Constant(value=docstring)))
+                        else:
+                            # Replace existing docstring
+                            node.body[0] = ast.Expr(value=ast.Constant(value=docstring))
+                else:
+                    # It's a top-level function
+                    docstring = func_doc_map.get(node.name)
+                    if docstring:
+                        if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, (ast.Str, ast.Constant))):
+                            node.body.insert(0, ast.Expr(value=ast.Constant(value=docstring)))
+                        else:
+                            node.body[0] = ast.Expr(value=ast.Constant(value=docstring))
+                return node
+
+            def visit_ClassDef(self, node):
+                self.generic_visit(node)
+                docstring = class_doc_map.get(node.name)
+                if docstring:
+                    if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, (ast.Str, ast.Constant))):
+                        node.body.insert(0, ast.Expr(value=ast.Constant(value=docstring)))
+                    else:
+                        node.body[0] = ast.Expr(value=ast.Constant(value=docstring))
+                return node
+
+        inserter = DocstringInserter()
+        new_tree = inserter.visit(tree)
+        new_code = astor.to_source(new_tree)
+
+        # Validate the modified code
+        try:
+            ast.parse(new_code)
+        except SyntaxError as e:
+            logger.error(f"Syntax error in modified Python code: {e}")
+            return file_content  # Return original content if there's an error
+
+        return new_code
+    except Exception as e:
+        logger.error(f"Error inserting docstrings into Python code: {e}")
+        return file_content  # Return original content if there's an error
+
+
+def insert_js_ts_docstrings(docstrings: Dict) -> str:
+    """
+    Inserts JSDoc comments into JavaScript/TypeScript code using tree-sitter.
+
+    Args:
+        docstrings (Dict): Generated docstrings to insert, including the AST and source code.
+
+    Returns:
+        str: Modified source code with docstrings inserted.
+    """
+    try:
+        source_code = docstrings['source_code']
+        tree = docstrings['tree']
+        code_bytes = source_code.encode('utf8')
+
+        inserts = []
+
+        for func in docstrings.get('functions', []):
+            start_byte = func['start_byte']
+            docstring = func['docstring']
+            if docstring:
+                formatted_comment = format_jsdoc_comment(docstring)
+                inserts.append((start_byte, formatted_comment))
+
+        for cls in docstrings.get('classes', []):
+            start_byte = cls['start_byte']
+            docstring = cls['docstring']
+            if docstring:
+                formatted_comment = format_jsdoc_comment(docstring)
+                inserts.append((start_byte, formatted_comment))
+            for method in cls.get('methods', []):
+                start_byte = method['start_byte']
+                docstring = method['docstring']
+                if docstring:
+                    formatted_comment = format_jsdoc_comment(docstring)
+                    inserts.append((start_byte, formatted_comment))
+
+        # Sort inserts by position in descending order to avoid offset issues during insertion
+        inserts.sort(key=lambda x: x[0], reverse=True)
+
+        new_code = source_code
+
+        for start_byte, comment in inserts:
+            # Convert byte position to character position
+            char_pos = start_byte  # Assuming UTF-8 encoding and no multibyte characters for simplicity
+            # Insert the comment before the function or class declaration
+            new_code = new_code[:char_pos] + comment + '\n' + new_code[char_pos:]
+
+        return new_code
 
     except Exception as e:
-        logger.error(f"Unexpected error while parsing JavaScript/TypeScript file '{file_path}': {e}")
-        return None
+        logger.error(f"Error inserting docstrings into JS/TS code: {e}")
+        return docstrings.get('source_code', '')  # Return original content if there's an error
 
-def extract_java_description(file_path: str) -> Optional[Dict]:
+
+def format_jsdoc_comment(docstring: str) -> str:
     """
-    Parses a Java file to extract class and method declarations along with comments.
-    Returns a dictionary containing extracted components.
+    Formats a docstring into a JSDoc comment block.
 
     Args:
-        file_path (str): Path to the Java file.
+        docstring (str): The docstring to format.
 
     Returns:
-        Optional[Dict]: Dictionary with classes and methods information if successful, otherwise None.
+        str: The formatted JSDoc comment.
     """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as java_file:
-            content = java_file.read()
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Could not read Java file '{file_path}': {e}")
-        return None
+    comment_lines = ['/**']
+    for line in docstring.strip().split('\n'):
+        comment_lines.append(f' * {line}')
+    comment_lines.append(' */')
+    return '\n'.join(comment_lines)
 
-    try:
-        tree = javalang.parse.parse(content)
-    except javalang.parser.JavaSyntaxError as e:
-        logger.error(f"Syntax error parsing Java file '{file_path}': {e}")
-        return None
 
-    classes = []
-    functions = []
-
-    for path, node in tree.filter(javalang.tree.ClassDeclaration):
-        doc = node.documentation or 'No description.'
-        methods = []
-        for member in node.body:
-            if isinstance(member, javalang.tree.MethodDeclaration):
-                method_doc = member.documentation or 'No description.'
-                params = [param.name for param in member.parameters]
-                methods.append({
-                    "name": member.name,
-                    "params": params,
-                    "description": method_doc
-                })
-        classes.append({
-            "name": node.name,
-            "description": doc,
-            "methods": methods
-        })
-
-    if not classes:
-        return None
-
-    return {
-        "classes": classes,
-        "functions": functions  # Java typically doesn't have standalone functions
-    }
-
-def extract_cpp_description(file_path: str) -> Optional[Dict]:
+def insert_html_comments(file_content: str, docstrings: Dict) -> str:
     """
-    Parses a C++ file to extract class and function declarations along with comments.
-    Returns a dictionary containing extracted components.
+    Inserts comments into HTML code using BeautifulSoup.
 
     Args:
-        file_path (str): Path to the C++ file.
+        file_content (str): Original HTML source code.
+        docstrings (Dict): Generated docstrings to insert.
 
     Returns:
-        Optional[Dict]: Dictionary with classes and functions information if successful, otherwise None.
-    """
-    # Comprehensive C++ parsing is complex. For this script, we'll perform basic extraction using regex.
-    try:
-        with open(file_path, 'r', encoding='utf-8') as cpp_file:
-            content = cpp_file.read()
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Could not read C++ file '{file_path}': {e}")
-        return None
-
-    # Regex patterns for classes and functions
-    class_pattern = re.compile(r'class\s+(\w+)\s*{([^}]*)};', re.MULTILINE | re.DOTALL)
-    method_pattern = re.compile(r'(public|private|protected):\s*([^;{}]*)\s*;', re.MULTILINE | re.DOTALL)
-
-    classes = []
-    functions = []
-
-    for class_match in class_pattern.finditer(content):
-        class_name = class_match.group(1)
-        class_body = class_match.group(2)
-        class_doc = "No description."  # C++ does not have a standard for class-level comments
-        methods = []
-        for method_match in method_pattern.finditer(class_body):
-            access_specifier = method_match.group(1)
-            method_signature = method_match.group(2).strip()
-            # Attempt to extract method name and parameters
-            method_parts = method_signature.split('(')
-            if len(method_parts) == 2:
-                method_name = method_parts[0].split()[-1]
-                params = method_parts[1].rstrip(')')
-                params_list = [param.strip() for param in params.split(',') if param.strip()]
-                methods.append({
-                    "name": method_name,
-                    "params": params_list,
-                    "description": "No description."
-                })
-        classes.append({
-            "name": class_name,
-            "description": class_doc,
-            "methods": methods
-        })
-
-    if not classes:
-        return None
-
-    return {
-        "classes": classes,
-        "functions": functions  # C++ functions are usually within classes
-    }
-
-def extract_go_description(file_path: str) -> Optional[Dict]:
-    """
-    Parses a Go file to extract struct and function declarations along with comments.
-    Returns a dictionary containing extracted components.
-
-    Args:
-        file_path (str): Path to the Go file.
-
-    Returns:
-        Optional[Dict]: Dictionary with structs and functions information if successful, otherwise None.
-    """
-    # Basic Go parsing using regex. For more accurate parsing, consider using Go's parser via a subprocess.
-    try:
-        with open(file_path, 'r', encoding='utf-8') as go_file:
-            content = go_file.read()
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Could not read Go file '{file_path}': {e}")
-        return None
-
-    struct_pattern = re.compile(r'type\s+(\w+)\s+struct\s*{([^}]*)}', re.MULTILINE | re.DOTALL)
-    func_pattern = re.compile(r'func\s+(\w+)\s*\(([^)]*)\)\s*([\w\*]+)\s*{')
-
-    structs = []
-    functions = []
-
-    for struct_match in struct_pattern.finditer(content):
-        struct_name = struct_match.group(1)
-        struct_body = struct_match.group(2)
-        struct_doc = "No description."  # Go uses comments above declarations
-        structs.append({
-            "name": struct_name,
-            "description": struct_doc,
-            "fields": []  # Fields can be extracted similarly if needed
-        })
-
-    for func_match in func_pattern.finditer(content):
-        func_name = func_match.group(1)
-        params = func_match.group(2).strip().split(',')
-        params = [param.strip().split(' ')[0] for param in params if param.strip()]
-        return_type = func_match.group(3).strip()
-        functions.append({
-            "name": func_name,
-            "params": params,
-            "return_type": return_type,
-            "description": "No description."
-        })
-
-    if not structs and not functions:
-        return None
-
-    return {
-        "structs": structs,
-        "functions": functions
-    }
-
-def extract_generic_description(file_path: str, file_extension: str) -> Optional[Dict]:
-    """
-    Provides a generic description for unsupported file types.
-
-    Args:
-        file_path (str): Path to the file.
-        file_extension (str): Extension of the file.
-
-    Returns:
-        Optional[Dict]: Dictionary with generic components if applicable, otherwise None.
-    """
-    return {
-        "summary": f"Documentation for {file_extension} files.",
-        "extended_summary": f"No detailed descriptions available for files with extension '{file_extension}'."
-    }
-
-def generate_google_docstring(description: str, params: List[Dict] = [], return_info: Optional[Dict] = None) -> str:
-    """
-    Formats a description into a Google-style docstring.
-
-    Args:
-        description (str): The summary or description of the function/class.
-        params (List[Dict], optional): A list of dictionaries containing parameter details. Defaults to [].
-        return_info (Optional[Dict], optional): A dictionary containing return type and description. Defaults to None.
-
-    Returns:
-        str: The formatted Google-style docstring.
-    """
-    docstring = f"{description}\n\n"
-    if params:
-        docstring += "Args:\n"
-        for param in params:
-            name = param.get("name", "param")
-            type_ = param.get("type", "type")
-            description_ = param.get("description", "Description of the parameter.")
-            docstring += f"    {name} ({type_}): {description_}\n"
-        docstring += "\n"
-    if return_info:
-        type_ = return_info.get("type", "type")
-        description_ = return_info.get("description", "Description of the return value.")
-        docstring += "Returns:\n"
-        docstring += f"    {type_}: {description_}\n"
-    return docstring
-    
-def generate_java_doc(docstring: str) -> str:
-    """
-    Generates a JavaDoc comment block from the provided docstring.
-    
-    Args:
-        docstring (str): The description to include in the JavaDoc.
-    
-    Returns:
-        str: Formatted JavaDoc comment block.
-    """
-    formatted_docstring = docstring.replace('\n', '\n * ')
-    return f"""/**
- * {formatted_docstring}
- */
-"""
-
-def generate_js_doc(docstring: str) -> str:
-    """
-    Generates a JSDoc comment block from the provided docstring.
-    
-    Args:
-        docstring (str): The description to include in the JSDoc.
-    
-    Returns:
-        str: Formatted JSDoc comment block.
-    """
-    formatted_doc = docstring.replace('\n', '\n * ')
-    return f"""/**
- * {formatted_doc}
- */
-"""
-
-async def insert_comments_into_file(file_path: str, doc_json: dict, language: str) -> bool:
-    """
-    Inserts the generated JSON-formatted Google-style docstrings into the source file based on the language.
-    Returns True if successful, False otherwise.
+        str: Modified HTML source code with comments inserted.
     """
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Error reading file '{file_path}' for inserting comments: {e}")
-        return False
+        soup = BeautifulSoup(file_content, 'html.parser')
+        elements = docstrings.get('elements', [])
 
-    # Backup the original file
-    backup_path = f"{file_path}.bak"
-    try:
-        with open(backup_path, 'w', encoding='utf-8') as backup_file:
-            backup_file.writelines(lines)
-        logger.info(f"Backup created for '{file_path}' at '{backup_path}'")
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Error creating backup for file '{file_path}': {e}")
-        return False
+        element_map = {}
+        for element in elements:
+            key = (element['tag'], tuple(sorted(element['attributes'].items())), element['text'])
+            element_map[key] = element['docstring']
 
-    # Insert comments based on language
-    try:
-        if language == 'python':
-            updated_lines = insert_python_comments(lines, doc_json)
-        elif language in ['javascript', 'typescript']:
-            updated_lines = insert_js_ts_comments(lines, doc_json)
-        elif language == 'java':
-            updated_lines = insert_java_comments(lines, doc_json)
-        elif language == 'cpp':
-            updated_lines = insert_cpp_comments(lines, doc_json)
-        elif language == 'go':
-            updated_lines = insert_go_comments(lines, doc_json)
-        else:
-            logger.warning(f"Comment insertion not implemented for language '{language}'")
-            return False
+        def traverse_and_insert(node):
+            for child in node.children:
+                if isinstance(child, str):
+                    continue
+                if child.name:
+                    key = (child.name, tuple(sorted(child.attrs.items())), child.get_text(strip=True))
+                    docstring = element_map.get(key)
+                    if docstring:
+                        comment = Comment(f" {docstring} ")
+                        if child.name in ['head', 'body', 'html']:
+                            # Insert comment inside the element
+                            child.insert(0, comment)
+                        else:
+                            # Insert comment before the element
+                            child.insert_before(comment)
+                    traverse_and_insert(child)
 
-        # Write the updated lines back to the file
-        async with OUTPUT_LOCK:
-            with open(file_path, 'w', encoding='utf-8') as file:
-                file.writelines(updated_lines)
-        logger.info(f"Comments inserted into '{file_path}' successfully.")
-        return True
+        traverse_and_insert(soup)
+        return str(soup)
 
     except Exception as e:
-        logger.error(f"Error inserting comments into file '{file_path}': {e}")
-        return False
+        logger.error(f"Error inserting comments into HTML code: {e}")
+        return file_content
 
-def insert_python_comments(lines: List[str], doc_json: Dict) -> List[str]:
+
+def insert_css_comments(file_content: str, docstrings: Dict) -> str:
     """
-    Inserts Google-style docstrings into Python classes and functions using JSON data.
+    Inserts comments into CSS code.
 
     Args:
-        lines (List[str]): Original lines of the Python file.
-        doc_json (Dict): The refined docstring JSON.
+        file_content (str): Original CSS source code.
+        docstrings (Dict): Generated docstrings to insert.
 
     Returns:
-        List[str]: Updated lines with inserted docstrings.
+        str: Modified CSS source code with comments inserted.
     """
-    updated_lines = []
-    i = 0
-    classes = doc_json.get("classes", [])
-    functions = doc_json.get("functions", [])
+    try:
+        rules = tinycss2.parse_stylesheet(file_content)
+        style_rules = docstrings.get('rules', [])
+        rule_map = {}
+        for rule in style_rules:
+            key = rule['selector']
+            docstring = rule.get('docstring', '')
+            if key in rule_map:
+                rule_map[key] += f"\n{docstring}"
+            else:
+                rule_map[key] = docstring
 
-    class_dict = {cls["name"]: cls for cls in classes}
-    function_dict = {func["name"]: func for func in functions}
+        modified_content = ''
+        inserted_selectors = set()
 
-    while i < len(lines):
-        line = lines[i]
-        class_match = re.match(r'\s*class\s+(\w+)\s*(\(.*\))?:', line)
-        func_match = re.match(r'\s*def\s+(\w+)\s*\((.*)\)\s*:', line)
+        for rule in rules:
+            if rule.type == 'qualified-rule':
+                selector = tinycss2.serialize(rule.prelude).strip()
+                if selector not in inserted_selectors:
+                    docstring = rule_map.get(selector)
+                    if docstring:
+                        modified_content += f"/* {docstring} */\n"
+                    inserted_selectors.add(selector)
+                modified_content += tinycss2.serialize(rule).strip() + '\n'
+            else:
+                modified_content += tinycss2.serialize(rule).strip() + '\n'
 
-        if class_match:
-            class_name = class_match.group(1)
-            updated_lines.append(line)
-            # Insert docstring after class definition
-            cls_info = class_dict.get(class_name, {})
-            if cls_info:
-                summary = cls_info.get("summary", "")
-                extended_summary = cls_info.get("extended_summary", "")
-                args = cls_info.get("args", [])
-                returns = cls_info.get("returns", {})
-                raises = cls_info.get("raises", [])
-                examples = cls_info.get("examples", [])
-                notes = cls_info.get("notes", "")
-                references = cls_info.get("references", "")
+        return modified_content
 
-                docstring = generate_google_docstring_from_json(
-                    summary=summary,
-                    extended_summary=extended_summary,
-                    args=args,
-                    returns=returns,
-                    raises=raises,
-                    examples=examples,
-                    notes=notes,
-                    references=references
-                )
-                if docstring:
-                    docstring_formatted = f'    """\n    {docstring}\n    """\n'
-                    updated_lines.append(docstring_formatted)
-            i += 1
-            continue
+    except Exception as e:
+        logger.error(f"Error inserting comments into CSS code: {e}")
+        return file_content
 
-        if func_match:
-            func_name = func_match.group(1)
-            params = func_match.group(2).strip().split(',')
-            params = [param.strip() for param in params if param.strip()]
-            updated_lines.append(line)
-            # Insert docstring after function definition
-            func_info = function_dict.get(func_name, {})
-            if func_info:
-                summary = func_info.get("summary", "")
-                extended_summary = func_info.get("extended_summary", "")
-                args = func_info.get("args", [])
-                returns = func_info.get("returns", {})
-                raises = func_info.get("raises", [])
-                examples = func_info.get("examples", [])
-                notes = func_info.get("notes", "")
-                references = func_info.get("references", "")
 
-                docstring = generate_google_docstring_from_json(
-                    summary=summary,
-                    extended_summary=extended_summary,
-                    args=args,
-                    returns=returns,
-                    raises=raises,
-                    examples=examples,
-                    notes=notes,
-                    references=references
-                )
-                if docstring:
-                    docstring_formatted = f'    """\n    {docstring}\n    """\n'
-                    updated_lines.append(docstring_formatted)
-            i += 1
-            continue
-
-        updated_lines.append(line)
-        i += 1
-
-    return updated_lines
-
-def insert_js_ts_comments(lines: List[str], doc_json: dict) -> List[str]:
+async def process_file(session: aiohttp.ClientSession, file_path: str, skip_types: Set[str], output_file: str) -> None:
     """
-    Inserts JSDoc comments into JavaScript/TypeScript classes and functions using JSON data.
+    Processes a single file: reads content, generates documentation, inserts it, and writes outputs.
 
     Args:
-        lines (List[str]): The original lines of the JavaScript/TypeScript source file.
-        doc_json (dict): The JSON data containing docstring information.
-
-    Returns:
-       List[str]: The updated lines with inserted JSDoc comments.
-    """
-    updated_lines = []
-    i = 0
-    comments = doc_json.get("docstring", {})
-    class_docs = {cls['name']: cls for cls in comments.get("classes", [])}
-    function_docs = {func['name']: func for func in comments.get("functions", [])}
-
-    while i < len(lines):
-        line = lines[i]
-        class_match = re.match(r'\s*class\s+(\w+)\s*(extends\s+\w+\s*)?\{', line)
-        func_match = re.match(r'\s*(function\s+)?(\w+)\s*\((.*)\)\s*\{', line)
-        method_match = re.match(r'\s*(\w+)\s*\((.*)\)\s*\{', line)
-
-        if class_match:
-            class_name = class_match.group(1)
-            updated_lines.append(line)
-            # Insert JSDoc comment before class definition
-            doc_info = class_docs.get(class_name, {})
-            if doc_info:
-                summary = doc_info.get("summary", "")
-                extended_summary = doc_info.get("extended_summary", "")
-                args = doc_info.get("args", [])
-                returns = doc_info.get("returns", {})
-                raises = doc_info.get("raises", [])
-                examples = doc_info.get("examples", [])
-                notes = doc_info.get("notes", "")
-                references = doc_info.get("references", "")
-
-                # Construct docstring from JSON data
-                docstring = generate_google_docstring_from_json(
-                    summary, extended_summary, args, returns, raises, examples, notes, references
-                )
-                js_doc = generate_js_doc(docstring)
-                updated_lines.append(f"{js_doc}\n")
-            i += 1
-            continue
-
-        if func_match:
-            func_name = func_match.group(2)
-            params = func_match.group(3).strip()
-            updated_lines.append(line)
-            # Insert JSDoc comment before function definition
-            doc_info = function_docs.get(func_name, {})
-            if doc_info:
-                summary = doc_info.get("summary", "")
-                extended_summary = doc_info.get("extended_summary", "")
-                args = doc_info.get("args", [])
-                returns = doc_info.get("returns", {})
-                raises = doc_info.get("raises", [])
-                examples = doc_info.get("examples", [])
-                notes = doc_info.get("notes", "")
-                references = doc_info.get("references", "")
-
-                # Construct docstring from JSON data
-                docstring = generate_google_docstring_from_json(
-                    summary, extended_summary, args, returns, raises, examples, notes, references
-                )
-                js_doc = generate_js_doc(docstring)
-                updated_lines.append(f"{js_doc}\n")
-            i += 1
-            continue
-
-        if method_match:
-            method_name = method_match.group(1)
-            params = method_match.group(2).strip()
-            updated_lines.append(line)
-            # Insert JSDoc comment before method definition
-            doc_info = function_docs.get(method_name, {})
-            if doc_info:
-                summary = doc_info.get("summary", "")
-                extended_summary = doc_info.get("extended_summary", "")
-                args = doc_info.get("args", [])
-                returns = doc_info.get("returns", {})
-                raises = doc_info.get("raises", [])
-                examples = doc_info.get("examples", [])
-                notes = doc_info.get("notes", "")
-                references = doc_info.get("references", "")
-
-                # Construct docstring from JSON data
-                docstring = generate_google_docstring_from_json(
-                    summary, extended_summary, args, returns, raises, examples, notes, references
-                )
-                js_doc = generate_js_doc(docstring)
-                updated_lines.append(f"{js_doc}\n")
-            i += 1
-            continue
-
-        updated_lines.append(line)
-        i += 1
-
-    return updated_lines
-
-def insert_java_comments(lines: List[str], doc_json: dict) -> List[str]:
-    """
-    Inserts JavaDoc comments into Java classes and methods using JSON data.
-
-    Args:
-        lines (List[str]): The original lines of the Java source file.
-        doc_json (dict): The JSON data containing docstring information.
-
-    Returns:
-        List[str]: The updated lines with inserted JavaDoc comments.
-    """
-    updated_lines = []
-    i = 0
-    comments = doc_json.get("docstring", {})
-    class_docs = {cls['name']: cls for cls in comments.get("classes", [])}
-    method_docs = {method['name']: method for method in comments.get("methods", [])}
-
-    while i < len(lines):
-        line = lines[i]
-        class_match = re.match(r'\s*public\s+class\s+(\w+)', line)
-        method_match = re.match(r'\s*public\s+(\w+)\s+(\w+)\s*\((.*)\)\s*\{', line)
-
-        if class_match:
-            class_name = class_match.group(1)
-            # Insert JavaDoc comment before class definition
-            doc_info = class_docs.get(class_name, {})
-            if doc_info:
-                summary = doc_info.get("summary", "")
-                extended_summary = doc_info.get("extended_summary", "")
-                args = doc_info.get("args", [])
-                returns = doc_info.get("returns", {})
-                raises = doc_info.get("raises", [])
-                examples = doc_info.get("examples", [])
-                notes = doc_info.get("notes", "")
-                references = doc_info.get("references", "")
-
-                # Construct docstring from JSON data
-                docstring = generate_google_docstring_from_json(
-                    summary, extended_summary, args, returns, raises, examples, notes, references
-                )
-                java_doc = generate_java_doc(docstring)
-                updated_lines.append(f"{java_doc}\n")
-            updated_lines.append(line)
-            i += 1
-            continue
-
-        if method_match:
-            return_type = method_match.group(1)
-            method_name = method_match.group(2)
-            params = method_match.group(3).strip()
-            # Insert JavaDoc comment before method definition
-            doc_info = method_docs.get(method_name, {})
-            if doc_info:
-                summary = doc_info.get("summary", "")
-                extended_summary = doc_info.get("extended_summary", "")
-                args = doc_info.get("args", [])
-                returns = doc_info.get("returns", {})
-                raises = doc_info.get("raises", [])
-                examples = doc_info.get("examples", [])
-                notes = doc_info.get("notes", "")
-                references = doc_info.get("references", "")
-
-                # Construct docstring from JSON data
-                docstring = generate_google_docstring_from_json(
-                    summary, extended_summary, args, returns, raises, examples, notes, references
-                )
-                java_doc = generate_java_doc(docstring, params=params)
-                updated_lines.append(f"{java_doc}\n")
-            updated_lines.append(line)
-            i += 1
-            continue
-
-        updated_lines.append(line)
-        i += 1
-
-    return updated_lines
-
-def insert_cpp_comments(lines: List[str], doc_json: Dict) -> List[str]:
-    """
-    Inserts comments into C++ classes and functions using JSON data.
-
-    Args:
-        lines (List[str]): Original lines of the C++ file.
-        doc_json (Dict): The refined docstring JSON.
-
-    Returns:
-        List[str]: Updated lines with inserted comments.
-    """
-    updated_lines = []
-    i = 0
-    classes = doc_json.get("classes", [])
-    functions = doc_json.get("functions", [])
-
-    class_dict = {cls["name"]: cls for cls in classes}
-    function_dict = {func["name"]: func for func in functions}
-
-    while i < len(lines):
-        line = lines[i]
-        class_match = re.match(r'\s*class\s+(\w+)\s*{', line)
-        func_match = re.match(r'\s*(\w+)\s+(\w+)\s*\((.*)\)\s*{', line)
-
-        if class_match:
-            class_name = class_match.group(1)
-            # Insert comment before class definition
-            cls_info = class_dict.get(class_name, {})
-            if cls_info:
-                summary = cls_info.get("summary", "")
-                extended_summary = cls_info.get("extended_summary", "")
-                args = cls_info.get("args", [])
-                returns = cls_info.get("returns", {})
-                raises = cls_info.get("raises", [])
-                examples = cls_info.get("examples", [])
-                notes = cls_info.get("notes", "")
-                references = cls_info.get("references", "")
-
-                docstring = generate_google_docstring_from_json(
-                    summary=summary,
-                    extended_summary=extended_summary,
-                    args=args,
-                    returns=returns,
-                    raises=raises,
-                    examples=examples,
-                    notes=notes,
-                    references=references
-                )
-                if docstring:
-                    cpp_comment = f"// {docstring}\n"
-                    updated_lines.append(cpp_comment)
-            updated_lines.append(line)
-            i += 1
-            continue
-
-        if func_match:
-            return_type = func_match.group(1)
-            func_name = func_match.group(2)
-            params = func_match.group(3).strip().split(',')
-            params = [param.strip().split(' ')[0] for param in params if param.strip()]
-            # Insert comment before function definition
-            func_info = function_dict.get(func_name, {})
-            if func_info:
-                summary = func_info.get("summary", "")
-                extended_summary = func_info.get("extended_summary", "")
-                args = func_info.get("args", [])
-                returns = func_info.get("returns", {})
-                raises = func_info.get("raises", [])
-                examples = func_info.get("examples", [])
-                notes = func_info.get("notes", "")
-                references = func_info.get("references", "")
-
-                docstring = generate_google_docstring_from_json(
-                    summary=summary,
-                    extended_summary=extended_summary,
-                    args=args,
-                    returns=returns,
-                    raises=raises,
-                    examples=examples,
-                    notes=notes,
-                    references=references
-                )
-                if docstring:
-                    cpp_comment = f"// {docstring}\n"
-                    updated_lines.append(cpp_comment)
-            updated_lines.append(line)
-            i += 1
-            continue
-
-        updated_lines.append(line)
-        i += 1
-
-    return updated_lines
-
-def insert_go_comments(lines: List[str], doc_json: Dict) -> List[str]:
-    """
-    Inserts comments into Go structs and functions using JSON data.
-
-    Args:
-        lines (List[str]): Original lines of the Go file.
-        doc_json (Dict): The refined docstring JSON.
-
-    Returns:
-        List[str]: Updated lines with inserted comments.
-    """
-    updated_lines = []
-    i = 0
-    structs = doc_json.get("structs", [])
-    functions = doc_json.get("functions", [])
-
-    struct_dict = {st["name"]: st for st in structs}
-    function_dict = {fn["name"]: fn for fn in functions}
-
-    while i < len(lines):
-        line = lines[i]
-        struct_match = re.match(r'\s*type\s+(\w+)\s+struct\s*{', line)
-        func_match = re.match(r'\s*func\s+(\w+)\s*\((.*)\)\s*([\w\*]+)\s*{', line)
-
-        if struct_match:
-            struct_name = struct_match.group(1)
-            # Insert comment before struct definition
-            st_info = struct_dict.get(struct_name, {})
-            if st_info:
-                summary = st_info.get("summary", "")
-                extended_summary = st_info.get("extended_summary", "")
-                args = st_info.get("args", [])
-                returns = st_info.get("returns", {})
-                raises = st_info.get("raises", [])
-                examples = st_info.get("examples", [])
-                notes = st_info.get("notes", "")
-                references = st_info.get("references", "")
-
-                docstring = generate_google_docstring_from_json(
-                    summary=summary,
-                    extended_summary=extended_summary,
-                    args=args,
-                    returns=returns,
-                    raises=raises,
-                    examples=examples,
-                    notes=notes,
-                    references=references
-                )
-                if docstring:
-                    go_comment = f"// {docstring}\n"
-                    updated_lines.append(go_comment)
-            updated_lines.append(line)
-            i += 1
-            continue
-
-        if func_match:
-            func_name = func_match.group(1)
-            params = func_match.group(2).strip().split(',')
-            params = [param.strip().split(' ')[0] for param in params if param.strip()]
-            return_type = func_match.group(3).strip()
-            # Insert comment before function definition
-            fn_info = function_dict.get(func_name, {})
-            if fn_info:
-                summary = fn_info.get("summary", "")
-                extended_summary = fn_info.get("extended_summary", "")
-                args = fn_info.get("args", [])
-                returns = fn_info.get("returns", {})
-                raises = fn_info.get("raises", [])
-                examples = fn_info.get("examples", [])
-                notes = fn_info.get("notes", "")
-                references = fn_info.get("references", "")
-
-                docstring = generate_google_docstring_from_json(
-                    summary=summary,
-                    extended_summary=extended_summary,
-                    args=args,
-                    returns=returns,
-                    raises=raises,
-                    examples=examples,
-                    notes=notes,
-                    references=references
-                )
-                if docstring:
-                    go_comment = f"// {docstring}\n"
-                    updated_lines.append(go_comment)
-            updated_lines.append(line)
-            i += 1
-            continue
-
-        updated_lines.append(line)
-        i += 1
-
-    return updated_lines
-
-async def insert_comments_into_file(file_path: str, doc_json: Dict, language: str) -> bool:
-    """
-    Inserts the generated JSON-formatted comments into the source file based on the language.
-    Returns True if successful, False otherwise.
-
-    Args:
+        session (aiohttp.ClientSession): HTTP session.
         file_path (str): Path to the source file.
-        doc_json (Dict): The refined docstring JSON.
-        language (str): The programming language of the source file.
-
-    Returns:
-        bool: True if insertion is successful, False otherwise.
+        skip_types (Set[str]): Set of file extensions to skip.
+        output_file (str): Output Markdown file.
     """
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Error reading file '{file_path}' for inserting comments: {e}")
-        return False
+        _, ext = os.path.splitext(file_path)
+        logger.debug(f"Processing file: {file_path} with extension: {ext}")
 
-    # Backup the original file
-    backup_path = f"{file_path}.bak"
-    try:
-        with open(backup_path, 'w', encoding='utf-8') as backup_file:
-            backup_file.writelines(lines)
-        logger.info(f"Backup created for '{file_path}' at '{backup_path}'")
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Error creating backup for file '{file_path}': {e}")
-        return False
+        # Validate file extension
+        if not is_valid_extension(ext, skip_types):
+            logger.info(f"Skipping file '{file_path}' due to extension '{ext}'")
+            return
 
-    # Insert comments based on language
-    try:
+        # Check if the file is binary
+        if is_binary(file_path):
+            logger.info(f"Skipping binary file '{file_path}'")
+            return
+
+        language = get_language(ext)
+
+        if language == 'plaintext':
+            logger.info(f"Skipping file '{file_path}' with unrecognized language.")
+            return
+
+        # Read file content directly
+        try:
+            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                content = await f.read()
+        except Exception as e:
+            logger.error(f"Failed to read '{file_path}': {e}")
+            return
+
+        # Extract code structure
         if language == 'python':
-            updated_lines = insert_python_comments(lines, doc_json)
+            code_structure = extract_python_structure(content)
         elif language in ['javascript', 'typescript']:
-            updated_lines = insert_js_ts_comments(lines, doc_json)
-        elif language == 'java':
-            updated_lines = insert_java_comments(lines, doc_json)
-        elif language == 'cpp':
-            updated_lines = insert_cpp_comments(lines, doc_json)
-        elif language == 'go':
-            updated_lines = insert_go_comments(lines, doc_json)
+            code_structure = extract_js_ts_structure(content, language)
+        elif language == 'html':
+            code_structure = extract_html_structure(content)
+        elif language == 'css':
+            code_structure = extract_css_structure(content)
         else:
-            logger.warning(f"Comment insertion not implemented for language '{language}'")
-            return False
+            logger.warning(f"Language '{language}' not supported for structured extraction.")
+            return
 
-        # Write the updated lines back to the file
-        async with OUTPUT_LOCK:
-            with open(file_path, 'w', encoding='utf-8') as file:
-                file.writelines(updated_lines)
-        logger.info(f"Comments inserted into '{file_path}' successfully.")
-        return True
+        if code_structure is None:
+            logger.error(f"Failed to extract structure from '{file_path}'")
+            return
+
+        # Generate prompt with existing docstrings/comments considered
+        prompt = generate_documentation_prompt(code_structure)
+
+        # Generate documentation using OpenAI API
+        documentation = await fetch_documentation(session, prompt)
+        if not documentation:
+            logger.error(f"Failed to generate documentation for '{file_path}'")
+            return
+
+        # Parse the generated documentation JSON
+        try:
+            updated_code_structure = json.loads(documentation)
+            if language in ['javascript', 'typescript']:
+                updated_code_structure['tree'] = code_structure['tree']
+                updated_code_structure['source_code'] = code_structure['source_code']
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse documentation JSON for '{file_path}': {e}")
+            return
+
+        # Insert documentation into code
+        if language == 'python':
+            new_content = insert_python_docstrings(content, updated_code_structure)
+        elif language in ['javascript', 'typescript']:
+            new_content = insert_js_ts_docstrings(updated_code_structure)
+        elif language == 'html':
+            new_content = insert_html_comments(content, updated_code_structure)
+        elif language == 'css':
+            new_content = insert_css_comments(content, updated_code_structure)
+        else:
+            new_content = content  # Fallback to original content
+
+        # Validate modified code if possible
+        if language == 'python':
+            if not is_valid_python_code(new_content):
+                logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
+                return
+
+        # Backup and write the modified content back to the file
+        try:
+            backup_path = file_path + '.bak'
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+            os.rename(file_path, backup_path)
+            logger.info(f"Backup created at '{backup_path}'")
+
+            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+                await f.write(new_content)
+            logger.info(f"Inserted comments into '{file_path}'")
+        except Exception as e:
+            logger.error(f"Error writing to '{file_path}': {e}")
+            # Restore from backup
+            if os.path.exists(backup_path):
+                os.remove(file_path)
+                os.rename(backup_path, file_path)
+                logger.info(f"Restored original file from backup for '{file_path}'")
+            return
+
+        # Append the documented code to the output Markdown file
+        try:
+            async with OUTPUT_LOCK:
+                async with aiofiles.open(output_file, 'a', encoding='utf-8') as f:
+                    header = f"# File: {file_path}\n\n"
+                    code_block = f"```{language}\n{new_content}\n```\n\n"
+                    await f.write(header)
+                    await f.write(code_block)
+            logger.info(f"Successfully processed and documented '{file_path}'")
+        except Exception as e:
+            logger.error(f"Error writing documentation for '{file_path}': {e}")
 
     except Exception as e:
-        logger.error(f"Error inserting comments into file '{file_path}': {e}")
-        return False
+        logger.error(f"Unexpected error processing '{file_path}': {e}")
+        return
 
-def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> List[str]:
-    """
-    Collects all file paths in the repository, excluding specified directories and files.
 
-    Args:
-        repo_path (str): Path to the repository.
-        excluded_dirs (Set[str]): Set of directory names to exclude.
-        excluded_files (Set[str]): Set of file names to exclude.
-
-    Returns:
-        List[str]: List of file paths to process.
-    """
-    file_paths = []
-    for root, dirs, files in os.walk(repo_path):
-        dirs[:] = [d for d in dirs if d not in excluded_dirs and not d.startswith('.')]
-        for file in files:
-            file_path = os.path.join(root, file)
-            if file in excluded_files or file.startswith('.'):
-                logger.debug(f"Excluded file: {file_path}")
-                continue
-            file_paths.append(file_path)
-    return file_paths
-
-async def process_all_files(file_paths: List[str], skip_types: List[str], output_lock: asyncio.Lock) -> None:
-    """
-    Processes all files asynchronously, generating and inserting comments.
-    Uses tqdm for a progress bar with human-readable time format.
-    """
-    semaphore = asyncio.Semaphore(5)  # Limit concurrency to 5
+async def process_all_files(file_paths: List[str], skip_types: Set[str], output_file: str) -> None:
+    global OUTPUT_LOCK
+    OUTPUT_LOCK = asyncio.Lock()
 
     async with aiohttp.ClientSession() as session:
         tasks = [
-            asyncio.create_task(process_file(session, file_path, skip_types, output_lock, semaphore))
+            asyncio.create_task(process_file(session, file_path, skip_types, output_file))
             for file_path in file_paths
         ]
 
-        # Customize tqdm's bar_format for more readable output
-        with tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Processing Files", 
-                  bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]") as pbar:
-            for f in pbar:
-                try:
-                    await f
-                except Exception as e:
-                    logger.error(f"Error processing a file: {e}")
-                    
-async def process_file(session: aiohttp.ClientSession, file_path: str, skip_types: List[str], output_lock: asyncio.Lock, semaphore: asyncio.Semaphore) -> None:
-    """
-    Processes a single file by reading its content, generating Google-style docstrings,
-    refining them, and inserting them into the source file.
-    """
-    _, ext = os.path.splitext(file_path)
-    language = get_language(ext)
+        for f in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Processing Files"):
+            try:
+                await f
+            except Exception as e:
+                logger.error(f"Error processing a file: {e}")
 
-    # Skip file types that are not meant for commenting (json, css, md, etc.)
-    if ext in skip_types:
-        logger.info(f"Skipping file for commenting: {file_path} (type {ext})")
-        return  # Skipping commenting for these types
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Automatically generate and insert comments/docstrings into source files using OpenAI's GPT-4 API."
+    )
+    parser.add_argument(
+        "repo_path",
+        help="Path to the code repository"
+    )
+    parser.add_argument(
+        "-c", "--config",
+        help="Path to config.json",
+        default="config.json"
+    )
+    parser.add_argument(
+        "--concurrency",
+        help="Number of concurrent requests",
+        type=int,
+        default=5
+    )
+    parser.add_argument(
+        "-o", "--output",
+        help="Output Markdown file",
+        default="output.md"
+    )
+    parser.add_argument(
+        "--model",
+        help="OpenAI model to use (default: gpt-4)",
+        default="gpt-4"
+    )
+    parser.add_argument(
+        "--skip-types",
+        help="Comma-separated list of file extensions to skip",
+        default=""
+    )
 
-    # Read the content of the file
-    try:
-        with open(file_path, 'r', encoding='utf-8') as content_file:
-            content = content_file.read()
-        logger.debug(f"Successfully read file: {file_path}")
-    except (FileNotFoundError, IOError) as e:
-        logger.error(f"Error reading file '{file_path}': {e}")
-        return
-
-    # Extract descriptions for classes and functions
-    description = await extract_description(file_path, ext) 
-    if not description:
-        logger.info(f"No components found to comment in '{file_path}'.")
-        return
-
-    # Generate comments using OpenAI
-    doc_json_str = await fetch_openai(session, content, language, semaphore) # Generate docstring for content
-    if not doc_json_str:
-        logger.error(f"Failed to generate comments for '{file_path}'.")
-        return
-
-    try:
-        doc_json = json.loads(doc_json_str)
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decoding error for file '{file_path}': {e}")
-        return
-
-    # Insert comments into the source file
-    success = await insert_comments_into_file(file_path, doc_json, language)
-    if not success:
-        logger.error(f"Failed to insert comments into '{file_path}'.")
-        return
-
-def main():
-    """
-    Main entry point of the script.
-    """
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Generate and insert docstrings/comments into source files.")
-    parser.add_argument("repo_path", type=str, help="Path to the directory containing source files.")
-    parser.add_argument("-c", "--config", type=str, default="config.json", help="Path to the configuration JSON file.")
-    parser.add_argument("--concurrency", type=int, default=5, help="Number of concurrent tasks.")
-    parser.add_argument("-o", "--output", type=str, help="Path to the output Markdown file.")  # Add output argument
     args = parser.parse_args()
 
-    if not os.path.isdir(args.repo_path):
-        logger.error(f"The path '{args.repo_path}' is not a valid directory.")
+    repo_path = args.repo_path
+    config_path = args.config
+    concurrency = args.concurrency
+    output_file = args.output
+
+    if not os.path.isdir(repo_path):
+        logger.error(f"Invalid repository path: '{repo_path}' is not a directory.")
         sys.exit(1)
 
-    # Initialize exclusion sets
     excluded_dirs = set(DEFAULT_EXCLUDED_DIRS)
     excluded_files = set(DEFAULT_EXCLUDED_FILES)
+    skip_types = set(DEFAULT_SKIP_TYPES)
+    if args.skip_types:
+        skip_types.update(args.skip_types.split(','))
 
-    # Load configuration
+    load_config(config_path, excluded_dirs, excluded_files, skip_types)
+
+    file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files)
+    if not file_paths:
+        logger.error("No files found to process.")
+        sys.exit(1)
+
+    logger.info(f"Starting documentation generation for {len(file_paths)} files.")
+
+    open(output_file, 'w').close()
+
+    global SEMAPHORE
+    SEMAPHORE = asyncio.Semaphore(concurrency)
+
+    global MODEL_NAME
+    MODEL_NAME = args.model  # Get the model name from arguments
+
     try:
-        with open(args.config, 'r', encoding='utf-8') as config_file:
-            config = json.load(config_file)
-        skip_types = config.get("skip_types", [])
-        load_config(args.config, excluded_dirs, excluded_files) # Load exclusions from config
-    except (FileNotFoundError, IOError, json.JSONDecodeError) as e:
-        logger.error(f"Error loading configuration file '{args.config}': {e}")
-        return
-
-    # Gather all file paths
-    file_paths = get_all_file_paths(args.repo_path, excluded_dirs, excluded_files)  # Get file paths here
-    logger.info(f"Collected {len(file_paths)} files to process.")
-
-    # Initialize an asyncio lock
-    global OUTPUT_LOCK, SEMAPHORE
-    OUTPUT_LOCK = asyncio.Lock()
-    SEMAPHORE = asyncio.Semaphore(args.concurrency) # Initialize semaphore
-
-    # Run the asyncio event loop
-    try:
-        asyncio.run(process_all_files(file_paths, skip_types, OUTPUT_LOCK))
+        asyncio.run(process_all_files(file_paths, skip_types, output_file))
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
+        logger.error(f"Error during processing: {e}")
+        sys.exit(1)
+
+    logger.info("Documentation generation completed successfully.")
+
 
 if __name__ == "__main__":
     main()
