@@ -1,0 +1,16 @@
+
+
+
+
+
+
+
+{{ "%+010d"|sprintf:-123 }}
+{{ "%+010d"|vsprintf:[-123] }}
+{{ "%+010d"|fmt:-123 }}
+{{ "%+010d"|vfmt:[-123] }}
+{{ "I've got %2$d apples and %1$d oranges."|fmt:4:2 }}
+{{ "I've got %(apples)d apples and %(oranges)d oranges."|fmt:{apples: 2, oranges: 4} }}
+
+
+
