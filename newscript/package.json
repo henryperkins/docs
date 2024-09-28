@@ -1,0 +1,15 @@
+{
+  "name": "newscript",
+  "version": "1.0.0",
+  "description": "This project is a Python-based tool that automates the generation of documentation for code repositories. It scans through the files in a given repository, extracts the structure of the code (functions, classes, methods, etc.), and uses OpenAI's GPT-4 API to generate docstrings or comments. The script supports multiple programming languages, including Python, JavaScript/TypeScript, HTML, and CSS. The generated documentation is then inserted back into the original code files and can also be compiled into a Markdown file.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "esprima": "^4.0.1"
+  }
+}
