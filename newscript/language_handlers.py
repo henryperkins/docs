@@ -21,6 +21,7 @@ import aiohttp
 import asyncio
 from typing import Set, List, Optional
 from tqdm.asyncio import tqdm
+import typescript as ts
 
 logger = logging.getLogger(__name__)
 
