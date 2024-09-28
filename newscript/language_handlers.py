@@ -1,3 +1,5 @@
+# language_handlers.py
+
 import os
 import sys
 import json
@@ -6,6 +8,7 @@ import subprocess
 import ast
 import astor
 import tinycss2
+import re  # Ensure re is imported
 from bs4 import BeautifulSoup, Comment
 from .utils import (
     is_valid_extension,
@@ -13,11 +16,12 @@ from .utils import (
     generate_documentation_prompt,
     fetch_documentation,
     is_binary,
+    function_schema,  # Import the function schema
 )
 import aiofiles
 import aiohttp
 import asyncio
-from typing import Set, List
+from typing import Set, List, Optional
 from tqdm.asyncio import tqdm
 
 logger = logging.getLogger(__name__)
@@ -132,7 +136,10 @@ def insert_python_docstrings(file_content: str, docstrings: dict) -> str:
                 else:
                     docstring = func_doc_map.get(node.name)
                 if docstring:
-                    docstring_node = ast.Expr(value=ast.Constant(value=docstring) if hasattr(ast, 'Constant') else ast.Str(s=docstring))
+                    if hasattr(ast, 'Constant'):  # Python 3.8+
+                        docstring_node = ast.Expr(value=ast.Constant(value=docstring))
+                    else:
+                        docstring_node = ast.Expr(value=ast.Str(s=docstring))
                     if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, (ast.Str, ast.Constant))):
                         node.body.insert(0, docstring_node)
                     else:
@@ -143,7 +150,10 @@ def insert_python_docstrings(file_content: str, docstrings: dict) -> str:
                 self.generic_visit(node)
                 docstring = class_doc_map.get(node.name)
                 if docstring:
-                    docstring_node = ast.Expr(value=ast.Constant(value=docstring) if hasattr(ast, 'Constant') else ast.Str(s=docstring))
+                    if hasattr(ast, 'Constant'):  # Python 3.8+
+                        docstring_node = ast.Expr(value=ast.Constant(value=docstring))
+                    else:
+                        docstring_node = ast.Expr(value=ast.Str(s=docstring))
                     if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, (ast.Str, ast.Constant))):
                         node.body.insert(0, docstring_node)
                     else:
@@ -178,12 +188,13 @@ def extract_js_ts_structure(file_content: str, language: str) -> dict:
     """Extracts the structure of JavaScript/TypeScript code using Esprima."""
     try:
         # Write the content to a temporary file
-        with open('temp_code.js', 'w', encoding='utf-8') as temp_file:
+        temp_filename = 'temp_code.js'
+        with open(temp_filename, 'w', encoding='utf-8') as temp_file:
             temp_file.write(file_content)
 
         # Run Esprima to parse the code
         result = subprocess.run(
-            ["esprima", "-c", "-t", "temp_code.js"],
+            ["esprima", "-c", "-t", temp_filename],
             capture_output=True,
             text=True,
             check=True
@@ -199,9 +210,10 @@ def extract_js_ts_structure(file_content: str, language: str) -> dict:
                 if node.get("type") == "FunctionDeclaration":
                     func_info = {
                         "name": node["id"]["name"] if node.get("id") else "anonymous",
-                        "params": [p.get("name", "param") for p in node.get("params", [])],
-                        "loc": node.get("loc"),
-                        "docstring": ""
+                        "docstring": "",  # To be filled by the model
+                        "args": [param["name"] for param in node.get("params", [])],
+                        "returns": {"type": "Any"},
+                        "decorators": []  # Esprima doesn't support decorators natively
                     }
                     if parent_class:
                         parent_class["methods"].append(func_info)
@@ -210,18 +222,20 @@ def extract_js_ts_structure(file_content: str, language: str) -> dict:
                 elif node.get("type") == "ClassDeclaration":
                     class_info = {
                         "name": node["id"]["name"],
-                        "methods": [],
-                        "loc": node.get("loc"),
-                        "docstring": ""
+                        "docstring": "",  # To be filled by the model
+                        "bases": [base.get("name", "Unknown") for base in node.get("superClass", {}).get("body", [])] if node.get("superClass") else [],
+                        "decorators": [],  # Esprima doesn't support decorators natively
+                        "methods": []
                     }
                     classes.append(class_info)
                     traverse(node.get("body", {}), parent_class=class_info)
                 elif node.get("type") == "MethodDefinition":
                     func_info = {
                         "name": node["key"]["name"],
-                        "params": [p.get("name", "param") for p in node.get("value", {}).get("params", [])],
-                        "loc": node.get("loc"),
-                        "docstring": ""
+                        "docstring": "",  # To be filled by the model
+                        "args": [param["name"] for param in node.get("value", {}).get("params", [])],
+                        "returns": {"type": "Any"},
+                        "decorators": []  # Esprima doesn't support decorators natively
                     }
                     if parent_class:
                         parent_class["methods"].append(func_info)
@@ -239,7 +253,7 @@ def extract_js_ts_structure(file_content: str, language: str) -> dict:
         traverse(tree)
 
         # Remove the temporary file
-        os.remove('temp_code.js')
+        os.remove(temp_filename)
 
         return {
             "language": language,
@@ -275,19 +289,28 @@ def insert_js_ts_docstrings(docstrings: dict) -> str:
         for item_type in ['functions', 'classes']:
             for item in docstrings.get(item_type, []):
                 docstring = item['docstring']
-                if docstring and item.get('loc'):
-                    position = get_position(item['loc'])
-                    formatted_comment = format_jsdoc_comment(docstring)
-                    inserts.append((position, formatted_comment))
-                    if item_type == 'classes':
-                        for method in item.get('methods', []):
-                            docstring = method['docstring']
-                            if docstring and method.get('loc'):
-                                position = get_position(method['loc'])
-                                formatted_comment = format_jsdoc_comment(docstring)
-                                inserts.append((position, formatted_comment))
+                if docstring and item.get('name'):
+                    # Find the location based on the function or class name
+                    # This simplistic approach assumes unique names
+                    pattern = re.escape(item['name'])
+                    match = re.search(r'\b' + pattern + r'\b', source_code)
+                    if match:
+                        position = match.start()
+                        formatted_comment = format_jsdoc_comment(docstring)
+                        inserts.append((position, formatted_comment))
 
-        # Sort inserts by position descending to avoid position shifts
+                        if item_type == 'classes':
+                            for method in item.get('methods', []):
+                                method_docstring = method['docstring']
+                                if method_docstring and method.get('name'):
+                                    method_pattern = re.escape(method['name'])
+                                    method_match = re.search(r'\b' + method_pattern + r'\b', source_code)
+                                    if method_match:
+                                        method_position = method_match.start()
+                                        method_comment = format_jsdoc_comment(method_docstring)
+                                        inserts.append((method_position, method_comment))
+
+        # Sort inserts by position descending to avoid shifting positions
         inserts.sort(key=lambda x: x[0], reverse=True)
         code = source_code
         for position, comment in inserts:
@@ -382,8 +405,8 @@ def extract_css_structure(file_content: str) -> dict:
                 content = tinycss2.serialize(rule.content).strip()
                 rule_info = {
                     'selector': prelude,
-                    'declarations': content,
-                    'docstring': ''
+                    'docstring': '',  # To be filled by the model
+                    'declarations': content
                 }
                 style_rules.append(rule_info)
 
@@ -478,47 +501,27 @@ async def process_file(
 
         prompt = generate_documentation_prompt(code_structure)
 
-        documentation = await fetch_documentation(session, prompt, semaphore, model_name)
+        # Fetch documentation using the updated fetch_documentation function
+        documentation = await fetch_documentation(
+            session,
+            prompt,
+            semaphore,
+            model_name,
+            function_schema
+        )
         if not documentation:
             logger.error(f"Failed to generate documentation for '{file_path}'")
             return
 
-        # Extract JSON content from the response
-        json_content = extract_json_from_response(documentation)
-        if not json_content:
-            logger.error(f"Could not extract JSON content from the response for '{file_path}'")
-            return
-
-        # Attempt to parse the JSON content
-        try:
-            updated_code_structure = json.loads(json_content)
-            if language in ['javascript', 'typescript']:
-                updated_code_structure['tree'] = code_structure['tree']
-                updated_code_structure['source_code'] = code_structure['source_code']
-        except json.JSONDecodeError as e:
-            # Try using json5 as a fallback
-            try:
-                import json5
-                updated_code_structure = json5.loads(json_content)
-                if language in ['javascript', 'typescript']:
-                    updated_code_structure['tree'] = code_structure['tree']
-                    updated_code_structure['source_code'] = code_structure['source_code']
-            except (ImportError, json5.JSONDecodeError):
-                logger.error(f"Failed to parse documentation JSON for '{file_path}': {e}")
-                return
-
-        if not updated_code_structure:
-            logger.error(f"Could not update code structure for '{file_path}'. Skipping file.")
-            return
-
+        # Proceed with inserting the documentation into the code
         if language == 'python':
-            new_content = insert_python_docstrings(content, updated_code_structure)
+            new_content = insert_python_docstrings(content, documentation)
         elif language in ['javascript', 'typescript']:
-            new_content = insert_js_ts_docstrings(updated_code_structure)
+            new_content = insert_js_ts_docstrings(documentation)
         elif language == 'html':
-            new_content = insert_html_comments(content, updated_code_structure)
+            new_content = insert_html_comments(content, documentation)
         elif language == 'css':
-            new_content = insert_css_comments(content, updated_code_structure)
+            new_content = insert_css_comments(content, documentation)
         else:
             new_content = content
 
