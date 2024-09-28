@@ -30,6 +30,102 @@ LANGUAGE_MAPPING = {
     '.css': 'css',
 }
 
+function_schema = {
+    "name": "generate_documentation",
+    "description": "Generates documentation for code structures.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "functions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "docstring": {"type": "string"},
+                        "args": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "type": {"type": "string"}
+                                },
+                                "required": ["name", "type"]
+                            }
+                        },
+                        "returns": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string"}
+                            },
+                            "required": ["type"]
+                        },
+                        "decorators": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        }
+                    },
+                    "required": ["name", "docstring", "args", "returns", "decorators"]
+                }
+            },
+            "classes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "docstring": {"type": "string"},
+                        "bases": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "decorators": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "methods": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "docstring": {"type": "string"},
+                                    "args": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {"type": "string"},
+                                                "type": {"type": "string"}
+                                            },
+                                            "required": ["name", "type"]
+                                        }
+                                    },
+                                    "returns": {
+                                        "type": "object",
+                                        "properties": {
+                                            "type": {"type": "string"}
+                                        },
+                                        "required": ["type"]
+                                    },
+                                    "decorators": {
+                                        "type": "array",
+                                        "items": {"type": "string"}
+                                    }
+                                },
+                                "required": ["name", "docstring", "args", "returns", "decorators"]
+                            }
+                        }
+                    },
+                    "required": ["name", "docstring", "bases", "decorators", "methods"]
+                }
+            }
+        },
+        "required": ["functions", "classes"]
+    }
+}
+
 def get_language(ext: str) -> str:
     """Determines the programming language based on file extension."""
     return LANGUAGE_MAPPING.get(ext.lower(), 'plaintext')
