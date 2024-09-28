@@ -194,16 +194,13 @@ def is_valid_python_code(code: str) -> bool:
         return False
 
 
-# JavaScript/TypeScript handlers
-import typescript as ts  # Assuming TypeScript Compiler API is available
-
-logger = logging.getLogger(__name__)
-
-async def extract_js_ts_structure(file_path: str, session: aiohttp.ClientSession, semaphore: asyncio.Semaphore, model_name: str, output_lock: asyncio.Lock) -> dict:
-    """Extracts the structure of JavaScript/TypeScript code using TypeScript compiler or falls back to raw source with AI summary."""
+async def extract_js_ts_structure(file_path: str, file_content: str) -> dict:
+    """Extracts the structure of JavaScript/TypeScript code using TypeScript compiler."""
     try:
         # Use TypeScript compiler API to parse the TypeScript or JavaScript code
-        source_file = typescript.createSourceFile(file_path, file_content, typescript.ScriptTarget.Latest, True)
+        source_file = ts.createSourceFile(
+            file_path, file_content, ts.ScriptTarget.Latest, True
+        )
 
         functions = []
         classes = []
@@ -211,11 +208,11 @@ async def extract_js_ts_structure(file_path: str, session: aiohttp.ClientSession
         def visit(node, parent_class=None):
             node_type = node.kind
 
-            if node_type == typescript.SyntaxKind.FunctionDeclaration:
+            if node_type == ts.SyntaxKind.FunctionDeclaration:
                 func_info = {
-                    "name": node.name.getText() if node.name else "anonymous",
+                    "name": node.name.text if node.name else "anonymous",
                     "docstring": "",  # To be filled by the model
-                    "args": [param.getText() for param in node.parameters],
+                    "args": [param.text for param in node.parameters],
                     "returns": {"type": "Any"},
                     "decorators": [],  # TypeScript doesn't support decorators natively
                 }
@@ -223,22 +220,26 @@ async def extract_js_ts_structure(file_path: str, session: aiohttp.ClientSession
                     parent_class["methods"].append(func_info)
                 else:
                     functions.append(func_info)
-            elif node_type == typescript.SyntaxKind.ClassDeclaration:
+            elif node_type == ts.SyntaxKind.ClassDeclaration:
                 class_info = {
-                    "name": node.name.getText(),
+                    "name": node.name.text,
                     "docstring": "",  # To be filled by the model
-                    "bases": [node.heritageClauses.getText()] if node.heritageClauses else [],
+                    "bases": [
+                        heritage.getText() for heritage in node.heritageClauses
+                    ]
+                    if node.heritageClauses
+                    else [],
                     "decorators": [],  # TypeScript doesn't support decorators natively
                     "methods": [],
                 }
                 classes.append(class_info)
                 for member in node.members:
                     visit(member, parent_class=class_info)
-            elif node_type == typescript.SyntaxKind.MethodDeclaration:
+            elif node_type == ts.SyntaxKind.MethodDeclaration:
                 func_info = {
-                    "name": node.name.getText(),
+                    "name": node.name.text,
                     "docstring": "",  # To be filled by the model
-                    "args": [param.getText() for param in node.parameters],
+                    "args": [param.text for param in node.parameters],
                     "returns": {"type": "Any"},
                     "decorators": [],  # TypeScript doesn't support decorators natively
                 }
@@ -256,30 +257,15 @@ async def extract_js_ts_structure(file_path: str, session: aiohttp.ClientSession
         }
 
     except Exception as e:
-        # Log parsing failure
-        logger.warning(f"Failed to extract JS/TS structure from '{file_path}'. Fallback to raw source with AI summary.")
+        logger.error(f"Error during JS/TS structure extraction: {e}")
+        return {
+            "language": "typescript",
+            "functions": [],
+            "classes": [],
+            "source_code": file_content,
+            "docstring": "",
+        }
         
-        # If parsing fails, fetch the AI summary and print raw content
-        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
-            raw_content = await f.read()
-        
-        # Generate AI summary
-        summary_prompt = f"Please summarize the following code:\n\n{raw_content[:1000]}..."  # Limit the size for the summary request
-        summary = await fetch_summary(session, summary_prompt, semaphore, model_name)
-
-        # Write raw content and summary to output.md
-        async with output_lock:
-            async with aiofiles.open('output.md', 'a', encoding='utf-8') as f:
-                header = f"# File: {file_path}\n\n"
-                summary_section = f"## Summary\n\n{summary}\n\n"
-                code_block = f"```typescript\n{raw_content}\n```\n\n"
-                await f.write(header)
-                await f.write(summary_section)
-                await f.write(code_block)
-                
-        return {}
-
-
 
 def insert_js_ts_docstrings(docstrings: dict) -> str:
     """Inserts JSDoc comments into JavaScript/TypeScript code."""
@@ -487,7 +473,6 @@ def insert_css_comments(file_content: str, docstrings: dict) -> str:
         logger.error(f"Error inserting comments into CSS code: {e}")
         return file_content
 
-
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -519,7 +504,7 @@ async def process_file(
         if language == "python":
             code_structure = extract_python_structure(content)
         elif language in ["javascript", "typescript"]:
-            code_structure = extract_js_ts_structure(content, language)
+            code_structure = await extract_js_ts_structure(file_path, content)
         elif language == "html":
             code_structure = extract_html_structure(content)
         elif language == "css":
@@ -611,7 +596,7 @@ async def process_file(
 
     except Exception as e:
         logger.error(f"Unexpected error processing '{file_path}': {e}")
-
+        
 # Process all files
 async def process_all_files(
     file_paths: List[str],
