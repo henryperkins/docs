@@ -316,7 +316,7 @@ async def fetch_summary(session: aiohttp.ClientSession, prompt: str, semaphore: 
     payload = {
         "model": model_name,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 500,  # Adjust depending on the length of the summary
+        "max_tokens": 1000,  # Adjust depending on the length of the summary
         "temperature": 0.2
     }
     
