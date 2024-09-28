@@ -1,0 +1,5 @@
+{
+  "excluded_dirs": ["dir_to_exclude1", "dir_to_exclude2"],
+  "excluded_files": ["file_to_exclude1", "file_to_exclude2"],
+  "skip_types": [".ext_to_skip1", ".ext_to_skip2"]
+}
