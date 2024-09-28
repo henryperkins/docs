@@ -8,7 +8,7 @@ import subprocess
 import ast
 import astor
 import tinycss2
-import re  # Ensure re is imported
+import re
 from bs4 import BeautifulSoup, Comment
 from utils import (
     is_valid_extension,
@@ -16,7 +16,7 @@ from utils import (
     generate_documentation_prompt,
     fetch_documentation,
     is_binary,
-    function_schema,  # Import the function schema
+    function_schema,
 )
 import aiofiles
 import aiohttp
@@ -108,7 +108,7 @@ def extract_python_structure(file_content: str) -> dict:
         return {}
 
 def insert_python_docstrings(file_content: str, docstrings: dict) -> str:
-    """Inserts docstrings into Python code."""
+    """Inserts docstrings into Python code based on the provided documentation."""
     try:
         tree = ast.parse(file_content)
         parent_map = {}
@@ -422,7 +422,7 @@ def extract_css_structure(file_content: str) -> dict:
 def insert_css_comments(file_content: str, docstrings: dict) -> str:
     """Inserts comments into CSS code."""
     try:
-        rules = tinycss2.parse_stylesheet(file_content)
+        rules = tinycss2.parse_stylesheet(file_content, skip_whitespace=True)
         style_rules = docstrings.get('rules', [])
         rule_map = {}
         for rule in style_rules:
@@ -444,8 +444,23 @@ def insert_css_comments(file_content: str, docstrings: dict) -> str:
                     if docstring:
                         modified_content += f"/* {docstring} */\n"
                     inserted_selectors.add(selector)
-                modified_content += tinycss2.serialize(rule).strip() + '\n'
+                # Serialize the rule content
+                content = tinycss2.serialize(rule.content).strip()
+                modified_content += f"{selector} {{\n{content}\n}}\n"
+            elif rule.type == 'comment':
+                # Serialize comments directly
+                modified_content += f"/*{rule.value}*/\n"
+            elif rule.type == 'at-rule':
+                # Handle at-rules like @media, @keyframes
+                at_rule_name = rule.lower_at_keyword
+                at_rule_prelude = tinycss2.serialize(rule.prelude).strip()
+                if rule.content:
+                    content = tinycss2.serialize(rule.content).strip()
+                    modified_content += f"@{at_rule_name} {at_rule_prelude} {{\n{content}\n}}\n"
+                else:
+                    modified_content += f"@{at_rule_name} {at_rule_prelude};\n"
             else:
+                # For other rule types, serialize them directly
                 modified_content += tinycss2.serialize(rule).strip() + '\n'
 
         return modified_content
@@ -454,7 +469,6 @@ def insert_css_comments(file_content: str, docstrings: dict) -> str:
         logger.error(f"Error inserting comments into CSS code: {e}")
         return file_content
 
-# Process a single file
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -464,7 +478,7 @@ async def process_file(
     output_lock: asyncio.Lock,
     model_name: str
 ) -> None:
-    """Processes a single file to generate and insert documentation."""
+    """Processes a single file to generate and insert documentation, summaries, and change lists."""
     try:
         _, ext = os.path.splitext(file_path)
         if not is_valid_extension(ext, skip_types) or is_binary(file_path):
@@ -513,6 +527,10 @@ async def process_file(
             logger.error(f"Failed to generate documentation for '{file_path}'")
             return
 
+        # Extract the summary and changes
+        summary = documentation.get('summary', '')
+        changes = documentation.get('changes', [])
+
         # Proceed with inserting the documentation into the code
         if language == 'python':
             new_content = insert_python_docstrings(content, documentation)
@@ -553,8 +571,12 @@ async def process_file(
             async with output_lock:
                 async with aiofiles.open(output_file, 'a', encoding='utf-8') as f:
                     header = f"# File: {file_path}\n\n"
+                    summary_section = f"## Summary\n\n{summary}\n\n"
+                    changes_section = "## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
                     code_block = f"```{language}\n{new_content}\n```\n\n"
                     await f.write(header)
+                    await f.write(summary_section)
+                    await f.write(changes_section)
                     await f.write(code_block)
             logger.info(f"Successfully processed and documented '{file_path}'")
         except Exception as e:

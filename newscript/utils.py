@@ -101,15 +101,27 @@ def extract_json_from_response(response: str) -> Optional[str]:
 
     return None
 
-# Function Schema Definition
+
 function_schema = {
     "name": "generate_documentation",
-    "description": "Generates documentation for code structures.",
+    "description": "Generates documentation, summaries, and lists of changes for code structures.",
     "parameters": {
         "type": "object",
         "properties": {
+            "summary": {
+                "type": "string",
+                "description": "A concise summary of the changes made to the code documentation."
+            },
+            "changes": {
+                "type": "array",
+                "description": "A list detailing specific changes made to the code documentation.",
+                "items": {
+                    "type": "string"
+                }
+            },
             "functions": {
                 "type": "array",
+                "description": "A list of functions with their respective documentation.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -117,6 +129,7 @@ function_schema = {
                         "docstring": {"type": "string"},
                         "args": {
                             "type": "array",
+                            "description": "Arguments of the function.",
                             "items": {
                                 "type": "object",
                                 "properties": {
@@ -128,6 +141,7 @@ function_schema = {
                         },
                         "returns": {
                             "type": "object",
+                            "description": "Return type of the function.",
                             "properties": {
                                 "type": {"type": "string"}
                             },
@@ -135,6 +149,7 @@ function_schema = {
                         },
                         "decorators": {
                             "type": "array",
+                            "description": "Decorators applied to the function.",
                             "items": {"type": "string"}
                         }
                     },
@@ -143,6 +158,7 @@ function_schema = {
             },
             "classes": {
                 "type": "array",
+                "description": "A list of classes with their respective documentation.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -150,14 +166,17 @@ function_schema = {
                         "docstring": {"type": "string"},
                         "bases": {
                             "type": "array",
+                            "description": "Base classes of the class.",
                             "items": {"type": "string"}
                         },
                         "decorators": {
                             "type": "array",
+                            "description": "Decorators applied to the class.",
                             "items": {"type": "string"}
                         },
                         "methods": {
                             "type": "array",
+                            "description": "Methods within the class.",
                             "items": {
                                 "type": "object",
                                 "properties": {
@@ -165,6 +184,7 @@ function_schema = {
                                     "docstring": {"type": "string"},
                                     "args": {
                                         "type": "array",
+                                        "description": "Arguments of the method.",
                                         "items": {
                                             "type": "object",
                                             "properties": {
@@ -176,6 +196,7 @@ function_schema = {
                                     },
                                     "returns": {
                                         "type": "object",
+                                        "description": "Return type of the method.",
                                         "properties": {
                                             "type": {"type": "string"}
                                         },
@@ -183,6 +204,7 @@ function_schema = {
                                     },
                                     "decorators": {
                                         "type": "array",
+                                        "description": "Decorators applied to the method.",
                                         "items": {"type": "string"}
                                     }
                                 },
@@ -194,7 +216,7 @@ function_schema = {
                 }
             }
         },
-        "required": ["functions", "classes"]
+        "required": ["summary", "changes", "functions", "classes"]
     }
 }
 
@@ -206,7 +228,7 @@ async def fetch_documentation(
     function_schema: dict,
     retry: int = 3
 ) -> Optional[dict]:
-    """Fetches generated documentation from the OpenAI API using function calling."""
+    """Fetches generated documentation, summaries, and change lists from the OpenAI API using function calling."""
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
         sys.exit(1)
@@ -220,7 +242,7 @@ async def fetch_documentation(
         "messages": [{"role": "user", "content": prompt}],
         "functions": [function_schema],
         "function_call": {"name": "generate_documentation"},
-        "max_tokens": 1500,
+        "max_tokens": 3000,  # Increased token limit for additional data
         "temperature": 0.2
     }
     for attempt in range(1, retry + 1):
@@ -243,7 +265,7 @@ async def fetch_documentation(
                                 if arguments:
                                     try:
                                         documentation = json.loads(arguments)
-                                        logger.info("Generated documentation.")
+                                        logger.info("Generated documentation with summary and changes.")
                                         return documentation
                                     except json.JSONDecodeError as e:
                                         logger.error(f"JSON decoding failed: {e}")
@@ -289,7 +311,7 @@ def generate_documentation_prompt(
     project_info: str = None,
     style_guidelines: str = None
 ) -> str:
-    """Generates a prompt for the OpenAI API to create documentation."""
+    """Generates a prompt for the OpenAI API to create documentation, summaries, and change lists."""
     language = code_structure.get('language', 'code')
     json_structure = json.dumps(code_structure, indent=2)
 
@@ -309,11 +331,17 @@ def generate_documentation_prompt(
 
     prompt_parts.append(
         f"""
-Given the following {language} code structure in JSON format, generate detailed docstrings or comments for each function, method, and class. Include descriptions of all parameters, return types, and any relevant details. Preserve and enhance existing documentation where applicable.
+Given the following {language} code structure in JSON format, perform the following tasks:
+
+1. **Generate detailed docstrings or comments** for each function, method, and class. Include descriptions of all parameters, return types, and any relevant details. Preserve and enhance existing documentation where applicable.
+
+2. **Provide a concise summary** of the changes or additions you made to the code documentation.
+
+3. **List the specific changes** made to each part of the code (e.g., added docstrings to functions, updated class descriptions).
 
 **Instructions**:
-- Output the documentation by invoking the `generate_documentation` function.
-- The output should conform to the following JSON schema.
+- Output the results by invoking the `generate_documentation` function.
+- The output should conform to the provided JSON schema.
 - Do not include any additional text or explanations outside the function call.
 
 Code Structure:
