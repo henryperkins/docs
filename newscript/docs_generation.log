@@ -2367,3 +2367,322 @@
 2024-09-28 17:30:55,196:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css'
 2024-09-28 17:30:55,197:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css'
 2024-09-28 17:30:55,200:INFO:Documentation generation completed successfully.
+2024-09-28 17:52:19,444:ERROR:OPENAI_API_KEY not set. Check environment or .env file.
+2024-09-28 17:53:10,559:INFO:Loaded config from 'config.json'.
+2024-09-28 17:53:10,560:INFO:Collected 90 files from '/home/henry/chatapp-vercel'.
+2024-09-28 17:53:10,560:INFO:Starting documentation generation for 90 files.
+2024-09-28 17:53:10,596:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,596:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/next-env.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,597:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,597:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/custom.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,597:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,597:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/next.config.js'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,598:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,598:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/jest.config.js'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,598:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,598:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/list_conversations.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,598:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,598:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/start_conversation.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,598:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/send_message.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,599:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/protected_route.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,599:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/reset_conversation.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,599:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/upload_file.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,599:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/add_few_shot_example.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,599:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/register.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,599:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/load_conversation/[conversation_id].ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,599:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,599:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/middleware/cors.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,600:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,600:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/middleware/errorHandler.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,600:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,600:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/middleware/auth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,600:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,600:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/search_conversations.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,600:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,600:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/mongodb.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,600:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,600:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/apiHandler.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,600:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,600:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/azure.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,600:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,601:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/login.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,601:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,601:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/get_config.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,601:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,601:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/logout.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,602:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,602:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/types/index.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,602:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,602:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/auth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,602:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,602:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,602:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,602:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/pusher.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,602:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,602:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/config.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,602:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,602:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/LoginForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,604:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,604:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/pusherServer.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,606:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,606:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/types/models.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,606:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,606:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/index.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,608:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,608:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/_document.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,608:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,608:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/Header.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,608:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,608:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,608:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,608:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,608:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,608:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/_app.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,609:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,609:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,609:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,609:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/next.config.js'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,609:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,609:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,615:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,615:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/next-env.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,615:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,615:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/contexts/ConversationContext.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,615:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,615:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/config.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,616:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,616:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/pusher.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,617:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,617:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/fetchWithAuth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,617:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,617:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/types/index.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,625:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,625:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/types.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,627:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,627:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/LogoutButton.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,627:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,627:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/conversation.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,627:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,627:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/Chat.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,627:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,627:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:10,627:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 17:53:10,627:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/auth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 17:53:11,420:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:11,421:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/globals.css.bak'
+2024-09-28 17:53:11,423:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/globals.css'
+2024-09-28 17:53:11,424:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/globals.css'
+2024-09-28 17:53:14,417:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:14,419:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.css.bak'
+2024-09-28 17:53:14,421:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.css'
+2024-09-28 17:53:14,422:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.css'
+2024-09-28 17:53:19,148:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:19,148:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/LogoutButton.css.bak'
+2024-09-28 17:53:19,150:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/LogoutButton.css'
+2024-09-28 17:53:19,151:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/LogoutButton.css'
+2024-09-28 17:53:19,359:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:19,361:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.css.bak'
+2024-09-28 17:53:19,362:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.css'
+2024-09-28 17:53:19,363:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.css'
+2024-09-28 17:53:19,661:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:19,662:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/login.css.bak'
+2024-09-28 17:53:19,664:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/login.css'
+2024-09-28 17:53:19,665:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/login.css'
+2024-09-28 17:53:20,269:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:20,271:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.css.bak'
+2024-09-28 17:53:20,273:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.css'
+2024-09-28 17:53:20,274:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:20,275:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.css.bak'
+2024-09-28 17:53:20,275:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.css'
+2024-09-28 17:53:20,277:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.css'
+2024-09-28 17:53:20,278:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.css'
+2024-09-28 17:53:26,205:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:26,206:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.css.bak'
+2024-09-28 17:53:26,207:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.css'
+2024-09-28 17:53:26,209:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.css'
+2024-09-28 17:53:26,986:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:26,986:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/Header.css.bak'
+2024-09-28 17:53:26,987:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/Header.css'
+2024-09-28 17:53:26,988:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/Header.css'
+2024-09-28 17:53:27,999:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:28,001:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/register.css.bak'
+2024-09-28 17:53:28,002:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/register.css'
+2024-09-28 17:53:28,003:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/register.css'
+2024-09-28 17:53:35,446:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:35,448:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.css.bak'
+2024-09-28 17:53:35,449:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.css'
+2024-09-28 17:53:35,450:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.css'
+2024-09-28 17:53:43,314:INFO:Generated documentation with summary and changes.
+2024-09-28 17:53:43,320:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/Chat.css.bak'
+2024-09-28 17:53:43,321:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/Chat.css'
+2024-09-28 17:53:43,322:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/Chat.css'
+2024-09-28 17:54:01,414:INFO:Generated documentation with summary and changes.
+2024-09-28 17:54:01,418:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css.bak'
+2024-09-28 17:54:01,419:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css'
+2024-09-28 17:54:01,420:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css'
+2024-09-28 17:54:01,422:INFO:Documentation generation completed successfully.
+2024-09-28 18:03:37,899:INFO:Loaded config from 'config.json'.
+2024-09-28 18:03:37,900:INFO:Collected 90 files from '/home/henry/chatapp-vercel'.
+2024-09-28 18:03:37,900:INFO:Starting documentation generation for 90 files.
+2024-09-28 18:03:37,935:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,936:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/jest.config.js'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,936:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,936:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/next-env.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,936:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,937:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/custom.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,937:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,937:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/next.config.js'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,937:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,937:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/list_conversations.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,937:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,937:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/logout.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,937:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,937:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/get_config.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,937:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,937:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/protected_route.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,937:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,938:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/reset_conversation.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,938:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,938:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/search_conversations.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,938:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,938:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/add_few_shot_example.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,938:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,938:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/register.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,938:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,939:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/pusher.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,939:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,939:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/conversation.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,939:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,939:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/apiHandler.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,939:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,939:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/login.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,939:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,939:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/pusherServer.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,939:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,939:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/azure.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,940:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,940:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/mongodb.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,940:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,940:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/send_message.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,940:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,940:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/types/index.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,940:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,940:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/middleware/auth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,940:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,940:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/start_conversation.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,941:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,941:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/next-env.d.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,941:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,941:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/middleware/errorHandler.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,941:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,941:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/utils/auth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,941:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,941:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/index.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,941:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,941:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,941:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,941:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,941:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,941:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/config.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,942:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,942:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/upload_file.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,942:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,942:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/next.config.js'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,942:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,942:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/_app.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,944:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,944:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/pages/api/load_conversation/[conversation_id].ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,947:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,947:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,948:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,948:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,948:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,948:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/middleware/cors.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,953:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,953:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/config.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,953:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,953:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/contexts/ConversationContext.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,961:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,961:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/LogoutButton.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,962:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,962:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,962:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,963:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/backend/types/models.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,963:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,963:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/types.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,963:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,963:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/pages/_document.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,963:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,963:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/LoginForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,963:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,963:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,963:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,963:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/Chat.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,966:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,966:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/fetchWithAuth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,966:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,966:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/auth.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,966:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,966:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/types/index.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,966:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,967:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/utils/pusher.ts'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:37,968:ERROR:Error during JS/TS structure extraction: module 'typescript' has no attribute 'createSourceFile'
+2024-09-28 18:03:37,968:WARNING:Failed to extract JS/TS structure from '/home/henry/chatapp-vercel/apps/frontend/src/components/Header.tsx'. Likely parsing errors. Skipping documentation generation.
+2024-09-28 18:03:38,994:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:38,995:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/LogoutButton.css.bak'
+2024-09-28 18:03:38,996:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/LogoutButton.css'
+2024-09-28 18:03:38,997:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/LogoutButton.css'
+2024-09-28 18:03:40,099:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:40,100:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/globals.css.bak'
+2024-09-28 18:03:40,101:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/globals.css'
+2024-09-28 18:03:40,102:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/globals.css'
+2024-09-28 18:03:41,177:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:41,177:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/Header.css.bak'
+2024-09-28 18:03:41,179:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/Header.css'
+2024-09-28 18:03:41,180:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/Header.css'
+2024-09-28 18:03:48,082:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:48,085:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.css.bak'
+2024-09-28 18:03:48,087:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.css'
+2024-09-28 18:03:48,088:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/pages/register.css'
+2024-09-28 18:03:48,919:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:48,921:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.css.bak'
+2024-09-28 18:03:48,922:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.css'
+2024-09-28 18:03:48,924:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/pages/login.css'
+2024-09-28 18:03:49,602:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:49,604:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.css.bak'
+2024-09-28 18:03:49,605:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.css'
+2024-09-28 18:03:49,606:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/FewShotForm.css'
+2024-09-28 18:03:50,385:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:50,386:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.css.bak'
+2024-09-28 18:03:50,388:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.css'
+2024-09-28 18:03:50,389:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/ConversationList.css'
+2024-09-28 18:03:56,779:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:56,781:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/register.css.bak'
+2024-09-28 18:03:56,782:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/register.css'
+2024-09-28 18:03:56,783:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/register.css'
+2024-09-28 18:03:57,604:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:57,605:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.css.bak'
+2024-09-28 18:03:57,606:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.css'
+2024-09-28 18:03:57,607:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/FileUploadForm.css'
+2024-09-28 18:03:58,190:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:58,194:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css.bak'
+2024-09-28 18:03:58,195:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css'
+2024-09-28 18:03:58,196:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/global.css'
+2024-09-28 18:03:58,748:INFO:Generated documentation with summary and changes.
+2024-09-28 18:03:58,749:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.css.bak'
+2024-09-28 18:03:58,750:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.css'
+2024-09-28 18:03:58,751:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/components/SearchForm.css'
+2024-09-28 18:04:04,004:INFO:Generated documentation with summary and changes.
+2024-09-28 18:04:04,006:INFO:Backup created at '/home/henry/chatapp-vercel/apps/frontend/src/styles/login.css.bak'
+2024-09-28 18:04:04,007:INFO:Inserted comments into '/home/henry/chatapp-vercel/apps/frontend/src/styles/login.css'
+2024-09-28 18:04:04,008:INFO:Successfully processed and documented '/home/henry/chatapp-vercel/apps/frontend/src/styles/login.css'
+2024-09-28 18:04:10,815:ERROR:JSON decoding failed: Unterminated string starting at: line 1 column 12044 (char 12043)
+2024-09-28 18:04:10,815:ERROR:Failed to generate documentation for '/home/henry/chatapp-vercel/apps/frontend/src/components/Chat.css'
+2024-09-28 18:04:10,818:INFO:Documentation generation completed successfully.

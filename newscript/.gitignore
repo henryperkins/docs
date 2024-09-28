@@ -2,4 +2,8 @@ modules
 node_modules
 .env
 package-lock.json
-
+docs_generation.log
+output.md
+output6.md
+output7.md
+temp_code.js
