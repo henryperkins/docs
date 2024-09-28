@@ -2,7 +2,6 @@ import os
 import sys
 import json
 import logging
-import esprima  # Changed from subprocess to esprima
 import ast
 import astor
 import tinycss2
@@ -19,12 +18,11 @@ from utils import (
 import aiofiles
 import aiohttp
 import asyncio
-from typing import Set, List, Optional
+from typing import Set, List, Optional, Dict
 from tqdm.asyncio import tqdm
-import typescript as ts
+import subprocess
 
 logger = logging.getLogger(__name__)
-
 
 # Python handlers
 def extract_python_structure(file_content: str) -> dict:
@@ -103,7 +101,8 @@ def extract_python_structure(file_content: str) -> dict:
 
 
 def insert_python_docstrings(file_content: str, docstrings: dict) -> str:
-    """Inserts docstrings into Python code based on the provided documentation."""
+    """Inserts docstrings into Python code, preventing duplicates."""
+
     try:
         tree = ast.parse(file_content)
         parent_map = {}
@@ -132,54 +131,30 @@ def insert_python_docstrings(file_content: str, docstrings: dict) -> str:
                 else:
                     docstring = func_doc_map.get(node.name)
                 if docstring:
-                    if hasattr(ast, "Constant"):  # Python 3.8+
-                        docstring_node = ast.Expr(value=ast.Constant(value=docstring))
-                    else:
-                        docstring_node = ast.Expr(value=ast.Str(s=docstring))
-                    if not (
-                        node.body
-                        and isinstance(node.body[0], ast.Expr)
-                        and isinstance(
-                            node.body[0].value, (ast.Str, ast.Constant)
-                        )
-                    ):
+                    if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, (ast.Str, ast.Constant))):
+                        if hasattr(ast, "Constant"):  # Python 3.8+
+                            docstring_node = ast.Expr(value=ast.Constant(value=docstring))
+                        else:
+                            docstring_node = ast.Expr(value=ast.Str(s=docstring))
                         node.body.insert(0, docstring_node)
-                    else:
-                        node.body[0] = docstring_node
                 return node
 
             def visit_ClassDef(self, node):
                 self.generic_visit(node)
                 docstring = class_doc_map.get(node.name)
                 if docstring:
-                    if hasattr(ast, "Constant"):  # Python 3.8+
-                        docstring_node = ast.Expr(value=ast.Constant(value=docstring))
-                    else:
-                        docstring_node = ast.Expr(value=ast.Str(s=docstring))
-                    if not (
-                        node.body
-                        and isinstance(node.body[0], ast.Expr)
-                        and isinstance(
-                            node.body[0].value, (ast.Str, ast.Constant)
-                        )
-                    ):
+                    if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, (ast.Str, ast.Constant))):
+                        if hasattr(ast, "Constant"):
+                            docstring_node = ast.Expr(value=ast.Constant(value=docstring))
+                        else:
+                            docstring_node = ast.Expr(value=ast.Str(s=docstring))
                         node.body.insert(0, docstring_node)
-                    else:
-                        node.body[0] = docstring_node
                 return node
+
 
         inserter = DocstringInserter()
         new_tree = inserter.visit(tree)
         new_code = astor.to_source(new_tree)
-
-        try:
-            ast.parse(new_code)
-        except SyntaxError as e:
-            logger.error(f"Syntax error in modified Python code: {e}")
-            return file_content
-        finally:
-            logger.debug("Finished parsing new code.")
-
         return new_code
     except Exception as e:
         logger.error(f"Error inserting docstrings into Python code: {e}")
@@ -196,141 +171,63 @@ def is_valid_python_code(code: str) -> bool:
 
 
 async def extract_js_ts_structure(file_path: str, file_content: str) -> dict:
-    """Extracts the structure of JavaScript/TypeScript code using TypeScript compiler."""
+    """Extracts the structure of JavaScript/TypeScript code using a Node.js subprocess."""
     try:
-        # Use TypeScript compiler API to parse the TypeScript or JavaScript code
-        source_file = ts.createSourceFile(
-            file_path, file_content, ts.ScriptTarget.Latest, True
+        process = subprocess.Popen(
+            ["node", "path/to/extract_structure.js", file_path], # Replace with the actual path
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
+        stdout, stderr = process.communicate(input=file_content)
 
-        functions = []
-        classes = []
+        if stderr:
+            logger.error(f"Error from Node.js script: {stderr}")
+            return {}
 
-        def visit(node, parent_class=None):
-            node_type = node.kind
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decoding error: {e}")
+            return {}
 
-            if node_type == ts.SyntaxKind.FunctionDeclaration:
-                func_info = {
-                    "name": node.name.text if node.name else "anonymous",
-                    "docstring": "",  # To be filled by the model
-                    "args": [param.text for param in node.parameters],
-                    "returns": {"type": "Any"},
-                    "decorators": [],  # TypeScript doesn't support decorators natively
-                }
-                if parent_class:
-                    parent_class["methods"].append(func_info)
-                else:
-                    functions.append(func_info)
-            elif node_type == ts.SyntaxKind.ClassDeclaration:
-                class_info = {
-                    "name": node.name.text,
-                    "docstring": "",  # To be filled by the model
-                    "bases": [
-                        heritage.getText() for heritage in node.heritageClauses
-                    ]
-                    if node.heritageClauses
-                    else [],
-                    "decorators": [],  # TypeScript doesn't support decorators natively
-                    "methods": [],
-                }
-                classes.append(class_info)
-                for member in node.members:
-                    visit(member, parent_class=class_info)
-            elif node_type == ts.SyntaxKind.MethodDeclaration:
-                func_info = {
-                    "name": node.name.text,
-                    "docstring": "",  # To be filled by the model
-                    "args": [param.text for param in node.parameters],
-                    "returns": {"type": "Any"},
-                    "decorators": [],  # TypeScript doesn't support decorators natively
-                }
-                if parent_class:
-                    parent_class["methods"].append(func_info)
-
-        for statement in source_file.statements:
-            visit(statement)
-
-        return {
-            "language": "typescript",
-            "functions": functions,
-            "classes": classes,
-            "source_code": file_content,
-        }
-
+    except FileNotFoundError:
+        logger.error("Node.js or extract_structure.js not found. Make sure Node.js is installed and the script path is correct.")
+        return {}
     except Exception as e:
-        logger.error(f"Error during JS/TS structure extraction: {e}")
-        return {
-            "language": "typescript",
-            "functions": [],
-            "classes": [],
-            "source_code": file_content,
-            "docstring": "",
-        }
-        
+        logger.error(f"Error extracting JS/TS structure: {e}")
+        return {}
+
 
 def insert_js_ts_docstrings(docstrings: dict) -> str:
-    """Inserts JSDoc comments into JavaScript/TypeScript code."""
-    source_code = docstrings.get("source_code")
-    if not source_code:
-        logger.error("No source code found in docstrings dictionary. Skipping docstring insertion.")
-        return ""  # Or you could return an appropriate default value
+    """Inserts JSDoc comments into JavaScript/TypeScript code using a Node.js subprocess."""
+    try:
+        process = subprocess.Popen(
+            ["node", "path/to/insert_docstrings.js"],  # Replace with the actual path
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
 
-    inserts = []
+        stdout, stderr = process.communicate(input=json.dumps(docstrings))
 
-    # Function to map locations to positions in the code
-    def get_position(loc):
-        lines = source_code.splitlines()
-        start_line = loc["start"]["line"] - 1
-        start_column = loc["start"]["column"]
-        pos = sum(len(line) + 1 for line in lines[:start_line]) + start_column
-        return pos
+        if stderr:
+            logger.error(f"Error from Node.js script: {stderr}")
+            return docstrings.get("source_code", "")
 
-    for item_type in ["functions", "classes"]:
-        for item in docstrings.get(item_type, []):
-            docstring = item["docstring"]
-            if docstring and item.get("name"):
-                # Find the location based on the function or class name
-                # This simplistic approach assumes unique names
-                pattern = re.escape(item["name"])
-                match = re.search(r"\b" + pattern + r"\b", source_code)
-                if match:
-                    position = match.start()
-                    formatted_comment = format_jsdoc_comment(docstring)
-                    inserts.append((position, formatted_comment))
+        return stdout.strip()
 
-                    if item_type == "classes":
-                        for method in item.get("methods", []):
-                            method_docstring = method["docstring"]
-                            if method_docstring and method.get("name"):
-                                method_pattern = re.escape(method["name"])
-                                method_match = re.search(
-                                    r"\b" + method_pattern + r"\b", source_code
-                                )
-                                if method_match:
-                                    method_position = method_match.start()
-                                    method_comment = format_jsdoc_comment(
-                                        method_docstring
-                                    )
-                                    inserts.append((method_position, method_comment))
-
-    # Sort inserts by position descending to avoid shifting positions
-    inserts.sort(key=lambda x: x[0], reverse=True)
-    code = source_code
-    for position, comment in inserts:
-        code = code[:position] + comment + "\n" + code[position:]
-
-    return code
-
-def format_jsdoc_comment(docstring: str) -> str:
-    """Formats a docstring into a JSDoc comment block."""
-    comment_lines = ["/**"]
-    for line in docstring.strip().split("\n"):
-        comment_lines.append(f" * {line}")
-    comment_lines.append(" */")
-    return "\n".join(comment_lines)
+    except FileNotFoundError:
+        logger.error("Node.js or insert_docstrings.js not found. Make sure Node.js is installed and the script path is correct.")
+        return docstrings.get("source_code", "")
+    except Exception as e:
+        logger.error(f"Error inserting JS/TS docstrings: {e}")
+        return docstrings.get("source_code", "")
 
 
-# HTML handlers
+
 def extract_html_structure(file_content: str) -> dict:
     """Extracts the structure of HTML code."""
     try:
@@ -352,7 +249,6 @@ def extract_html_structure(file_content: str) -> dict:
                     traverse(child)
 
         traverse(soup)
-
         return {"language": "html", "elements": elements}
 
     except Exception as e:
@@ -361,7 +257,7 @@ def extract_html_structure(file_content: str) -> dict:
 
 
 def insert_html_comments(file_content: str, docstrings: dict) -> str:
-    """Inserts comments into HTML code."""
+    """Inserts comments into HTML code, preventing duplicates."""
     try:
         soup = BeautifulSoup(file_content, "html.parser")
         elements = docstrings.get("elements", [])
@@ -387,8 +283,11 @@ def insert_html_comments(file_content: str, docstrings: dict) -> str:
                     )
                     docstring = element_map.get(key)
                     if docstring:
-                        comment = Comment(f" {docstring} ")
-                        child.insert_before(comment)
+                        # Check for existing comment with the same docstring
+                        existing_comment = child.find_previous_sibling(string=lambda text: isinstance(text, Comment) and docstring in text)
+                        if not existing_comment:
+                            comment = Comment(f" {docstring} ")
+                            child.insert_before(comment)
                     traverse_and_insert(child)
 
         traverse_and_insert(soup)
@@ -399,80 +298,67 @@ def insert_html_comments(file_content: str, docstrings: dict) -> str:
         return file_content
 
 
-# CSS handlers
 def extract_css_structure(file_content: str) -> dict:
     """Extracts the structure of CSS code."""
     try:
-        rules = tinycss2.parse_stylesheet(file_content)
-        style_rules = []
-
-        for rule in rules:
+        stylesheet = tinycss2.parse_stylesheet(file_content, skip_whitespace=True)
+        rules = []
+        for rule in stylesheet:
             if rule.type == "qualified-rule":
+                selector = tinycss2.serialize(rule.prelude).strip()
+                declarations = tinycss2.serialize(rule.content).strip()
+                rules.append({"selector": selector, "declarations": declarations, "docstring": ""})
+            elif rule.type == "at-rule":
+                # Handle at-rules (e.g., @media, @import)
+                at_keyword = rule.at_keyword
                 prelude = tinycss2.serialize(rule.prelude).strip()
-                content = tinycss2.serialize(rule.content).strip()
-                rule_info = {
-                    "selector": prelude,
-                    "docstring": "",  # To be filled by the model
-                    "declarations": content,
-                }
-                style_rules.append(rule_info)
-
-        return {"language": "css", "rules": style_rules}
-
+                content = tinycss2.serialize(rule.content).strip() if rule.content else None
+                rules.append({"at_keyword": at_keyword, "prelude": prelude, "content": content, "docstring": ""})
+        return {"language": "css", "rules": rules}
     except Exception as e:
         logger.error(f"Error parsing CSS code: {e}")
         return {}
 
 
+
 def insert_css_comments(file_content: str, docstrings: dict) -> str:
-    """Inserts comments into CSS code."""
+    """Inserts comments into CSS code, preventing duplicates."""
     try:
-        rules = tinycss2.parse_stylesheet(file_content, skip_whitespace=True)
-        style_rules = docstrings.get("rules", [])
-        rule_map = {}
-        for rule in style_rules:
-            key = rule["selector"]
-            docstring = rule.get("docstring", "")
-            if key in rule_map:
-                rule_map[key] += f"\n{docstring}"
-            else:
-                rule_map[key] = docstring
+        stylesheet = tinycss2.parse_stylesheet(file_content, skip_whitespace=True)
+        rules = docstrings.get("rules", [])
+        rule_map = {rule["selector"]: rule["docstring"] for rule in rules if "selector" in rule} # Use selector as key
 
         modified_content = ""
         inserted_selectors = set()
 
-        for rule in rules:
+        for rule in stylesheet:
             if rule.type == "qualified-rule":
                 selector = tinycss2.serialize(rule.prelude).strip()
                 if selector not in inserted_selectors:
                     docstring = rule_map.get(selector)
                     if docstring:
                         modified_content += f"/* {docstring} */\n"
-                    inserted_selectors.add(selector)
-                # Serialize the rule content
-                content = tinycss2.serialize(rule.content).strip()
-                modified_content += f"{selector} {{\n{content}\n}}\n"
-            elif rule.type == "comment":
-                # Serialize comments directly
-                modified_content += f"/*{rule.value}*/\n"
-            elif rule.type == "at-rule":
-                # Handle at-rules like @media, @keyframes
-                at_rule_name = rule.lower_at_keyword
-                at_rule_prelude = tinycss2.serialize(rule.prelude).strip()
-                if rule.content:
-                    content = tinycss2.serialize(rule.content).strip()
-                    modified_content += f"@{at_rule_name} {at_rule_prelude} {{\n{content}\n}}\n"
-                else:
-                    modified_content += f"@{at_rule_name} {at_rule_prelude};\n"
-            else:
-                # For other rule types, serialize them directly
+                        inserted_selectors.add(selector)  # Add selector to set to prevent duplicates
+
                 modified_content += tinycss2.serialize(rule).strip() + "\n"
+
+            # Handle at-rules
+            elif rule.type == "at-rule":
+                modified_content += tinycss2.serialize(rule).strip() + "\n"
+
+            # Handle comments
+            elif rule.type == "comment":
+                modified_content += tinycss2.serialize(rule).strip() + "\n"
+            else:
+                modified_content += tinycss2.serialize(rule).strip() + "\n"
+
 
         return modified_content
 
     except Exception as e:
         logger.error(f"Error inserting comments into CSS code: {e}")
         return file_content
+
 
 async def process_file(
     session: aiohttp.ClientSession,
@@ -516,7 +402,6 @@ async def process_file(
             )
             return
 
-        # Check for empty structures, especially for JS/TS due to potential parsing errors
         if not code_structure or (language in ["javascript", "typescript"] and not (code_structure.get("functions") or code_structure.get("classes"))):
             if language in ["javascript", "typescript"]:
                 logger.warning(f"Failed to extract JS/TS structure from '{file_path}'. Likely parsing errors. Skipping documentation generation.")
@@ -524,21 +409,16 @@ async def process_file(
                 logger.error(f"Failed to extract structure from '{file_path}'.")
             return
 
-        prompt = generate_documentation_prompt(code_structure)
+        prompt = generate_documentation_prompt(code_structure, model_name)
 
-        # Fetch documentation using the updated fetch_documentation function
-        documentation = await fetch_documentation(
-            session, prompt, semaphore, model_name, function_schema
-        )
+        documentation = await fetch_documentation(session, prompt, semaphore, model_name, function_schema)
         if not documentation:
             logger.error(f"Failed to generate documentation for '{file_path}'")
             return
 
-        # Extract the summary and changes
         summary = documentation.get("summary", "")
         changes = documentation.get("changes", [])
 
-        # Proceed with inserting the documentation into the code
         if language == "python":
             new_content = insert_python_docstrings(content, documentation)
         elif language in ["javascript", "typescript"]:
@@ -569,12 +449,12 @@ async def process_file(
             logger.info(f"Inserted comments into '{file_path}'")
         except Exception as e:
             logger.error(f"Error writing to '{file_path}': {e}")
-
             if os.path.exists(backup_path):
                 os.remove(file_path)
                 os.rename(backup_path, file_path)
                 logger.info(f"Restored original file from backup for '{file_path}'")
             return
+
 
         try:
             async with output_lock:
@@ -597,8 +477,7 @@ async def process_file(
 
     except Exception as e:
         logger.error(f"Unexpected error processing '{file_path}': {e}")
-        
-# Process all files
+
 async def process_all_files(
     file_paths: List[str],
     skip_types: Set[str],
