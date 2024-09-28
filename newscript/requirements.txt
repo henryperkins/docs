@@ -1,0 +1,8 @@
+aiohttp
+aiofiles
+astor
+beautifulsoup4
+dotenv
+tinycss2
+tqdm
+json5
