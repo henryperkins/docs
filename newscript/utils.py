@@ -305,7 +305,57 @@ async def fetch_documentation(
             await asyncio.sleep(2 ** attempt)
     logger.error("Failed to generate documentation after multiple attempts.")
     return None
-
+    
+async def fetch_summary(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, retry: int = 3) -> Optional[str]:
+    """Fetches a summary from the OpenAI API."""
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 500,  # Adjust depending on the length of the summary
+        "temperature": 0.2
+    }
+    
+    for attempt in range(1, retry + 1):
+        try:
+            async with semaphore:
+                async with session.post(
+                    OPENAI_API_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=120
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        choices = data.get('choices', [])
+                        if choices:
+                            summary = choices[0]['message']['content'].strip()
+                            return summary
+                        else:
+                            logger.error("No choices in API response.")
+                            return None
+                    elif response.status in {429, 500, 502, 503, 504}:
+                        error_text = await response.text()
+                        logger.warning(f"API rate limit or server error (status {response.status}). Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds. Response: {error_text}")
+                        await asyncio.sleep(2 ** attempt)
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"API request failed with status {response.status}: {error_text}")
+                        return None
+        except asyncio.TimeoutError:
+            logger.error(f"Request timed out during attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds.")
+            await asyncio.sleep(2 ** attempt)
+        except aiohttp.ClientError as e:
+            logger.error(f"Client error during API request: {e}. Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds.")
+            await asyncio.sleep(2 ** attempt)
+    
+    logger.error("Failed to generate summary after multiple attempts.")
+    return None
+    
 def generate_documentation_prompt(
     code_structure: dict,
     project_info: str = None,
