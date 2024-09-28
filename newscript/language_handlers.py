@@ -195,88 +195,91 @@ def is_valid_python_code(code: str) -> bool:
 
 
 # JavaScript/TypeScript handlers
-def extract_js_ts_structure(file_content: str, language: str) -> dict:
-    """Extracts the structure of JavaScript/TypeScript code using Esprima."""
+import typescript as ts  # Assuming TypeScript Compiler API is available
+
+logger = logging.getLogger(__name__)
+
+async def extract_js_ts_structure(file_path: str, session: aiohttp.ClientSession, semaphore: asyncio.Semaphore, model_name: str, output_lock: asyncio.Lock) -> dict:
+    """Extracts the structure of JavaScript/TypeScript code using TypeScript compiler or falls back to raw source with AI summary."""
     try:
-        # Parse the code using esprima-python
-        tree = esprima.parseModule(
-            file_content, jsx=True, tokens=True, range=True, loc=True
-        )
+        # Use TypeScript compiler API to parse the TypeScript or JavaScript code
+        source_file = typescript.createSourceFile(file_path, file_content, typescript.ScriptTarget.Latest, True)
 
         functions = []
         classes = []
 
-        def traverse(node, parent_class=None):
-            node_type = node.type if hasattr(node, "type") else type(node).__name__
+        def visit(node, parent_class=None):
+            node_type = node.kind
 
-            if node_type == "FunctionDeclaration":
+            if node_type == typescript.SyntaxKind.FunctionDeclaration:
                 func_info = {
-                    "name": node.id.name if node.id else "anonymous",
+                    "name": node.name.getText() if node.name else "anonymous",
                     "docstring": "",  # To be filled by the model
-                    "args": [
-                        param.name if hasattr(param, "name") else str(param)
-                        for param in node.params
-                    ],
+                    "args": [param.getText() for param in node.parameters],
                     "returns": {"type": "Any"},
-                    "decorators": [],  # Esprima doesn't support decorators natively
+                    "decorators": [],  # TypeScript doesn't support decorators natively
                 }
                 if parent_class:
                     parent_class["methods"].append(func_info)
                 else:
                     functions.append(func_info)
-            elif node_type == "ClassDeclaration":
+            elif node_type == typescript.SyntaxKind.ClassDeclaration:
                 class_info = {
-                    "name": node.id.name,
+                    "name": node.name.getText(),
                     "docstring": "",  # To be filled by the model
-                    "bases": [node.superClass.name] if node.superClass else [],
-                    "decorators": [],  # Esprima doesn't support decorators natively
+                    "bases": [node.heritageClauses.getText()] if node.heritageClauses else [],
+                    "decorators": [],  # TypeScript doesn't support decorators natively
                     "methods": [],
                 }
                 classes.append(class_info)
-                if hasattr(node.body, "body"):
-                    for item in node.body.body:
-                        traverse(item, parent_class=class_info)
-            elif node_type == "MethodDefinition":
+                for member in node.members:
+                    visit(member, parent_class=class_info)
+            elif node_type == typescript.SyntaxKind.MethodDeclaration:
                 func_info = {
-                    "name": node.key.name,
+                    "name": node.name.getText(),
                     "docstring": "",  # To be filled by the model
-                    "args": [
-                        param.name if hasattr(param, "name") else str(param)
-                        for param in node.value.params
-                    ],
+                    "args": [param.getText() for param in node.parameters],
                     "returns": {"type": "Any"},
-                    "decorators": [],  # Esprima doesn't support decorators natively
+                    "decorators": [],  # TypeScript doesn't support decorators natively
                 }
                 if parent_class:
                     parent_class["methods"].append(func_info)
 
-            # Recursively traverse child nodes
-            for key in dir(node):
-                value = getattr(node, key)
-                if isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, esprima.nodes.Node):
-                            traverse(item, parent_class)
-                elif isinstance(value, esprima.nodes.Node):
-                    traverse(value, parent_class)
-
-        traverse(tree)
+        for statement in source_file.statements:
+            visit(statement)
 
         return {
-            "language": language,
+            "language": "typescript",
             "functions": functions,
             "classes": classes,
-            "source_code": file_content,  
+            "source_code": file_content,
         }
 
-    except esprima.Error as e:
-        logger.error(f"Error during JS/TS structure extraction: {e}")
-        # Return an empty structure, including an empty docstring, but include the source code
-        return {"language": language, "functions": [], "classes": [], "source_code": file_content, "docstring": ""}
     except Exception as e:
-        logger.error(f"Unexpected error during JS/TS structure extraction: {e}")
-        # Return an empty structure, including an empty docstring, but include the source code
-        return {"language": language, "functions": [], "classes": [], "source_code": file_content, "docstring": ""}
+        # Log parsing failure
+        logger.warning(f"Failed to extract JS/TS structure from '{file_path}'. Fallback to raw source with AI summary.")
+        
+        # If parsing fails, fetch the AI summary and print raw content
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            raw_content = await f.read()
+        
+        # Generate AI summary
+        summary_prompt = f"Please summarize the following code:\n\n{raw_content[:1000]}..."  # Limit the size for the summary request
+        summary = await fetch_summary(session, summary_prompt, semaphore, model_name)
+
+        # Write raw content and summary to output.md
+        async with output_lock:
+            async with aiofiles.open('output.md', 'a', encoding='utf-8') as f:
+                header = f"# File: {file_path}\n\n"
+                summary_section = f"## Summary\n\n{summary}\n\n"
+                code_block = f"```typescript\n{raw_content}\n```\n\n"
+                await f.write(header)
+                await f.write(summary_section)
+                await f.write(code_block)
+                
+        return {}
+
+
 
 def insert_js_ts_docstrings(docstrings: dict) -> str:
     """Inserts JSDoc comments into JavaScript/TypeScript code."""
