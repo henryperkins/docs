@@ -170,11 +170,11 @@ def is_valid_python_code(code: str) -> bool:
         return False
 
 
-async def extract_js_ts_structure(file_path: str, file_content: str) -> dict:
-    """Extracts the structure of JavaScript/TypeScript code using a Node.js subprocess."""
+async def extract_js_ts_structure(file_path: str, file_content: str, language: str) -> dict: # Add language argument
+    """Extracts the structure of JavaScript/TypeScript code."""
     try:
         process = subprocess.Popen(
-            ["node", "path/to/extract_structure.js", file_path], # Replace with the actual path
+            ["node", "extract_structure.js", file_path], # Path to your Node.js script
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -187,7 +187,10 @@ async def extract_js_ts_structure(file_path: str, file_content: str) -> dict:
             return {}
 
         try:
-            return json.loads(stdout)
+            structure = json.loads(stdout)
+            structure['source_code'] = file_content
+            structure['language'] = language # Include the language
+            return structure
         except json.JSONDecodeError as e:
             logger.error(f"JSON decoding error: {e}")
             return {}
@@ -200,11 +203,12 @@ async def extract_js_ts_structure(file_path: str, file_content: str) -> dict:
         return {}
 
 
+
 def insert_js_ts_docstrings(docstrings: dict) -> str:
-    """Inserts JSDoc comments into JavaScript/TypeScript code using a Node.js subprocess."""
+    """Inserts JSDoc comments into JavaScript/TypeScript code."""
     try:
         process = subprocess.Popen(
-            ["node", "path/to/insert_docstrings.js"],  # Replace with the actual path
+            ["node", "insert_docstrings.js"], # Path to your Node.js script
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -337,9 +341,11 @@ def insert_css_comments(file_content: str, docstrings: dict) -> str:
                 if selector not in inserted_selectors:
                     docstring = rule_map.get(selector)
                     if docstring:
-                        modified_content += f"/* {docstring} */\n"
-                        inserted_selectors.add(selector)  # Add selector to set to prevent duplicates
-
+                        # Check if a comment already exists *before* inserting a new one
+                        existing_comment = rule.prev  # Get the immediately preceding node
+                        if existing_comment is None or existing_comment.type != 'comment' or docstring.strip() not in existing_comment.serialize().strip():
+                            modified_content += f"/* {docstring} */\n"
+                        inserted_selectors.add(selector)
                 modified_content += tinycss2.serialize(rule).strip() + "\n"
 
             # Handle at-rules
@@ -361,15 +367,9 @@ def insert_css_comments(file_content: str, docstrings: dict) -> str:
 
 
 async def process_file(
-    session: aiohttp.ClientSession,
-    file_path: str,
-    skip_types: Set[str],
-    output_file: str,
-    semaphore: asyncio.Semaphore,
-    output_lock: asyncio.Lock,
-    model_name: str,
-) -> None:
-    """Processes a single file to generate and insert documentation, summaries, and change lists."""
+    session, file_path, skip_types, output_file, semaphore, output_lock, model_name
+):
+    """Processes a single file."""
     try:
         _, ext = os.path.splitext(file_path)
         if not is_valid_extension(ext, skip_types) or is_binary(file_path):
@@ -391,7 +391,7 @@ async def process_file(
         if language == "python":
             code_structure = extract_python_structure(content)
         elif language in ["javascript", "typescript"]:
-            code_structure = await extract_js_ts_structure(file_path, content)
+            code_structure = await extract_js_ts_structure(file_path, content, language) # Pass language here
         elif language == "html":
             code_structure = extract_html_structure(content)
         elif language == "css":
