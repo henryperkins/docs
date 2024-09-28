@@ -10,7 +10,7 @@ import astor
 import tinycss2
 import re  # Ensure re is imported
 from bs4 import BeautifulSoup, Comment
-from .utils import (
+from utils import (
     is_valid_extension,
     get_language,
     generate_documentation_prompt,
