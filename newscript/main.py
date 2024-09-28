@@ -1,9 +1,11 @@
+# main.py
+
 import os
 import sys
 import argparse
 import asyncio
 import logging
-from .utils import (
+from utils import (
     load_config,
     get_all_file_paths,
     OPENAI_API_KEY,
@@ -11,8 +13,7 @@ from .utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
 )
-from .language_handlers import process_all_files
-
+from language_handlers import process_all_files
 
 # Configure logging
 logging.basicConfig(
@@ -25,13 +26,13 @@ logger = logging.getLogger(__name__)
 def main():
     """Main function to orchestrate documentation generation."""
     parser = argparse.ArgumentParser(
-        description="Generate and insert comments/docstrings using OpenAI's GPT-4 API."
+        description="Generate and insert comments/docstrings using OpenAI's GPT-4o-mini API."
     )
     parser.add_argument("repo_path", help="Path to the code repository")
     parser.add_argument("-c", "--config", help="Path to config.json", default="config.json")
     parser.add_argument("--concurrency", help="Number of concurrent requests", type=int, default=5)
     parser.add_argument("-o", "--output", help="Output Markdown file", default="output.md")
-    parser.add_argument("--model", help="OpenAI model to use (default: gpt-4)", default="gpt-4")
+    parser.add_argument("--model", help="OpenAI model to use (default: gpt-4o-mini)", default="gpt-4o-mini")
     parser.add_argument("--skip-types", help="Comma-separated list of file extensions to skip", default="")
     args = parser.parse_args()
 
