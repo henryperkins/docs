@@ -1,247 +1,245 @@
-# Autodocumentation to Markdown
+# Code Documentation Generator
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4-green.svg)
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Scripts Overview](#scripts-overview)
+- [Logging](#logging)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Overview
 
-`autodocumentation to markdown` is a Python script designed to automate the generation of comprehensive documentation for a multi-language codebase. The script leverages OpenAI's GPT-4 API to generate detailed, Google-style docstrings/comments for various code elements, including functions, classes, API endpoints, HTML elements, and CSS rules. The generated documentation is compiled into a single Markdown file, enhancing code maintainability and collaboration.
+The **Code Documentation Generator** is a comprehensive tool designed to automate the creation of detailed documentation for various codebases. Leveraging OpenAI's GPT-4 API, this tool analyzes code structures—including functions, classes, API endpoints, HTML elements, and CSS rules—and generates well-structured documentation based on predefined guidelines. It supports multiple programming languages such as Python, JavaScript, TypeScript, HTML, and CSS.
 
 ## Features
 
-- **Multi-Language Support:** Supports Python, JavaScript, TypeScript, Java, C++, and Go.
-- **Comprehensive Documentation:** Generates detailed docstrings/comments for functions, classes, methods, and more.
-- **Asynchronous Processing:** Efficiently handles multiple files and API requests concurrently.
-- **Robust Error Handling:** Gracefully handles various errors, including file encoding issues, binary file detection, API failures, and network errors.
-- **Configuration and Customization:** Allows users to specify exclusions and customize script behavior via a configuration file (`config.json`).
-- **Deployment Flexibility:** Can be deployed locally, on cloud servers, in Docker containers, and integrated with CI/CD pipelines.
+- **Automated Documentation Generation:** Automatically generates summaries, docstrings, and comments for codebases.
+- **Multi-Language Support:** Supports Python, JavaScript, TypeScript, HTML, and CSS.
+- **Configurable Exclusions:** Easily exclude directories, files, or specific file types from documentation generation.
+- **Concurrency Control:** Manage the number of concurrent API requests to optimize performance.
+- **Safe Mode:** Generate documentation without modifying original files.
+- **Comprehensive Logging:** Detailed logs for monitoring and troubleshooting.
+- **Backup Mechanism:** Automatically creates backups before modifying files.
 
-## Prerequisites
+## Architecture
 
-- Python 3.7+
-- Node.js (for JavaScript and TypeScript processing)
-- OpenAI API Key
+The tool consists of several interconnected scripts and modules:
+
+- **`main.py`**: The entry point for executing the documentation generation process.
+- **`language_handlers.py`**: Handles extraction and insertion of documentation for different programming languages.
+- **`utils.py`**: Provides utility functions for file operations, configuration loading, and prompt generation.
+- **JavaScript Utilities**:
+  - **`extract_structure.js`**: Extracts structural information from JavaScript/TypeScript files.
+  - **`insert_docstrings.js`**: Inserts JSDoc comments into JavaScript/TypeScript files.
 
 ## Installation
 
-1. **Clone the Repository:**
+### Prerequisites
 
-    ```sh
-    git clone https://github.com/yourusername/autodocumentation-to-markdown.git
-    cd autodocumentation-to-markdown
-    ```
+- **Python 3.8+**
+- **Node.js** (required for processing JavaScript and TypeScript files)
+- **OpenAI API Key**
 
-2. **Set Up a Virtual Environment:**
+### Steps
 
-    ```sh
-    python -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    ```
+1. **Clone the Repository**
 
-3. **Install Dependencies:**
+   ```bash
+   git clone https://github.com/yourusername/code-documentation-generator.git
+   cd code-documentation-generator
+   ```
 
-    ```sh
-    pip install -r requirements.txt
-    ```
+2. **Set Up Python Environment**
 
-4. **Set Up Environment Variables:**
+   It's recommended to use a virtual environment.
 
-    Create a `.env` file in the project root and add your OpenAI API key:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-    ```env
-    OPENAI_API_KEY=your_openai_api_key_here
-    ```
+3. **Install Python Dependencies**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Install Node.js Dependencies**
+
+   Navigate to the `docs` directory and install necessary Node.js packages.
+
+   ```bash
+   cd docs
+   npm install typescript @types/node
+   cd ..
+   ```
+
+5. **Configure Environment Variables**
+
+   Create a `.env` file in the root directory and add your OpenAI API key:
+
+   ```env
+   OPENAI_API_KEY=your_openai_api_key_here
+   ```
 
 ## Usage
 
+The primary script to run is `main.py`. It orchestrates the entire documentation generation process.
+
 ### Command-Line Arguments
 
-```sh
+```bash
 python main.py <repo_path> [options]
 ```
 
-- `<repo_path>`: Path to the code repository.
-- `-c, --config`: Path to `config.json` (default: `config.json`).
-- `--concurrency`: Number of concurrent requests (default: 5).
-- `-o, --output`: Output Markdown file (default: `output.md`).
-- `--model`: OpenAI model to use (default: `gpt-4`).
-- `--skip-types`: Comma-separated list of file extensions to skip.
-- `--project-info`: Information about the project.
-- `--style-guidelines`: Documentation style guidelines to follow.
-- `--safe-mode`: Run in safe mode (no files will be modified).
+### Options
+
+- `-c`, `--config`: Path to `config.json` (default: `config.json`)
+- `--concurrency`: Number of concurrent API requests (default: `5`)
+- `-o`, `--output`: Output Markdown file (default: `output.md`)
+- `--model`: OpenAI model to use (default: `gpt-4`)
+- `--skip-types`: Comma-separated list of file extensions to skip (default: `''`)
+- `--project-info`: Information about the project
+- `--style-guidelines`: Documentation style guidelines to follow
+- `--safe-mode`: Run in safe mode (no files will be modified)
 
 ### Example
 
-```sh
-python main.py /path/to/repo --concurrency 10 --output docs.md --safe-mode
+```bash
+python main.py /path/to/your/codebase \
+    --config config.json \
+    --concurrency 10 \
+    --output documentation.md \
+    --model gpt-4 \
+    --skip-types .json,.md \
+    --project-info "handles user authentication and data processing" \
+    --style-guidelines "Follow Google Python Style Guide" \
+    --safe-mode
 ```
 
 ## Configuration
 
-### `config.json`
+The `config.json` file allows you to specify various settings for the documentation generation process.
 
-You can customize the script's behavior by editing the `config.json` file:
+### Sample `config.json`
 
 ```json
 {
-    "excluded_dirs": ["node_modules", ".venv"],
-    "excluded_files": [".DS_Store"],
-    "skip_types": [".json", ".md", ".txt", ".csv", ".lock"],
-    "project_info": "Your project information here",
-    "style_guidelines": "Your style guidelines here"
+  "excluded_dirs": [".git", "__pycache__", "node_modules", ".venv", ".idea"],
+  "excluded_files": [".DS_Store"],
+  "skip_types": [".json", ".md", ".txt", ".csv", ".lock"],
+  "project_info": "handles user authentication and data processing",
+  "style_guidelines": "Follow Google Python Style Guide"
 }
 ```
 
-## Deployment
+## Scripts Overview
 
-### Local Deployment
+### 1. `main.py`
 
-1. **Set Up the Environment:**
+**Summary:**
 
-    ```sh
-    python -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    pip install -r requirements.txt
-    ```
+Orchestrates the documentation generation process by analyzing code components and generating detailed documentation using OpenAI's GPT-4 API.
 
-2. **Run the Script:**
+**Key Features:**
 
-    ```sh
-    python main.py /path/to/repo
-    ```
+- Parses command-line arguments.
+- Loads configuration settings.
+- Collects all relevant file paths.
+- Initiates asynchronous processing of files.
+- Generates an output Markdown file with summaries, changes, and code blocks.
 
-### Cloud Server Deployment
+### 2. `language_handlers.py`
 
-1. **Set Up the Server:**
+**Summary:**
 
-    - Ensure you have SSH access to your cloud server.
-    - Install Python and Node.js on the server.
+Provides functionality for extracting and inserting documentation into various code formats, including Python, JavaScript, TypeScript, HTML, and CSS.
 
-2. **Clone the Repository:**
+**Key Features:**
 
-    ```sh
-    git clone https://github.com/yourusername/autodocumentation-to-markdown.git
-    cd autodocumentation-to-markdown
-    ```
+- **Python**: Extracts structure using AST and inserts docstrings.
+- **JavaScript/TypeScript**: Utilizes Node.js scripts to extract structure and insert JSDoc comments.
+- **HTML**: Parses HTML to extract elements and insert comments.
+- **CSS**: Extracts CSS rules and inserts comments accordingly.
 
-3. **Set Up the Environment:**
+### 3. `utils.py`
 
-    ```sh
-    python -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    pip install -r requirements.txt
-    ```
+**Summary:**
 
-4. **Run the Script:**
+Contains utility functions for handling file operations, loading configurations, and generating documentation prompts.
 
-    ```sh
-    python main.py /path/to/repo
-    ```
+**Key Features:**
 
-### Docker Containerization
+- Determines programming language based on file extension.
+- Checks if a file is binary.
+- Loads and updates configuration settings.
+- Retrieves all file paths while respecting exclusions.
+- Generates prompts for the AI model based on code structure.
 
-1. **Create a Dockerfile:**
+### 4. `extract_structure.js`
 
-    ```Dockerfile
-    FROM python:3.9-slim
+**Summary:**
 
-    WORKDIR /app
+Analyzes and extracts structural information from JavaScript/TypeScript code files.
 
-    COPY requirements.txt .
-    RUN pip install -r requirements.txt
+**Key Features:**
 
-    COPY . .
+- Traverses AST nodes to extract details about functions and classes.
+- Outputs the structure in JSON format.
 
-    CMD ["python", "main.py", "/path/to/repo"]
-    ```
+### 5. `insert_docstrings.js`
 
-2. **Build the Docker Image:**
+**Summary:**
 
-    ```sh
-    docker build -t autodocumentation-to-markdown .
-    ```
+Processes documentation data to insert JSDoc comments into JavaScript/TypeScript code.
 
-3. **Run the Docker Container:**
+**Key Features:**
 
-    ```sh
-    docker run -v /path/to/repo:/path/to/repo autodocumentation-to-markdown
-    ```
+- Formats JSDoc comments based on provided documentation.
+- Inserts comments at appropriate positions in the code.
 
-### CI/CD Integration
+## Logging
 
-#### GitHub Actions Example
-
-Create a `.github/workflows/docs.yml` file:
-
-```yaml
-name: Generate Documentation
-
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  generate-docs:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.9'
-
-    - name: Install dependencies
-      run: |
-        python -m venv venv
-        source venv/bin/activate
-        pip install -r requirements.txt
-
-    - name: Generate documentation
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      run: |
-        source venv/bin/activate
-        python main.py /path/to/repo
-
-    - name: Commit documentation
-      run: |
-        git config --global user.name 'github-actions[bot]'
-        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git add output.md
-        git commit -m "Update documentation"
-        git push
-```
-
-## Troubleshooting
-
-### Common Issues
-
-- **Missing Output Files:** Ensure the output path is correct and the script has write permissions.
-- **Permission Errors:** Run the script with appropriate permissions or use `sudo` if necessary.
-- **API Rate Limits:** Adjust the concurrency level or implement rate limiting in the script.
-- **Encoding Problems:** Ensure all files are encoded in UTF-8.
-
-### Solutions
-
-- **Check Logs:** Review the `docs_generation.log` file for detailed error messages.
-- **Adjust Concurrency:** Lower the concurrency level to avoid API rate limits.
-- **Validate Configuration:** Ensure the `config.json` file is correctly formatted and paths are accurate.
-
-## Best Practices
-
-- **Secure API Keys:** Store API keys securely in environment variables or a `.env` file.
-- **Optimize Performance:** Adjust concurrency levels based on the API rate limits and system resources.
-- **Regular Updates:** Keep the script and dependencies up to date to benefit from the latest features and security patches.
+All operations are logged to `docs_generation.log` with detailed information about each step, including errors and processing statuses. This log file is crucial for monitoring the documentation generation process and troubleshooting any issues that arise.
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request if you have any suggestions, improvements, or bug fixes.
+Contributions are welcome! Please follow these steps:
+
+1. **Fork the Repository**
+
+2. **Create a Feature Branch**
+
+   ```bash
+   git checkout -b feature/YourFeatureName
+   ```
+
+3. **Commit Your Changes**
+
+   ```bash
+   git commit -m "Add some feature"
+   ```
+
+4. **Push to the Branch**
+
+   ```bash
+   git push origin feature/YourFeatureName
+   ```
+
+5. **Open a Pull Request**
+
+Please ensure your code follows the project's coding standards and includes relevant tests.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
----
-
-For more information, please refer to the [documentation](docs/README.md).
+This project is licensed under the [MIT License](LICENSE).
