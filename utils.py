@@ -48,28 +48,28 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> None:
-    """Loads configuration from a JSON file."""
+def load_config(config_path, excluded_dirs, excluded_files, skip_types):
+    """Loads configuration from a JSON file and updates the provided sets."""
+    project_info = ''
+    style_guidelines = ''
     try:
-        with open(config_path, 'r', encoding='utf-8') as config_file:
-            config = json.load(config_file)
-            for key, default_set in [
-                ('excluded_dirs', excluded_dirs),
-                ('excluded_files', excluded_files),
-                ('skip_types', skip_types),
-            ]:
-                items = config.get(key, [])
-                if isinstance(items, list):
-                    default_set.update(items)
-                else:
-                    logger.error(f"'{key}' must be a list in '{config_path}'.")
-            logger.info(f"Loaded config from '{config_path}'.")
-    except FileNotFoundError:
-        logger.warning(f"Config file '{config_path}' not found. Using defaults.")
-    except json.JSONDecodeError as e:
-        logger.error(f"Error parsing config file '{config_path}': {e}")
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        # Update excluded directories, files, and skip types
+        excluded_dirs.update(set(config.get('excluded_dirs', [])))
+        excluded_files.update(set(config.get('excluded_files', [])))
+        skip_types.update(set(config.get('skip_types', [])))
+
+        # Load project info and style guidelines
+        project_info = config.get('project_info', '')
+        style_guidelines = config.get('style_guidelines', '')
+
     except Exception as e:
-        logger.error(f"Error loading config file '{config_path}': {e}")
+        logger.error(f"Error loading configuration from '{config_path}': {e}")
+    finally:
+        return project_info, style_guidelines
+
 
 def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> List[str]:
     """Gets all file paths in a repository, excluding specified directories and files."""
@@ -108,92 +108,228 @@ def extract_json_from_response(response: str) -> Optional[str]:
         return None
 
 
-function_schema = {  # Updated and complete schema
+function_schema = {
     "name": "generate_documentation",
-    "description": "Generates documentation, summaries, and lists of changes for code structures.",
+    "description": "Generates detailed documentation, summaries, and lists of changes for code structures.",
     "parameters": {
         "type": "object",
         "properties": {
-            "summary": {"type": "string", "description": "A concise summary of the changes."},
+            "summary": {
+                "type": "string",
+                "description": "A concise summary of the code's purpose and functionality."
+            },
             "changes": {
                 "type": "array",
-                "description": "A list of specific changes.",
-                "items": {"type": "string"},
+                "description": "A list of specific changes made in the code.",
+                "items": {
+                    "type": "string"
+                },
             },
             "functions": {
                 "type": "array",
+                "description": "Details about functions in the code.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string"},
-                        "docstring": {"type": "string"},
-                        "args": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "type": {"type": "string"}}, "required": ["name", "type"]}},
-                        "returns": {"type": "object", "properties": {"type": {"type": "string"}}, "required": ["type"]},
-                        "decorators": {"type": "array", "items": {"type": "string"}},
+                        "name": {"type": "string", "description": "Function name."},
+                        "description": {"type": "string", "description": "Detailed explanation of what the function does."},
+                        "docstring": {"type": "string", "description": "Docstring for the function."},
+                        "parameters": {
+                            "type": "array",
+                            "description": "List of parameters the function accepts.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Parameter name."},
+                                    "type": {"type": "string", "description": "Parameter data type."},
+                                    "description": {"type": "string", "description": "Description of the parameter."}
+                                },
+                                "required": ["name", "type"]
+                            }
+                        },
+                        "returns": {
+                            "type": "object",
+                            "description": "Information about the return value.",
+                            "properties": {
+                                "type": {"type": "string", "description": "Return data type."},
+                                "description": {"type": "string", "description": "Description of the return value."}
+                            },
+                            "required": ["type"]
+                        },
+                        "decorators": {
+                            "type": "array",
+                            "description": "List of decorators applied to the function.",
+                            "items": {"type": "string"}
+                        },
+                        "examples": {
+                            "type": "array",
+                            "description": "Usage examples of the function.",
+                            "items": {"type": "string"}
+                        },
                     },
-                    "required": ["name", "docstring", "args", "returns", "decorators"],
+                    "required": ["name", "description", "parameters", "returns"]
                 },
             },
             "classes": {
                 "type": "array",
+                "description": "Details about classes in the code.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string"},
-                        "docstring": {"type": "string"},
-                        "bases": {"type": "array", "items": {"type": "string"}},
-                        "decorators": {"type": "array", "items": {"type": "string"}},
+                        "name": {"type": "string", "description": "Class name."},
+                        "description": {"type": "string", "description": "Detailed description of the class."},
+                        "docstring": {"type": "string", "description": "Docstring for the class."},
+                        "bases": {
+                            "type": "array",
+                            "description": "Base classes the class inherits from.",
+                            "items": {"type": "string"}
+                        },
+                        "decorators": {
+                            "type": "array",
+                            "description": "List of decorators applied to the class.",
+                            "items": {"type": "string"}
+                        },
                         "methods": {
                             "type": "array",
+                            "description": "List of methods within the class.",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {"type": "string"},
-                                    "docstring": {"type": "string"},
-                                    "args": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "type": {"type": "string"}}, "required": ["name", "type"]}},
-                                    "returns": {"type": "object", "properties": {"type": {"type": "string"}}, "required": ["type"]},
-                                    "decorators": {"type": "array", "items": {"type": "string"}},
+                                    "name": {"type": "string", "description": "Method name."},
+                                    "description": {"type": "string", "description": "Detailed explanation of the method."},
+                                    "docstring": {"type": "string", "description": "Docstring for the method."},
+                                    "parameters": {
+                                        "type": "array",
+                                        "description": "List of parameters the method accepts.",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {"type": "string", "description": "Parameter name."},
+                                                "type": {"type": "string", "description": "Parameter data type."},
+                                                "description": {"type": "string", "description": "Description of the parameter."}
+                                            },
+                                            "required": ["name", "type"]
+                                        }
+                                    },
+                                    "returns": {
+                                        "type": "object",
+                                        "description": "Information about the return value.",
+                                        "properties": {
+                                            "type": {"type": "string", "description": "Return data type."},
+                                            "description": {"type": "string", "description": "Description of the return value."}
+                                        },
+                                        "required": ["type"]
+                                    },
+                                    "decorators": {
+                                        "type": "array",
+                                        "description": "List of decorators applied to the method.",
+                                        "items": {"type": "string"}
+                                    },
+                                    "examples": {
+                                        "type": "array",
+                                        "description": "Usage examples of the method.",
+                                        "items": {"type": "string"}
+                                    },
                                 },
-                                "required": ["name", "docstring", "args", "returns", "decorators"],
+                                "required": ["name", "description", "parameters", "returns"]
                             },
                         },
                     },
-                    "required": ["name", "docstring", "bases", "decorators", "methods"],
+                    "required": ["name", "description", "methods"]
                 },
             },
-            "elements": { # HTML structure
+            "api_endpoints": {
                 "type": "array",
+                "description": "Details about API endpoints (for backend files).",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "tag": {"type": "string"},
-                        "attributes": {"type": "object"},
-                        "text": {"type": "string"},
-                        "docstring": {"type": "string"},
+                        "route": {"type": "string", "description": "API route path."},
+                        "method": {"type": "string", "description": "HTTP method (GET, POST, etc.)."},
+                        "description": {"type": "string", "description": "Description of what the endpoint does."},
+                        "authentication": {"type": "string", "description": "Authentication requirements."},
+                        "parameters": {
+                            "type": "array",
+                            "description": "Parameters accepted by the API endpoint.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Parameter name."},
+                                    "type": {"type": "string", "description": "Parameter data type."},
+                                    "description": {"type": "string", "description": "Description of the parameter."},
+                                    "required": {"type": "boolean", "description": "Whether the parameter is required."}
+                                },
+                                "required": ["name", "type", "required"]
+                            }
+                        },
+                        "responses": {
+                            "type": "array",
+                            "description": "Possible responses from the API endpoint.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "status_code": {"type": "integer", "description": "HTTP status code."},
+                                    "description": {"type": "string", "description": "Description of the response."},
+                                    "body": {"type": "string", "description": "Response body content."}
+                                },
+                                "required": ["status_code", "description"]
+                            }
+                        },
+                        "examples": {
+                            "type": "array",
+                            "description": "Example requests to the API endpoint.",
+                            "items": {"type": "string"}
+                        },
                     },
-                    "required": ["tag", "attributes", "text", "docstring"],
+                    "required": ["route", "method", "description"]
+                }
+            },
+            "elements": {  # HTML structure
+                "type": "array",
+                "description": "Details about HTML elements.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tag": {"type": "string", "description": "HTML tag name."},
+                        "attributes": {
+                            "type": "object",
+                            "description": "Attributes of the HTML element.",
+                            "additionalProperties": {"type": "string"}
+                        },
+                        "text": {"type": "string", "description": "Inner text of the element."},
+                        "description": {"type": "string", "description": "Purpose of the element."},
+                    },
+                    "required": ["tag"]
                 },
             },
             "rules": {  # CSS structure
                 "type": "array",
+                "description": "Details about CSS rules.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "selector": {"type": "string"},
-                        "declarations": {"type": "string"},
-                        "docstring": {"type": "string"},
+                        "selector": {"type": "string", "description": "CSS selector."},
+                        "declarations": {"type": "string", "description": "CSS declarations (properties and values)."},
+                        "description": {"type": "string", "description": "Purpose or effect of the rule."},
                     },
-                    "required": ["selector", "declarations", "docstring"],
+                    "required": ["selector"]
                 },
             },
         },
-        "required": ["summary", "changes", "functions", "classes", "elements", "rules"], # Updated required fields
+        "required": ["summary", "changes"]  # Only "summary" and "changes" are required
     },
 }
 
 
-async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict, retry: int = 3) -> Optional[dict]:
-    """Fetches generated documentation, summaries, and change lists from the OpenAI API using function calling.
+async def fetch_documentation(
+    session: aiohttp.ClientSession,
+    prompt: str,
+    semaphore: asyncio.Semaphore,
+    model_name: str,
+    function_schema: dict,
+    retry: int = 3,
+) -> Optional[dict]:
+    """Fetches generated documentation from the OpenAI API using function calling.
 
     Args:
         session: The aiohttp client session.
@@ -212,15 +348,21 @@ async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semap
 
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
+
+    # Prepare the messages for the API request
+    messages = [
+        {"role": "system", "content": "You are an AI assistant that generates code documentation."},
+        {"role": "user", "content": prompt},
+    ]
+
     payload = {
         "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "functions": [function_schema],
         "function_call": {"name": "generate_documentation"},
-        "max_tokens": 3000,  # Increased token limit for additional data
-        "temperature": 0.2
+        "temperature": 0.2,
     }
 
     for attempt in range(1, retry + 1):
@@ -232,16 +374,18 @@ async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semap
                     if response.status == 200:
                         data = await response.json()
                         try:
-                            # Attempt to extract JSON using function calling format first
+                            # Attempt to extract JSON using function calling format
                             message = data["choices"][0]["message"]
                             if "function_call" in message:
-                                arguments = message["function_call"]["arguments"]
-                                documentation = json.loads(arguments)
+                                function_call = message["function_call"]
+                                arguments_str = function_call["arguments"]
+                                # Ensure that 'arguments_str' is a valid JSON string
+                                arguments = json.loads(arguments_str)
+                                documentation = arguments
                                 logger.info("Generated documentation using function call.")
-                            else:  # Fallback to direct extraction if not a function call
-                                content = message["content"]
-                                documentation = json.loads(extract_json_from_response(content))
-                                logger.info("Generated documentation from raw content.")
+                            else:
+                                logger.error("Function call not found in the response.")
+                                return None
 
                             return documentation
 
@@ -279,11 +423,11 @@ async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semap
     return None
     
 async def fetch_summary(
-    session: aiohttp.ClientSession, 
-    prompt: str, 
-    semaphore: asyncio.Semaphore, 
-    model_name: str, 
-    retry: int = 3
+    session: aiohttp.ClientSession,
+    prompt: str,
+    semaphore: asyncio.Semaphore,
+    model_name: str,
+    retry: int = 3,
 ) -> Optional[str]:
     """
     Fetches a summary from the OpenAI API.
@@ -298,16 +442,24 @@ async def fetch_summary(
     Returns:
         Optional[str]: The summary text if successful, otherwise None.
     """
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
+        sys.exit(1)
+
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
+
+    messages = [
+        {"role": "system", "content": "You are an AI assistant that summarizes code."},
+        {"role": "user", "content": prompt},
+    ]
+
     payload = {
         "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 1000,  # Adjust depending on the length of the summary
-        "temperature": 0.2
+        "messages": messages,
+        "temperature": 0.2,
     }
 
     for attempt in range(1, retry + 1):
@@ -317,7 +469,7 @@ async def fetch_summary(
                     OPENAI_API_URL,
                     headers=headers,
                     json=payload,
-                    timeout=120
+                    timeout=120,
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -341,17 +493,23 @@ async def fetch_summary(
                         await asyncio.sleep(2 ** attempt)
                     else:
                         error_text = await response.text()
-                        logger.error(f"Unhandled API request failure with status {response.status}: {error_text}")
+                        logger.error(
+                            f"Unhandled API request failure with status {response.status}: {error_text}"
+                        )
                         return None
 
         except asyncio.TimeoutError:
-            logger.error(f"Request timed out during attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds.")
+            logger.error(
+                f"Request timed out during attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds."
+            )
             await asyncio.sleep(2 ** attempt)
 
         except aiohttp.ClientError as e:
-            logger.error(f"Client error during API request: {e}. Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds.")
+            logger.error(
+                f"Client error during API request: {e}. Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds."
+            )
             await asyncio.sleep(2 ** attempt)
-    
+
     logger.error("Failed to generate summary after multiple attempts.")
     return None
 
@@ -361,7 +519,17 @@ def generate_documentation_prompt(
     project_info: str = None,
     style_guidelines: str = None
 ) -> str:
-    """Generates a prompt for GPT-4o-mini to create documentation, summaries, and change lists."""
+    """
+    Generates a prompt for the AI model to create comprehensive documentation, summaries, and change lists.
+
+    Parameters:
+        code_structure (dict): The structured representation of the code.
+        project_info (str, optional): Information about the project the code belongs to.
+        style_guidelines (str, optional): Specific documentation style guidelines to follow.
+
+    Returns:
+        str: The generated prompt to be sent to the AI model.
+    """
 
     language = code_structure.get("language", "code")
     json_structure = json.dumps(code_structure, indent=2)
@@ -379,25 +547,88 @@ def generate_documentation_prompt(
     # Core instruction for documentation generation
     prompt_parts.append(
         f"""
-Given the following {language} code structure in JSON format, perform the following tasks:
+Based on the provided {language} code structure in JSON format, generate comprehensive documentation following these guidelines:
 
-1. Generate detailed docstrings or comments for each function, method, and class. Include descriptions of parameters, return types, and relevant details. Enhance existing documentation where applicable.
-2. Provide a concise summary of the changes or additions you made to the code documentation.
-3. List the specific changes made to the code (e.g., added docstrings, updated class descriptions).
+1. **Detailed Summaries**:
+   - Provide a clear and concise summary of the file's purpose and functionality.
+   - Explain the role of the code within the larger application context.
+
+2. **Changes Made**:
+   - List specific changes implemented in the code.
+   - Categorize changes if applicable (e.g., Added, Updated, Fixed).
+
+3. **Function and Method Documentation**:
+   - For each function and method, include:
+     - **Name**: The function or method name.
+     - **Description**: A detailed explanation of what it does.
+     - **Parameters**:
+       - List all parameters with their names, types, and detailed descriptions.
+     - **Returns**:
+       - Specify the return type and provide a description of the return value.
+     - **Usage Examples**:
+       - Provide code snippets demonstrating how to use the function or method.
+
+4. **Class Documentation**:
+   - For each class, include:
+     - **Name**: The class name.
+     - **Description**: A detailed explanation of the class's purpose.
+     - **Inheritance**: List base classes if any.
+     - **Methods**: Document each method as per the function guidelines.
+
+5. **API Endpoint Documentation** (for backend files):
+   - For each API endpoint, include:
+     - **Route**: The API route path.
+     - **Method**: HTTP method (GET, POST, etc.).
+     - **Description**: What the endpoint does.
+     - **Authentication**: Authentication requirements.
+     - **Parameters**:
+       - List all expected request parameters with details.
+     - **Responses**:
+       - Describe possible responses, status codes, and response bodies.
+     - **Usage Examples**:
+       - Provide example requests to the endpoint.
+
+6. **HTML Element Documentation**:
+   - For each HTML element, include:
+     - **Tag**: The HTML tag name.
+     - **Attributes**: List attributes with descriptions.
+     - **Text**: Any inner text.
+     - **Description**: Purpose of the element.
+
+7. **CSS Rule Documentation**:
+   - For each CSS rule, include:
+     - **Selector**: The CSS selector.
+     - **Declarations**: The properties and values.
+     - **Description**: Purpose or effect of the rule.
+
+8. **Organizational Structure**:
+   - Organize the documentation with clear headings and subheadings.
+   - Use markdown formatting for readability (e.g., `#`, `##`, `###` for headings).
+
+9. **Code Blocks**:
+   - Include code snippets where appropriate, using the correct language identifiers for syntax highlighting.
+   - Ensure code examples are complete and functional.
+
+10. **Consistency and Clarity**:
+    - Maintain a consistent format throughout the documentation.
+    - Use clear and precise language suitable for developers.
 
 Instructions:
 - Output the results by invoking the `generate_documentation` function.
 - The output must conform to the provided JSON schema.
 - Respond only with the function call output, without additional text.
+
+Schema:
+{json.dumps(function_schema, indent=2)}
+
+Code Structure:
+{json_structure}
 """
     )
 
     # Special instruction for CSS files
     if language == 'css':
-        prompt_parts.append("For CSS files, place docstrings *above* the selector they apply to.")
-
-    # Append the schema for guidance
-    prompt_parts.append(f"Schema:\n{json.dumps(function_schema, indent=2)}")
+        prompt_parts.append("For CSS files, place comments *above* the selector they apply to.")
 
     # Combine the prompt parts
     prompt = '\n'.join(prompt_parts)

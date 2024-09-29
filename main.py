@@ -5,6 +5,7 @@ import sys
 import argparse
 import asyncio
 import logging
+import json
 from utils import (
     load_config,
     get_all_file_paths,
@@ -12,6 +13,7 @@ from utils import (
     DEFAULT_EXCLUDED_DIRS,
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
+    function_schema,
 )
 from language_handlers import process_all_files
 
@@ -26,14 +28,17 @@ logger = logging.getLogger(__name__)
 def main():
     """Main function to orchestrate documentation generation."""
     parser = argparse.ArgumentParser(
-        description="Generate and insert comments/docstrings using OpenAI's GPT-4o-mini API."
+        description="Generate and insert comments/docstrings using OpenAI's GPT-4 API."
     )
     parser.add_argument("repo_path", help="Path to the code repository")
     parser.add_argument("-c", "--config", help="Path to config.json", default="config.json")
     parser.add_argument("--concurrency", help="Number of concurrent requests", type=int, default=5)
     parser.add_argument("-o", "--output", help="Output Markdown file", default="output.md")
-    parser.add_argument("--model", help="OpenAI model to use (default: gpt-4o-mini)", default="gpt-4o-mini")
+    parser.add_argument("--model", help="OpenAI model to use (default: gpt-4)", default="gpt-4")
     parser.add_argument("--skip-types", help="Comma-separated list of file extensions to skip", default="")
+    parser.add_argument("--project-info", help="Information about the project", default="")
+    parser.add_argument("--style-guidelines", help="Documentation style guidelines to follow", default="")
+    parser.add_argument("--safe-mode", help="Run in safe mode (no files will be modified)", action='store_true')
     args = parser.parse_args()
 
     # Validate OpenAI API key
@@ -46,6 +51,9 @@ def main():
     concurrency = args.concurrency
     output_file = args.output
     model_name = args.model
+    project_info_arg = args.project_info
+    style_guidelines_arg = args.style_guidelines
+    safe_mode = args.safe_mode
 
     if not os.path.isdir(repo_path):
         logger.error(f"Invalid repository path: '{repo_path}' is not a directory.")
@@ -58,7 +66,11 @@ def main():
         skip_types.update(args.skip_types.split(','))
 
     # Load additional configurations
-    load_config(config_path, excluded_dirs, excluded_files, skip_types)
+    project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
+
+    # Determine final project_info and style_guidelines
+    project_info = project_info_arg or project_info_config
+    style_guidelines = style_guidelines_arg or style_guidelines_config
 
     # Get all file paths
     file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files)
@@ -84,7 +96,11 @@ def main():
                 output_file,
                 semaphore,
                 output_lock,
-                model_name
+                model_name,
+                function_schema,
+                project_info,
+                style_guidelines,
+                safe_mode
             )
         )
     except Exception as e:
