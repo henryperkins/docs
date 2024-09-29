@@ -55,8 +55,8 @@ The tool consists of several interconnected scripts and modules:
 1. **Clone the Repository**
 
    ```bash
-   git clone https://github.com/yourusername/code-documentation-generator.git
-   cd code-documentation-generator
+   git clone https://github.com/henryperkins/docs.git
+   cd docs
    ```
 
 2. **Set Up Python Environment**
@@ -120,7 +120,7 @@ python main.py /path/to/your/codebase \
     --config config.json \
     --concurrency 10 \
     --output documentation.md \
-    --model gpt-4 \
+    --model gpt-4o-mini \
     --skip-types .json,.md \
     --project-info "handles user authentication and data processing" \
     --style-guidelines "Follow Google Python Style Guide" \
