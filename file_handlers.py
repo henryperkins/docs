@@ -92,9 +92,9 @@ def generate_documentation_prompt(code_structure: dict, project_info: Optional[s
         prompt += f"\n\n**Style Guidelines:** {style_guidelines}"
     prompt += f"\n\n**Language:** {language.capitalize()}"
     prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
-    prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase, explaining its purpose and functionality.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code, including new features, bug fixes, and optimizations.\n3. **Function Documentation:** For each function, provide a detailed description, parameter explanations, and return types.\n4. **Class Documentation:** For each class, provide a detailed description, list of methods, and their respective documentation.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
+    prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
     return prompt
-
+    
 async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict) -> Optional[dict]:
     """
     Fetches documentation from OpenAI's API based on the provided prompt using function calling.
@@ -232,7 +232,6 @@ async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semap
         except Exception as e:
             logger.error(f"Error fetching documentation from OpenAI API: {e}")
             return None
-
 
 async def fetch_documentation_with_retries(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict, max_retries: int = 3, backoff_factor: int = 2) -> Optional[dict]:
     """

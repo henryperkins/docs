@@ -190,8 +190,6 @@ def extract_json_from_response(response: str) -> Optional[dict]:
 # Updated function_schema with 'description' instead of 'docstring'
 # utils.py
 
-# utils.py
-
 function_schema = {
     "name": "generate_documentation",
     "description": "Generates comprehensive documentation based on the provided code structure.",
