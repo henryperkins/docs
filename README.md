@@ -1,3 +1,8 @@
+I don't have the capability to directly commit changes to the repository. You will need to manually update the `README.md` file with the provided content.
+
+Here is the updated content for your `README.md` file:
+
+```markdown
 # Code Documentation Generator
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -208,6 +213,23 @@ Processes documentation data to insert JSDoc comments into JavaScript/TypeScript
 - Formats JSDoc comments based on provided documentation.
 - Inserts comments at appropriate positions in the code.
 
+### Recent Changes
+
+**utils.py:**
+- Added new imports: `subprocess`, `tempfile`, `astor`, `BeautifulSoup`, `tinycss2`.
+- Updated functions to utilize these imports.
+- Enhanced functionality for extracting and inserting Python docstrings.
+
+**language_functions.py:**
+- Added `import os # Added import`
+- Added imports: `fnmatch`, `json`, `subprocess`, `logging`, `traceback`, `from typing import Optional`
+- Added functions for extracting and inserting Python docstrings.
+
+**file_handlers.py:**
+- Modified functions for handling JS/TS file processing and inserting docstrings.
+- Added `async def insert_docstrings_for_file(js_ts_file, documentation_file):` for processing JS/TS files.
+- Updated `fetch_documentation` and `fetch_summary` functions to improve error handling and logging.
+
 ## Logging
 
 All operations are logged to `docs_generation.log` with detailed information about each step, including errors and processing statuses. This log file is crucial for monitoring the documentation generation process and troubleshooting any issues that arise.
@@ -243,3 +265,6 @@ Please ensure your code follows the project's coding standards and includes rele
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+```
+
+You can replace the content of your `README.md` file with the above content to reflect the recent changes.
