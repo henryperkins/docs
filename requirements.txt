@@ -20,5 +20,5 @@ tqdm==4.66.5
 typing==3.7.4.3
 webencodings==0.5.1
 yarl==1.13.1
-black==23.7.0
+black==24.3.0
 flake8==6.1.0
