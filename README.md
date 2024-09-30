@@ -1,8 +1,3 @@
-I don't have the capability to directly commit changes to the repository. You will need to manually update the `README.md` file with the provided content.
-
-Here is the updated content for your `README.md` file:
-
-```markdown
 # Code Documentation Generator
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
