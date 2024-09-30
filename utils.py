@@ -11,7 +11,6 @@ import asyncio
 import re
 from dotenv import load_dotenv
 from typing import Set, List, Optional, Dict, Tuple
-import subprocess  # Added for flake8 function
 import tempfile  # Added for JS/TS extraction
 import astor  # Added for Python docstring insertion
 from bs4 import BeautifulSoup, Comment  # Added for HTML and CSS functions
@@ -127,7 +126,6 @@ def format_with_black(code: str) -> str:
         logger.error(f"Error formatting code with Black: {e}")
         return code  # Return the original code if formatting fails
 
-
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """Checks if a file extension is valid (not in the skip list)."""
     return ext.lower() not in skip_types
@@ -169,8 +167,6 @@ def extract_json_from_response(response: str) -> Optional[dict]:
         return None
 
 # Updated function_schema with 'description' instead of 'docstring'
-# utils.py
-
 function_schema = {
     "name": "generate_documentation",
     "description": "Generates comprehensive documentation based on the provided code structure.",
@@ -318,7 +314,6 @@ function_schema = {
         "required": ["summary", "changes"]
     }
 }
-
 
 async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict) -> Optional[dict]:
     """
