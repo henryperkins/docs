@@ -40,36 +40,6 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
-# Helper Functions
-def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
-    """Checks if the file extension is not in the skip list."""
-    return ext.lower() not in skip_types
-
-def is_binary(file_path: str) -> bool:
-    """Checks if a file is binary."""
-    try:
-        with open(file_path, 'rb') as f:
-            chunk = f.read(1024)
-            if b'\0' in chunk:
-                return True
-        return False
-    except Exception as e:
-        logger.error(f"Error checking if file is binary '{file_path}': {e}")
-        return False
-
-def get_language(ext: str) -> str:
-    """Determines the programming language based on file extension."""
-    ext = ext.lower()
-    if ext in ['.py']:
-        return "python"
-    elif ext in ['.js', '.jsx', '.ts', '.tsx']:
-        return "javascript" if ext in ['.js', '.jsx'] else "typescript"
-    elif ext in ['.html', '.htm']:
-        return "html"
-    elif ext in ['.css']:
-        return "css"
-    else:
-        return "plaintext"
 
 def generate_documentation_prompt(code_structure: dict, project_info: Optional[str], style_guidelines: Optional[str], language: str) -> str:
     """
