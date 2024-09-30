@@ -10,7 +10,12 @@ import aiohttp
 import asyncio
 import re
 from dotenv import load_dotenv
-from typing import Set, List, Optional, Dict, Tuple  # Added Tuple
+from typing import Set, List, Optional, Dict, Tuple
+import subprocess  # Added for flake8 function
+import tempfile  # Added for JS/TS extraction
+import astor  # Added for Python docstring insertion
+from bs4 import BeautifulSoup, Comment  # Added for HTML and CSS functions
+import tinycss2  # Added for CSS functions
 
 # Load environment variables
 load_dotenv()
