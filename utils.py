@@ -127,30 +127,6 @@ def format_with_black(code: str) -> str:
         logger.error(f"Error formatting code with Black: {e}")
         return code  # Return the original code if formatting fails
 
-def check_with_flake8(file_path: str) -> bool:
-    """
-    Checks Python code compliance using flake8.
-    
-    Parameters:
-        file_path (str): Path to the Python file to check.
-    
-    Returns:
-        bool: True if the code passes flake8 checks, False otherwise.
-    """
-    try:
-        result = subprocess.run(['flake8', file_path], capture_output=True, text=True)
-        if result.returncode == 0:
-            logger.debug(f"flake8 passed for '{file_path}'.")
-            return True
-        else:
-            logger.error(f"flake8 issues in '{file_path}':\n{result.stdout}")
-            return False
-    except FileNotFoundError:
-        logger.error("flake8 is not installed. Please install it via 'pip install flake8'.")
-        return False
-    except Exception as e:
-        logger.error(f"Error running flake8 on '{file_path}': {e}")
-        return False
 
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """Checks if a file extension is valid (not in the skip list)."""
