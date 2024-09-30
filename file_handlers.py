@@ -1,5 +1,3 @@
-# file_handlers.py
-
 import os
 import sys
 import json
@@ -40,196 +38,14 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
-
-def generate_documentation_prompt(code_structure: dict, project_info: Optional[str], style_guidelines: Optional[str], language: str) -> str:
+async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -> None:
     """
-    Generates a prompt for the OpenAI API based on the code structure.
-    
+    Inserts docstrings into a JS/TS file based on the provided documentation.
+
     Parameters:
-        code_structure (dict): The extracted structure of the code.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Documentation style guidelines.
-        language (str): The programming language of the code.
-    
-    Returns:
-        str: The generated prompt.
+        js_ts_file (str): The path to the JS/TS file.
+        documentation_file (str): The path to the JSON documentation file.
     """
-    prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a codebase."
-    if project_info:
-        prompt += f"\n\n**Project Information:** {project_info}"
-    if style_guidelines:
-        prompt += f"\n\n**Style Guidelines:** {style_guidelines}"
-    prompt += f"\n\n**Language:** {language.capitalize()}"
-    prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
-    prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
-    return prompt
-    
-async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict) -> Optional[dict]:
-    """
-    Fetches documentation from OpenAI's API based on the provided prompt using function calling.
-    
-    Parameters:
-        session (aiohttp.ClientSession): The aiohttp client session.
-        prompt (str): The prompt to send to the API.
-        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
-        model_name (str): The OpenAI model to use.
-        function_schema (dict): The JSON schema for the function call.
-    
-    Returns:
-        Optional[dict]: The generated documentation, or None if failed.
-    """
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": model_name,
-        "messages": [
-            {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
-            {"role": "user", "content": prompt}
-        ],
-        "functions": [function_schema],
-        "function_call": "auto"  # Let the model decide which function to call
-    }
-
-    async with semaphore:
-        try:
-            async with session.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload) as resp:
-                response_text = await resp.text()
-                logger.debug(f"API Response Status: {resp.status}")
-                logger.debug(f"API Response Body: {response_text}")
-
-                if resp.status != 200:
-                    logger.error(f"OpenAI API request failed with status {resp.status}: {response_text}")
-                    return None
-
-                response = await resp.json()
-                logger.debug(f"Parsed JSON Response: {json.dumps(response, indent=2)}")
-                choice = response.get("choices", [])[0]
-                message = choice.get('message', {})
-
-                # Check for function_call
-                if 'function_call' in message:
-                    arguments = message['function_call'].get('arguments', '{}')
-                    try:
-                        documentation = json.loads(arguments)
-                        logger.debug("Received documentation via function_call.")
-                        return documentation
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Error decoding JSON from function_call arguments: {e}")
-                        logger.error(f"Arguments Content: {arguments}")
-                        return None
-                else:
-                    # Fallback: Extract documentation directly from content
-                    content = message.get('content', '')
-                    if content:
-                        logger.debug("No function_call detected. Attempting to extract documentation from content.")
-                        try:
-                            # Initialize documentation dictionary
-                            documentation = {
-                                "summary": "",
-                                "changes": [],
-                                "functions": [],
-                                "classes": []
-                            }
-                            lines = content.split('\n')
-                            current_section = None
-                            current_item = {}
-                            for line in lines:
-                                if line.startswith("**Summary:**"):
-                                    current_section = "summary"
-                                    documentation["summary"] = line.replace("**Summary:**", "").strip()
-                                elif line.startswith("**Changes Made:**"):
-                                    current_section = "changes"
-                                elif line.startswith("**Function Documentation:**"):
-                                    current_section = "functions"
-                                elif line.startswith("**Class Documentation:**"):
-                                    current_section = "classes"
-                                elif current_section == "changes" and line.startswith("- "):
-                                    change = line.replace("- ", "").strip()
-                                    documentation["changes"].append(change)
-                                elif current_section == "functions" and line.startswith("- **Function Name:**"):
-                                    if current_item:
-                                        documentation["functions"].append(current_item)
-                                        current_item = {}
-                                    current_item["name"] = line.replace("- **Function Name:**", "").strip()
-                                elif current_section == "functions" and line.startswith("  - **Description:**"):
-                                    current_item["description"] = line.replace("  - **Description:**", "").strip()
-                                elif current_section == "functions" and line.startswith("  - **Parameters:**"):
-                                    params = []
-                                    # Expect parameters to be listed below
-                                    continue  # Parameters will be handled in the next lines
-                                elif current_section == "functions" and line.startswith("  - **Returns:**"):
-                                    current_item["returns"] = line.replace("  - **Returns:**", "").strip()
-                                elif current_section == "classes" and line.startswith("- **Class Name:**"):
-                                    if current_item:
-                                        documentation["classes"].append(current_item)
-                                        current_item = {}
-                                    current_item["name"] = line.replace("- **Class Name:**", "").strip()
-                                elif current_section == "classes" and line.startswith("  - **Description:**"):
-                                    current_item["description"] = line.replace("  - **Description:**", "").strip()
-                                elif current_section == "classes" and line.startswith("  - **Methods:**"):
-                                    methods = []
-                                    current_item["methods"] = methods
-                                    continue  # Methods will be handled in the next lines
-                                elif current_section == "classes" and line.startswith("    - **Method Name:**"):
-                                    method = {}
-                                    method["name"] = line.replace("    - **Method Name:**", "").strip()
-                                    current_item["methods"].append(method)
-                                elif current_section == "classes" and line.startswith("      - **Description:**"):
-                                    method["description"] = line.replace("      - **Description:**", "").strip()
-                                elif current_section == "classes" and line.startswith("      - **Parameters:**"):
-                                    method["parameters"] = []
-                                    continue  # Parameters will be handled in the next lines
-                                elif current_section == "classes" and line.startswith("      - **Returns:**"):
-                                    method["returns"] = line.replace("      - **Returns:**", "").strip()
-                            # Append the last item if exists
-                            if current_item:
-                                if current_section == "functions":
-                                    documentation["functions"].append(current_item)
-                                elif current_section == "classes":
-                                    documentation["classes"].append(current_item)
-                            logger.debug("Extracted documentation from content.")
-                            return documentation
-                        except Exception as e:
-                            logger.error(f"Error parsing documentation content: {e}")
-                            logger.error(f"Content Received: {content}")
-                            return None
-                    else:
-                        logger.error("No content found in the API response.")
-                        return None
-        except Exception as e:
-            logger.error(f"Error fetching documentation from OpenAI API: {e}")
-            return None
-
-async def fetch_documentation_with_retries(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict, max_retries: int = 3, backoff_factor: int = 2) -> Optional[dict]:
-    """
-    Fetches documentation from OpenAI's API with retry mechanism.
-    
-    Parameters:
-        session (aiohttp.ClientSession): The aiohttp client session.
-        prompt (str): The prompt to send to the API.
-        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
-        model_name (str): The OpenAI model to use.
-        function_schema (dict): The JSON schema for the function call.
-        max_retries (int): Maximum number of retries.
-        backoff_factor (int): Factor by which the wait time increases after each retry.
-    
-    Returns:
-        Optional[dict]: The generated documentation, or None if failed.
-    """
-    for attempt in range(1, max_retries + 1):
-        documentation = await fetch_documentation(session, prompt, semaphore, model_name, function_schema)
-        if documentation:
-            return documentation
-        else:
-            wait_time = backoff_factor ** attempt
-            logger.warning(f"Retrying in {wait_time} seconds... (Attempt {attempt}/{max_retries})")
-            await asyncio.sleep(wait_time)
-    logger.error("Max retries exceeded. Documentation generation failed.")
-    return None
-    
-async def insert_docstrings_for_file(js_ts_file, documentation_file):
     process = await asyncio.create_subprocess_exec(
         'node',
         'insert_docstrings.js',
@@ -244,7 +60,6 @@ async def insert_docstrings_for_file(js_ts_file, documentation_file):
     else:
         logger.info(stdout.decode().strip())
         
-# Processing Functions
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -443,6 +258,7 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error writing documentation")
 
+
 async def process_all_files(
     file_paths: List[str],
     skip_types: Set[str],
@@ -502,3 +318,20 @@ async def process_all_files(
                 logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
             else:
                 logger.debug(f"Completed processing file '{file_paths[idx]}'.")
+                
+def check_with_flake8(file_path: str) -> bool:
+    """
+    Runs flake8 on the given file and returns True if no issues are found.
+
+    Parameters:
+        file_path (str): Path to the file to check with flake8.
+
+    Returns:
+        bool: True if flake8 finds no issues, False otherwise.
+    """
+    result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
+    if result.returncode == 0:
+        return True
+    else:
+        logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
+        return False
