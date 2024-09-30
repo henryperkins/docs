@@ -190,325 +190,150 @@ def extract_json_from_response(response: str) -> Optional[dict]:
 # Updated function_schema with 'description' instead of 'docstring'
 # utils.py
 
+# utils.py
+
 function_schema = {
     "name": "generate_documentation",
-    "description": "Generates detailed documentation, summaries, and lists of changes for code structures.",
+    "description": "Generates comprehensive documentation based on the provided code structure.",
     "parameters": {
         "type": "object",
         "properties": {
             "summary": {
                 "type": "string",
-                "description": "A concise summary of the code's purpose and functionality."
+                "description": "A detailed summary of the codebase, explaining its purpose and functionality."
             },
             "changes": {
                 "type": "array",
-                "description": "A list of specific changes made in the code.",
                 "items": {
                     "type": "string"
-                }
+                },
+                "description": "A comprehensive list of changes or updates made to the code, including new features, bug fixes, and optimizations."
             },
             "functions": {
                 "type": "array",
-                "description": "Details about functions in the code.",
                 "items": {
                     "type": "object",
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Function name."
+                            "description": "The name of the function."
                         },
                         "description": {
                             "type": "string",
-                            "description": "Detailed explanation of what the function does."
+                            "description": "A detailed description of what the function does."
                         },
                         "parameters": {
                             "type": "array",
-                            "description": "List of parameters the function accepts.",
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "name": {
                                         "type": "string",
-                                        "description": "Parameter name."
+                                        "description": "The name of the parameter."
                                     },
                                     "type": {
                                         "type": "string",
-                                        "description": "Parameter data type."
+                                        "description": "The data type of the parameter."
                                     },
                                     "description": {
                                         "type": "string",
-                                        "description": "Description of the parameter."
+                                        "description": "A brief description of the parameter."
                                     }
                                 },
                                 "required": ["name", "type"]
-                            }
+                            },
+                            "description": "A list of parameters that the function accepts."
                         },
                         "returns": {
                             "type": "object",
-                            "description": "Information about the return value.",
                             "properties": {
                                 "type": {
                                     "type": "string",
-                                    "description": "Return data type."
+                                    "description": "The return data type of the function."
                                 },
                                 "description": {
                                     "type": "string",
-                                    "description": "Description of the return value."
+                                    "description": "A brief description of what the function returns."
                                 }
                             },
                             "required": ["type"]
-                        },
-                        "decorators": {
-                            "type": "array",
-                            "description": "List of decorators applied to the function.",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        "examples": {
-                            "type": "array",
-                            "description": "Usage examples of the function.",
-                            "items": {
-                                "type": "string"
-                            }
                         }
                     },
-                    "required": ["name", "description", "parameters", "returns"]
-                }
+                    "required": ["name", "description"]
+                },
+                "description": "A detailed list of functions within the codebase, including their descriptions, parameters, and return types."
             },
             "classes": {
                 "type": "array",
-                "description": "Details about classes in the code.",
                 "items": {
                     "type": "object",
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Class name."
+                            "description": "The name of the class."
                         },
                         "description": {
                             "type": "string",
-                            "description": "Detailed description of the class."
-                        },
-                        "bases": {
-                            "type": "array",
-                            "description": "Base classes the class inherits from.",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        "decorators": {
-                            "type": "array",
-                            "description": "List of decorators applied to the class.",
-                            "items": {
-                                "type": "string"
-                            }
+                            "description": "A detailed description of what the class represents."
                         },
                         "methods": {
                             "type": "array",
-                            "description": "List of methods within the class.",
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "name": {
                                         "type": "string",
-                                        "description": "Method name."
+                                        "description": "The name of the method."
                                     },
                                     "description": {
                                         "type": "string",
-                                        "description": "Detailed explanation of the method."
+                                        "description": "A detailed description of what the method does."
                                     },
                                     "parameters": {
                                         "type": "array",
-                                        "description": "List of parameters the method accepts.",
                                         "items": {
                                             "type": "object",
                                             "properties": {
                                                 "name": {
                                                     "type": "string",
-                                                    "description": "Parameter name."
+                                                    "description": "The name of the parameter."
                                                 },
                                                 "type": {
                                                     "type": "string",
-                                                    "description": "Parameter data type."
+                                                    "description": "The data type of the parameter."
                                                 },
                                                 "description": {
                                                     "type": "string",
-                                                    "description": "Description of the parameter."
+                                                    "description": "A brief description of the parameter."
                                                 }
                                             },
                                             "required": ["name", "type"]
-                                        }
+                                        },
+                                        "description": "A list of parameters that the method accepts."
                                     },
                                     "returns": {
                                         "type": "object",
-                                        "description": "Information about the return value.",
                                         "properties": {
                                             "type": {
                                                 "type": "string",
-                                                "description": "Return data type."
+                                                "description": "The return data type of the method."
                                             },
                                             "description": {
                                                 "type": "string",
-                                                "description": "Description of the return value."
+                                                "description": "A brief description of what the method returns."
                                             }
                                         },
                                         "required": ["type"]
-                                    },
-                                    "decorators": {
-                                        "type": "array",
-                                        "description": "List of decorators applied to the method.",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "examples": {
-                                        "type": "array",
-                                        "description": "Usage examples of the method.",
-                                        "items": {
-                                            "type": "string"
-                                        }
                                     }
                                 },
-                                "required": ["name", "description", "parameters", "returns"]
-                            }
+                                "required": ["name", "description"]
+                            },
+                            "description": "A detailed list of methods within the class, including their descriptions, parameters, and return types."
                         }
                     },
-                    "required": ["name", "description", "bases", "decorators", "methods"]
-                }
-            },
-            "api_endpoints": {
-                "type": "array",
-                "description": "Details about API endpoints (for backend files).",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "route": {
-                            "type": "string",
-                            "description": "API route path."
-                        },
-                        "method": {
-                            "type": "string",
-                            "description": "HTTP method (GET, POST, etc.)."
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Description of what the endpoint does."
-                        },
-                        "authentication": {
-                            "type": "string",
-                            "description": "Authentication requirements."
-                        },
-                        "parameters": {
-                            "type": "array",
-                            "description": "Parameters accepted by the API endpoint.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "description": "Parameter name."
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "Parameter data type."
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "description": "Description of the parameter."
-                                    },
-                                    "required": {
-                                        "type": "boolean",
-                                        "description": "Whether the parameter is required."
-                                    }
-                                },
-                                "required": ["name", "type", "required"]
-                            }
-                        },
-                        "responses": {
-                            "type": "array",
-                            "description": "Possible responses from the API endpoint.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "status_code": {
-                                        "type": "integer",
-                                        "description": "HTTP status code."
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "description": "Description of the response."
-                                    },
-                                    "body": {
-                                        "type": "string",
-                                        "description": "Response body content."
-                                    }
-                                },
-                                "required": ["status_code", "description"]
-                            }
-                        },
-                        "examples": {
-                            "type": "array",
-                            "description": "Example requests to the API endpoint.",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "required": ["route", "method", "description"]
-                }
-            },
-            "elements": {
-                "type": "array",
-                "description": "Details about HTML elements.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "tag": {
-                            "type": "string",
-                            "description": "HTML tag name."
-                        },
-                        "attributes": {
-                            "type": "object",
-                            "description": "Attributes of the HTML element.",
-                            "additionalProperties": {
-                                "type": "string",
-                                "description": "Value of the attribute."
-                            }
-                        },
-                        "text": {
-                            "type": "string",
-                            "description": "Inner text of the element."
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Purpose of the element."
-                        }
-                    },
-                    "required": ["tag"]
-                }
-            },
-            "rules": {
-                "type": "array",
-                "description": "Details about CSS rules.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "selector": {
-                            "type": "string",
-                            "description": "CSS selector."
-                        },
-                        "declarations": {
-                            "type": "string",
-                            "description": "CSS declarations (properties and values)."
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Purpose or effect of the rule."
-                        }
-                    },
-                    "required": ["selector"]
-                }
+                    "required": ["name", "description"]
+                },
+                "description": "A detailed list of classes within the codebase, including their descriptions and methods."
             }
         },
         "required": ["summary", "changes"]
@@ -692,123 +517,25 @@ async def fetch_summary(
     logger.error("Failed to generate summary after multiple attempts.")
     return None
 
-def generate_documentation_prompt(
-    code_structure: dict,
-    project_info: str = None,
-    style_guidelines: str = None
-) -> str:
+def generate_documentation_prompt(code_structure: dict, project_info: Optional[str], style_guidelines: Optional[str], language: str) -> str:
     """
-    Generates a prompt for the AI model to create comprehensive documentation, summaries, and change lists.
-
+    Generates a prompt for the OpenAI API based on the code structure.
+    
     Parameters:
-        code_structure (dict): The structured representation of the code.
-        project_info (str, optional): Information about the project the code belongs to.
-        style_guidelines (str, optional): Specific documentation style guidelines to follow.
-
+        code_structure (dict): The extracted structure of the code.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Documentation style guidelines.
+        language (str): The programming language of the code.
+    
     Returns:
-        str: The generated prompt to be sent to the AI model.
+        str: The generated prompt.
     """
-
-    language = code_structure.get("language", "code")
-    json_structure = json.dumps(code_structure, indent=2)
-
-    prompt_parts = [
-        f"You are an expert {language} developer and technical writer."
-    ]
-
+    prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a codebase."
     if project_info:
-        prompt_parts.append(f"The code belongs to a project that {project_info}.")
-
+        prompt += f"\n\n**Project Information:** {project_info}"
     if style_guidelines:
-        prompt_parts.append(f"Please follow these documentation style guidelines: {style_guidelines}")
-
-    # Core instruction for documentation generation
-    prompt_parts.append(
-        f"""
-Based on the provided {language} code structure in JSON format, generate comprehensive documentation following these guidelines:
-
-1. **Detailed Summaries**:
-   - Provide a clear and concise summary of the file's purpose and functionality.
-   - Explain the role of the code within the larger application context.
-
-2. **Changes Made**:
-   - List specific changes implemented in the code.
-   - Categorize changes if applicable (e.g., Added, Updated, Fixed).
-
-3. **Function and Method Documentation**:
-   - For each function and method, include:
-     - **Name**: The function or method name.
-     - **Description**: A detailed explanation of what it does.
-     - **Parameters**:
-       - List all parameters with their names, types, and detailed descriptions.
-     - **Returns**:
-       - Specify the return type and provide a description of the return value.
-     - **Usage Examples**:
-       - Provide code snippets demonstrating how to use the function or method.
-
-4. **Class Documentation**:
-   - For each class, include:
-     - **Name**: The class name.
-     - **Description**: A detailed explanation of the class's purpose.
-     - **Inheritance**: List base classes if any.
-     - **Methods**: Document each method as per the function guidelines.
-
-5. **API Endpoint Documentation** (for backend files):
-   - For each API endpoint, include:
-     - **Route**: The API route path.
-     - **Method**: HTTP method (GET, POST, etc.).
-     - **Description**: What the endpoint does.
-     - **Authentication**: Authentication requirements.
-     - **Parameters**:
-       - List all expected request parameters with details.
-     - **Responses**:
-       - Describe possible responses, status codes, and response bodies.
-     - **Usage Examples**:
-       - Provide example requests to the endpoint.
-
-6. **HTML Element Documentation**:
-   - For each HTML element, include:
-     - **Tag**: The HTML tag name.
-     - **Attributes**: List attributes with descriptions.
-     - **Text**: Any inner text.
-     - **Description**: Purpose of the element.
-
-7. **CSS Rule Documentation**:
-   - For each CSS rule, include:
-     - **Selector**: The CSS selector.
-     - **Declarations**: The properties and values.
-     - **Description**: Purpose or effect of the rule.
-
-8. **Organizational Structure**:
-   - Organize the documentation with clear headings and subheadings.
-   - Use markdown formatting for readability (e.g., `#`, `##`, `###` for headings).
-
-9. **Code Blocks**:
-   - Include code snippets where appropriate, using the correct language identifiers for syntax highlighting.
-   - Ensure code examples are complete and functional.
-
-10. **Consistency and Clarity**:
-    - Maintain a consistent format throughout the documentation.
-    - Use clear and precise language suitable for developers.
-
-Instructions:
-- Output the results by invoking the `generate_documentation` function.
-- The output must conform to the provided JSON schema.
-- Respond only with the function call output, without additional text.
-
-Schema:
-{json.dumps(function_schema, indent=2)}
-
-Code Structure:
-{json_structure}
-"""
-    )
-
-    # Special instruction for CSS files
-    if language == 'css':
-        prompt_parts.append("For CSS files, place comments *above* the selector they apply to.")
-
-    # Combine the prompt parts
-    prompt = '\n'.join(prompt_parts)
-
+        prompt += f"\n\n**Style Guidelines:** {style_guidelines}"
+    prompt += f"\n\n**Language:** {language.capitalize()}"
+    prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
+    prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
     return prompt
