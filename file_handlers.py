@@ -85,14 +85,14 @@ def generate_documentation_prompt(code_structure: dict, project_info: Optional[s
     Returns:
         str: The generated prompt.
     """
-    prompt = "You are an assistant that generates comprehensive documentation for codebases."
+    prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a codebase."
     if project_info:
-        prompt += f"\nProject Information: {project_info}"
+        prompt += f"\n\n**Project Information:** {project_info}"
     if style_guidelines:
-        prompt += f"\nStyle Guidelines: {style_guidelines}"
-    prompt += f"\nLanguage: {language.capitalize()}"
-    prompt += f"\nCode Structure: {json.dumps(code_structure)}"
-    prompt += "\nPlease generate a summary and a list of changes made to the code."
+        prompt += f"\n\n**Style Guidelines:** {style_guidelines}"
+    prompt += f"\n\n**Language:** {language.capitalize()}"
+    prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
+    prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase, explaining its purpose and functionality.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code, including new features, bug fixes, and optimizations.\n3. **Function Documentation:** For each function, provide a detailed description, parameter explanations, and return types.\n4. **Class Documentation:** For each class, provide a detailed description, list of methods, and their respective documentation.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
     return prompt
 
 async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict) -> Optional[dict]:
@@ -156,20 +156,70 @@ async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semap
                     if content:
                         logger.debug("No function_call detected. Attempting to extract documentation from content.")
                         try:
-                            # Example Parsing Logic:
-                            # Assume the content has sections like "Summary:" and "Changes:"
-                            summary = ""
-                            changes = []
-                            lines = content.split('\n')
-                            for i, line in enumerate(lines):
-                                if line.startswith("Summary:"):
-                                    summary = line.replace("Summary:", "").strip()
-                                elif line.startswith("Changes:"):
-                                    changes = [l.replace("-", "").strip() for l in lines[i+1:] if l.startswith("-")]
+                            # Initialize documentation dictionary
                             documentation = {
-                                "summary": summary,
-                                "changes": changes
+                                "summary": "",
+                                "changes": [],
+                                "functions": [],
+                                "classes": []
                             }
+                            lines = content.split('\n')
+                            current_section = None
+                            current_item = {}
+                            for line in lines:
+                                if line.startswith("**Summary:**"):
+                                    current_section = "summary"
+                                    documentation["summary"] = line.replace("**Summary:**", "").strip()
+                                elif line.startswith("**Changes Made:**"):
+                                    current_section = "changes"
+                                elif line.startswith("**Function Documentation:**"):
+                                    current_section = "functions"
+                                elif line.startswith("**Class Documentation:**"):
+                                    current_section = "classes"
+                                elif current_section == "changes" and line.startswith("- "):
+                                    change = line.replace("- ", "").strip()
+                                    documentation["changes"].append(change)
+                                elif current_section == "functions" and line.startswith("- **Function Name:**"):
+                                    if current_item:
+                                        documentation["functions"].append(current_item)
+                                        current_item = {}
+                                    current_item["name"] = line.replace("- **Function Name:**", "").strip()
+                                elif current_section == "functions" and line.startswith("  - **Description:**"):
+                                    current_item["description"] = line.replace("  - **Description:**", "").strip()
+                                elif current_section == "functions" and line.startswith("  - **Parameters:**"):
+                                    params = []
+                                    # Expect parameters to be listed below
+                                    continue  # Parameters will be handled in the next lines
+                                elif current_section == "functions" and line.startswith("  - **Returns:**"):
+                                    current_item["returns"] = line.replace("  - **Returns:**", "").strip()
+                                elif current_section == "classes" and line.startswith("- **Class Name:**"):
+                                    if current_item:
+                                        documentation["classes"].append(current_item)
+                                        current_item = {}
+                                    current_item["name"] = line.replace("- **Class Name:**", "").strip()
+                                elif current_section == "classes" and line.startswith("  - **Description:**"):
+                                    current_item["description"] = line.replace("  - **Description:**", "").strip()
+                                elif current_section == "classes" and line.startswith("  - **Methods:**"):
+                                    methods = []
+                                    current_item["methods"] = methods
+                                    continue  # Methods will be handled in the next lines
+                                elif current_section == "classes" and line.startswith("    - **Method Name:**"):
+                                    method = {}
+                                    method["name"] = line.replace("    - **Method Name:**", "").strip()
+                                    current_item["methods"].append(method)
+                                elif current_section == "classes" and line.startswith("      - **Description:**"):
+                                    method["description"] = line.replace("      - **Description:**", "").strip()
+                                elif current_section == "classes" and line.startswith("      - **Parameters:**"):
+                                    method["parameters"] = []
+                                    continue  # Parameters will be handled in the next lines
+                                elif current_section == "classes" and line.startswith("      - **Returns:**"):
+                                    method["returns"] = line.replace("      - **Returns:**", "").strip()
+                            # Append the last item if exists
+                            if current_item:
+                                if current_section == "functions":
+                                    documentation["functions"].append(current_item)
+                                elif current_section == "classes":
+                                    documentation["classes"].append(current_item)
                             logger.debug("Extracted documentation from content.")
                             return documentation
                         except Exception as e:
@@ -182,6 +232,7 @@ async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semap
         except Exception as e:
             logger.error(f"Error fetching documentation from OpenAI API: {e}")
             return None
+
 
 async def fetch_documentation_with_retries(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict, max_retries: int = 3, backoff_factor: int = 2) -> Optional[dict]:
     """
