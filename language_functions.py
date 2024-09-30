@@ -1,6 +1,6 @@
 # language_functions.py
 
-import os  # Added import
+import os
 import fnmatch
 import json
 import ast
@@ -8,7 +8,11 @@ import asyncio
 import subprocess
 import logging
 import traceback
-from typing import Optional
+import tempfile
+import astor  # Added for Python docstring insertion
+from typing import Optional, Dict, Any
+from bs4 import BeautifulSoup, Comment  # Added for HTML and CSS functions
+import tinycss2  # Added for CSS functions
 
 logger = logging.getLogger(__name__)
 
