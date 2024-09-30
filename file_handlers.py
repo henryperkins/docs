@@ -27,7 +27,10 @@ from language_functions import (
 )
 from utils import (
     load_config,
+    is_binary,
+    get_language,
     get_all_file_paths,
+    is_valid_extension,
     OPENAI_API_KEY,
     DEFAULT_EXCLUDED_DIRS,
     DEFAULT_EXCLUDED_FILES,
