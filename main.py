@@ -21,8 +21,8 @@ from utils import (
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels of logs
 
-# Create formatter
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(message)s')
+# Create formatter with module, function, and line number
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s')
 
 # Create file handler which logs debug and higher level messages
 file_handler = logging.FileHandler('docs_generation.log')
@@ -39,16 +39,7 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 def validate_model_name(model_name: str) -> bool:
-    """
-    Validates the OpenAI model name format.
-    Adjust the validation logic based on available models.
-
-    Args:
-        model_name (str): The name of the OpenAI model.
-
-    Returns:
-        bool: True if valid, False otherwise.
-    """
+    """Validates the OpenAI model name format."""
     valid_models = [
         "gpt-4",
         "gpt-4-0314",
