@@ -8,7 +8,6 @@ import ast
 import astor
 import shutil
 from typing import Set, List, Optional, Dict
-
 import aiofiles
 import aiohttp
 import asyncio
@@ -36,7 +35,7 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     function_schema,
-    format_with_black,  # Correctly imported from utils.py
+    format_with_black,
 )
 
 logger = logging.getLogger(__name__)
