@@ -260,6 +260,3 @@ Please ensure your code follows the project's coding standards and includes rele
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-```
-
-You can replace the content of your `README.md` file with the above content to reflect the recent changes.
