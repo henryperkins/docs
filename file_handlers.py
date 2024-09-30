@@ -37,15 +37,27 @@ from utils import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels of logs
+
+# Create formatter with module, function, and line number
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s')
+
+# Create file handler which logs debug and higher level messages
+file_handler = logging.FileHandler('file_handlers.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+# Create console handler with a higher log level
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)  # Change to DEBUG for more verbosity on console
+console_handler.setFormatter(formatter)
+
+# Add handlers to the logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -> None:
-    """
-    Inserts docstrings into a JS/TS file based on the provided documentation.
-
-    Parameters:
-        js_ts_file (str): The path to the JS/TS file.
-        documentation_file (str): The path to the JSON documentation file.
-    """
+    logger.debug(f"Entering insert_docstrings_for_file with js_ts_file={js_ts_file}, documentation_file={documentation_file}")
     process = await asyncio.create_subprocess_exec(
         'node',
         'insert_docstrings.js',
@@ -59,7 +71,8 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
         logger.error(f"Error inserting docstrings into {js_ts_file}: {stderr.decode().strip()}")
     else:
         logger.info(stdout.decode().strip())
-        
+    logger.debug("Exiting insert_docstrings_for_file")
+
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -74,27 +87,7 @@ async def process_file(
     style_guidelines: Optional[str] = None,
     safe_mode: bool = False,
 ) -> None:
-    """
-    Processes a single file: extracts code structure, generates documentation, inserts docstrings/comments,
-    and ensures code compliance (e.g., PEP8 for Python).
-
-    Parameters:
-        session (aiohttp.ClientSession): The aiohttp client session.
-        file_path (str): Path to the file to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        output_file (str): Path to the output Markdown file.
-        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
-        output_lock (asyncio.Lock): Lock to manage asynchronous writes to the output file.
-        model_name (str): OpenAI model to use (e.g., 'gpt-4').
-        function_schema (dict): JSON schema for the function call.
-        repo_root (str): Root directory of the repository.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Documentation style guidelines to follow.
-        safe_mode (bool): If True, do not modify original files.
-
-    Returns:
-        None
-    """
+    logger.debug(f"Entering process_file with file_path={file_path}")
     summary = ""
     changes = []
     try:
@@ -115,7 +108,7 @@ async def process_file(
                 content = await f.read()
             logger.debug(f"Read content from '{file_path}'.")
         except Exception as e:
-            logger.error(f"Failed to read '{file_path}': {e}")
+            logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return
 
         # Attempt to extract the structure of the code
@@ -256,8 +249,8 @@ async def process_file(
         except Exception as e:
             logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
     except Exception as e:
-        logger.error(f"Error writing documentation")
-
+        logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
+    logger.debug("Exiting process_file")
 
 async def process_all_files(
     file_paths: List[str],
@@ -272,25 +265,7 @@ async def process_all_files(
     style_guidelines: Optional[str] = None,
     safe_mode: bool = False,
 ) -> None:
-    """
-    Processes all files asynchronously.
-
-    Parameters:
-        file_paths (List[str]): List of file paths to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        output_file (str): Path to the output Markdown file.
-        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
-        output_lock (asyncio.Lock): Lock to manage asynchronous writes to the output file.
-        model_name (str): OpenAI model to use (e.g., 'gpt-4').
-        function_schema (dict): JSON schema for the function call.
-        repo_root (str): Root directory of the repository.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Documentation style guidelines to follow.
-        safe_mode (bool): If True, do not modify original files.
-
-    Returns:
-        None
-    """
+    logger.debug(f"Entering process_all_files with {len(file_paths)} files")
     tasks = []
     async with aiohttp.ClientSession() as session:
         for file_path in file_paths:
@@ -318,20 +293,15 @@ async def process_all_files(
                 logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
             else:
                 logger.debug(f"Completed processing file '{file_paths[idx]}'.")
-                
+    logger.debug("Exiting process_all_files")
+
 def check_with_flake8(file_path: str) -> bool:
-    """
-    Runs flake8 on the given file and returns True if no issues are found.
-
-    Parameters:
-        file_path (str): Path to the file to check with flake8.
-
-    Returns:
-        bool: True if flake8 finds no issues, False otherwise.
-    """
+    logger.debug(f"Entering check_with_flake8 with file_path={file_path}")
     result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
     if result.returncode == 0:
+        logger.debug(f"No flake8 issues in {file_path}")
         return True
     else:
         logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
         return False
+    logger.debug("Exiting check_with_flake8")
