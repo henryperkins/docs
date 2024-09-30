@@ -1,15 +1,14 @@
 # language_functions.py
 
+import os  # Added import
+import fnmatch
+import json
 import ast
-import astor
-import logging
-import subprocess
-import tempfile
-from typing import Optional, Dict, Any
-
 import asyncio
-from bs4 import BeautifulSoup, Comment
-import tinycss2
+import subprocess
+import logging
+import traceback
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
