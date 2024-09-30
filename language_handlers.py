@@ -1,3 +1,5 @@
+# language_handlers.py
+from typing import Set, List, Optional, Dict
 import os
 import sys
 import json
@@ -5,32 +7,66 @@ import logging
 import ast
 import astor
 import tinycss2
-import re
 from bs4 import BeautifulSoup, Comment
 import shutil
 from utils import (
+    load_config,
+    get_all_file_paths,
+    OPENAI_API_KEY,
+    DEFAULT_EXCLUDED_DIRS,
+    DEFAULT_EXCLUDED_FILES,
+    DEFAULT_SKIP_TYPES,
+    function_schema,
+    is_binary,
     is_valid_extension,
     get_language,
-    generate_documentation_prompt,
     fetch_documentation,
     fetch_summary,
-    is_binary,
-    function_schema,
 )
 import aiofiles
 import aiohttp
 import asyncio
-from typing import Set, List, Optional, Dict
 from tqdm.asyncio import tqdm
 import subprocess
+from pathlib import Path
+import tempfile
 
 logger = logging.getLogger(__name__)
+
+# Define or import format_with_black and check_with_flake8
+def format_with_black(code: str) -> str:
+    """Formats Python code using Black."""
+    try:
+        import black
+        formatted_code = black.format_str(code, mode=black.FileMode())
+        return formatted_code
+    except ImportError:
+        logger.warning("Black is not installed. Skipping formatting.")
+        return code
+    except Exception as e:
+        logger.error(f"Black formatting failed: {e}")
+        return code
+
+def check_with_flake8(file_path: str) -> bool:
+    """Checks Python code with Flake8."""
+    try:
+        result = subprocess.run(['flake8', file_path], capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        else:
+            logger.error(f"flake8 errors in {file_path}:\n{result.stdout}")
+            return False
+    except FileNotFoundError:
+        logger.error("flake8 is not installed or not found in PATH.")
+        return False
+    except Exception as e:
+        logger.error(f"Error running flake8 on {file_path}: {e}")
+        return False
 
 # Python handlers
 def extract_python_structure(file_content: str) -> dict:
     """Extracts the structure of Python code."""
     try:
-
         tree = ast.parse(file_content)
         parent_map = {}
         for node in ast.walk(tree):
@@ -115,12 +151,9 @@ def extract_python_structure(file_content: str) -> dict:
         logger.error(f"Error parsing Python code: {e}")
         return {}
 
-
-
 def insert_python_docstrings(file_content: str, documentation: dict) -> str:
     """Inserts docstrings into Python code, including parameters and return descriptions."""
     try:
-
         tree = ast.parse(file_content)
         parent_map = {}
         for node in ast.walk(tree):
@@ -179,13 +212,12 @@ def insert_python_docstrings(file_content: str, documentation: dict) -> str:
 
         inserter = DocstringInserter()
         new_tree = inserter.visit(tree)
+        ast.fix_missing_locations(new_tree)  # Ensure the AST is properly fixed
         new_code = astor.to_source(new_tree)
         return new_code
     except Exception as e:
         logger.error(f"Error inserting docstrings into Python code: {e}")
         return file_content
-
-
 
 def is_valid_python_code(code: str) -> bool:
     """Checks if the given code is valid Python code."""
@@ -194,7 +226,6 @@ def is_valid_python_code(code: str) -> bool:
         return True
     except SyntaxError:
         return False
-
 
 async def extract_js_ts_structure(file_path: str, file_content: str, language: str) -> dict:
     """
@@ -238,8 +269,6 @@ async def extract_js_ts_structure(file_path: str, file_content: str, language: s
         logger.error(f"Unexpected error while extracting JS/TS structure from '{file_path}': {e}")
         return {}
 
-
-
 def insert_js_ts_docstrings(content: str, documentation: dict) -> str:
     """
     Inserts JSDoc comments into JavaScript or TypeScript code.
@@ -249,7 +278,7 @@ def insert_js_ts_docstrings(content: str, documentation: dict) -> str:
         documentation (dict): The documentation dictionary containing 'functions' and 'classes'.
 
     Returns:
-        str: The updated source code with inserted docstrings.
+        str: The updated source code with inserted docstrings/comments.
     """
     try:
         if not content:
@@ -286,8 +315,6 @@ def insert_js_ts_docstrings(content: str, documentation: dict) -> str:
         logger.error(f"Error inserting JS/TS docstrings: {e}")
         return content
 
-
-
 def extract_html_structure(file_content: str) -> dict:
     """Extracts the structure of HTML code."""
     try:
@@ -314,8 +341,6 @@ def extract_html_structure(file_content: str) -> dict:
     except Exception as e:
         logger.error(f"Error parsing HTML code: {e}")
         return {}
-
-
 
 def insert_html_comments(file_content: str, documentation: dict) -> str:
     """Inserts comments into HTML code, preventing duplicates."""
@@ -358,7 +383,6 @@ def insert_html_comments(file_content: str, documentation: dict) -> str:
         logger.error(f"Error inserting comments into HTML code: {e}")
         return file_content
 
-
 def extract_css_structure(file_content: str) -> dict:
     """Extracts the structure of CSS code."""
     try:
@@ -380,9 +404,6 @@ def extract_css_structure(file_content: str) -> dict:
         logger.error(f"Error parsing CSS code: {e}")
         return {}
 
-
-
-
 def insert_css_docstrings(content: str, documentation: dict) -> str:
     """
     Inserts comments into CSS code based on the provided documentation.
@@ -397,9 +418,7 @@ def insert_css_docstrings(content: str, documentation: dict) -> str:
     try:
         lines = content.split('\n')
         updated_lines = []
-        i = 0
-        while i < len(lines):
-            line = lines[i]
+        for line in lines:
             stripped_line = line.strip()
             # Check if the line is a selector
             if stripped_line.endswith('{'):
@@ -408,48 +427,50 @@ def insert_css_docstrings(content: str, documentation: dict) -> str:
                 for rule in documentation.get('rules', []):
                     if selector == rule['selector']:
                         # Insert the comment above the rule
-                        comment = f"/* {rule.get('description', '')} */"
-                        updated_lines.append(comment)
+                        description = rule.get('description', '')
+                        if description:  # Only add comment if description exists
+                            comment = f"/* {description} */"
+                            updated_lines.append(comment)
                         break
                 updated_lines.append(line)
             else:
                 updated_lines.append(line)
-            i += 1
         return '\n'.join(updated_lines)
     except Exception as e:
         logger.error(f"Error inserting comments into CSS code: {e}")
         return content
 
-
-
 async def process_file(
-    session,
-    file_path,
-    skip_types,
-    output_file,
-    semaphore,
-    output_lock,
-    model_name,
-    function_schema,
-    project_info=None,
-    style_guidelines=None,
-    safe_mode=False,
-):
+    session: aiohttp.ClientSession,
+    file_path: str,
+    skip_types: Set[str],
+    output_file: str,
+    semaphore: asyncio.Semaphore,
+    output_lock: asyncio.Lock,
+    model_name: str,
+    function_schema: dict,
+    repo_root: str,
+    project_info: Optional[str] = None,
+    style_guidelines: Optional[str] = None,
+    safe_mode: bool = False,
+) -> None:
     """
-    Processes a single file: extracts code structure, generates documentation, and inserts docstrings/comments.
+    Processes a single file: extracts code structure, generates documentation, inserts docstrings/comments,
+    and ensures code compliance (e.g., PEP8 for Python).
 
     Parameters:
-        session (aiohttp.ClientSession): The aiohttp session for making API calls.
-        file_path (str): The path to the file to process.
-        skip_types (list): List of file types/extensions to skip.
-        output_file (str): The path to the output markdown file.
-        semaphore (asyncio.Semaphore): Semaphore to control the concurrency of API calls.
-        output_lock (asyncio.Lock): Lock to prevent concurrent writes to the output file.
-        model_name (str): The OpenAI model to use (e.g., 'gpt-4').
-        function_schema (dict): The updated function schema for the AI assistant.
-        project_info (str, optional): Information about the project the code belongs to.
-        style_guidelines (str, optional): Specific documentation style guidelines to follow.
-        safe_mode (bool, optional): If True, does not modify the original files.
+        session (aiohttp.ClientSession): The aiohttp client session.
+        file_path (str): Path to the file to process.
+        skip_types (Set[str]): Set of file extensions to skip.
+        output_file (str): Path to the output Markdown file.
+        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
+        output_lock (asyncio.Lock): Lock to manage asynchronous writes to the output file.
+        model_name (str): OpenAI model to use (e.g., 'gpt-4').
+        function_schema (dict): JSON schema for the function call.
+        repo_root (str): Root directory of the repository.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Documentation style guidelines to follow.
+        safe_mode (bool): If True, do not modify original files.
 
     Returns:
         None
@@ -466,7 +487,8 @@ async def process_file(
         if language == "plaintext":
             logger.debug(f"Skipping unsupported language in '{file_path}'.")
             return
-
+    except Exception as e:
+        logger.error(f"An error occurred while processing file '{file_path}': {e}")
         try:
             async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
@@ -502,8 +524,6 @@ async def process_file(
             project_info=project_info,
             style_guidelines=style_guidelines
         )
-
-        # Fetch the documentation from the OpenAI API using the updated function
         documentation = await fetch_documentation(
             session=session,
             prompt=prompt,
@@ -513,33 +533,53 @@ async def process_file(
         )
 
         if not documentation:
-            logger.error(
-                f"Failed to generate documentation for '{file_path}'."
-            )
+            logger.error(f"Failed to generate documentation for '{file_path}'.")
             return
 
         summary = documentation.get("summary", "")
         changes = documentation.get("changes", [])
 
-        # Insert the generated documentation into the code
+        documentation["source_code"] = content  # Always include the source code
+
+        # Compute relative path
+        relative_path = os.path.relpath(file_path, repo_root)
+
+        # Insert docstrings or comments based on language
         if language == "python":
             new_content = insert_python_docstrings(content, documentation)
             # Validate Python code if applicable
             if not is_valid_python_code(new_content):
                 logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
                 return
+            # Format with Black
+            new_content = format_with_black(new_content)
+            # Write to a temporary file for flake8 checking
+            try:
+                with tempfile.NamedTemporaryFile('w', delete=False, suffix='.py') as temp_file:
+                    temp_file.write(new_content)
+                    temp_file_path = temp_file.name
+                # Check with flake8
+                if not check_with_flake8(temp_file_path):
+                    logger.error(f"flake8 compliance failed for '{file_path}'. Skipping file.")
+                    os.remove(temp_file_path)  # Remove the temporary file
+                    return
+            finally:
+                # Remove the temporary file after checking
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
         elif language in ["javascript", "typescript"]:
             new_content = insert_js_ts_docstrings(content, documentation)
+            # (Optional) Integrate JavaScript/TypeScript formatters like Prettier here
         elif language == "html":
             new_content = insert_html_comments(content, documentation)
+            # (Optional) Integrate HTML formatters here
         elif language == "css":
             if "rules" not in documentation:
-                logger.error(
-                    f"Documentation for '{file_path}' lacks 'rules'. Skipping insertion."
-                )
+                logger.error(f"Documentation for '{file_path}' lacks 'rules'. Skipping insertion.")
                 new_content = content
             else:
                 new_content = insert_css_docstrings(content, documentation)
+                # (Optional) Integrate CSS formatters here
         else:
             new_content = content
 
@@ -549,7 +589,7 @@ async def process_file(
         else:
             # Backup and write new content
             try:
-                backup_path = file_path + ".bak"
+                backup_path = f"{file_path}.bak"
                 if os.path.exists(backup_path):
                     os.remove(backup_path)
                 shutil.copy(file_path, backup_path)
@@ -560,10 +600,12 @@ async def process_file(
                 logger.info(f"Inserted documentation into '{file_path}'")
             except Exception as e:
                 logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
                 # Restore from backup if write fails
                 if os.path.exists(backup_path):
-                    os.remove(file_path)
                     shutil.copy(backup_path, file_path)
+                    os.remove(backup_path)
                     logger.info(f"Restored original file from backup for '{file_path}'")
                 return
 
@@ -571,7 +613,7 @@ async def process_file(
         try:
             async with output_lock:
                 async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
-                    header = f"# File: {file_path}\n\n"
+                    header = f"# File: {relative_path}\n\n"  # Use relative path
                     summary_section = f"## Summary\n\n{summary}\n\n"
                     changes_section = (
                         "## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
@@ -585,38 +627,60 @@ async def process_file(
         except Exception as e:
             logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
 
-    except Exception as e:
-        logger.error(f"Unexpected error processing '{file_path}': {e}", exc_info=True)
 
 async def process_all_files(
-    file_paths,
-    skip_types,
-    output_file,
-    semaphore,
-    output_lock,
-    model_name,
-    function_schema,
-    project_info,
-    style_guidelines,
-    safe_mode=False
-):
-    """Processes all files asynchronously."""
+    file_paths: List[str],
+    skip_types: Set[str],
+    output_file: str,
+    semaphore: asyncio.Semaphore,
+    output_lock: asyncio.Lock,
+    model_name: str,
+    function_schema: dict,
+    repo_root: str,
+    project_info: Optional[str] = None,
+    style_guidelines: Optional[str] = None,
+    safe_mode: bool = False,
+) -> None:
+    """
+    Processes all files asynchronously.
+
+    Parameters:
+        file_paths (List[str]): List of file paths to process.
+        skip_types (Set[str]): Set of file extensions to skip.
+        output_file (str): Path to the output Markdown file.
+        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
+        output_lock (asyncio.Lock): Lock to manage asynchronous writes to the output file.
+        model_name (str): OpenAI model to use (e.g., 'gpt-4').
+        function_schema (dict): JSON schema for the function call.
+        repo_root (str): Root directory of the repository.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Documentation style guidelines to follow.
+        safe_mode (bool): If True, do not modify original files.
+
+    Returns:
+        None
+    """
     tasks = []
     async with aiohttp.ClientSession() as session:
         for file_path in file_paths:
             tasks.append(
                 process_file(
-                    session,
-                    file_path,
-                    skip_types,
-                    output_file,
-                    semaphore,
-                    output_lock,
-                    model_name,
-                    function_schema,
-                    project_info,
-                    style_guidelines,
-                    safe_mode
+                    session=session,
+                    file_path=file_path,
+                    skip_types=skip_types,
+                    output_file=output_file,
+                    semaphore=semaphore,
+                    output_lock=output_lock,
+                    model_name=model_name,
+                    function_schema=function_schema,
+                    repo_root=repo_root,
+                    project_info=project_info,
+                    style_guidelines=style_guidelines,
+                    safe_mode=safe_mode
                 )
             )
-        await asyncio.gather(*tasks, return_exceptions=True)  # Handle exceptions gracefully
+        # Use gather with return_exceptions=True to handle individual task errors without cancelling all
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for idx, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)

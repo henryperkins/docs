@@ -8,7 +8,7 @@ import aiohttp
 import asyncio
 import re
 from dotenv import load_dotenv
-from typing import Set, List, Optional, Dict
+from typing import Set, List, Optional, Dict, Tuple  # Added Tuple
 
 # Load environment variables
 load_dotenv()
@@ -20,9 +20,9 @@ logger.setLevel(logging.INFO)
 # Constants
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea'} # Added .venv and .idea
+DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea'}  # Added .venv and .idea
 DEFAULT_EXCLUDED_FILES = {'.DS_Store'}
-DEFAULT_SKIP_TYPES = {'.json', '.md', '.txt', '.csv', '.lock'} # Added .lock files
+DEFAULT_SKIP_TYPES = {'.json', '.md', '.txt', '.csv', '.lock'}  # Added .lock files
 
 LANGUAGE_MAPPING = {
     '.py': 'python',
@@ -48,8 +48,19 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-def load_config(config_path, excluded_dirs, excluded_files, skip_types):
-    """Loads configuration from a JSON file and updates the provided sets."""
+def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
+    """
+    Loads configuration from a JSON file and updates the provided sets.
+
+    Args:
+        config_path (str): Path to the configuration JSON file.
+        excluded_dirs (Set[str]): Set of directories to exclude.
+        excluded_files (Set[str]): Set of files to exclude.
+        skip_types (Set[str]): Set of file extensions to skip.
+
+    Returns:
+        Tuple[str, str]: A tuple containing project information and style guidelines.
+    """
     project_info = ''
     style_guidelines = ''
     try:
@@ -70,12 +81,13 @@ def load_config(config_path, excluded_dirs, excluded_files, skip_types):
     finally:
         return project_info, style_guidelines
 
-
 def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> List[str]:
     """Gets all file paths in a repository, excluding specified directories and files."""
     file_paths = []
     for root, dirs, files in os.walk(repo_path):
+        # Exclude specified directories and those starting with a dot
         dirs[:] = [d for d in dirs if d not in excluded_dirs and not d.startswith('.')]
+        # Add files that are not excluded and do not start with a dot
         file_paths.extend([os.path.join(root, file) for file in files if file not in excluded_files and not file.startswith('.')])
     logger.info(f"Collected {len(file_paths)} files from '{repo_path}'.")
     return file_paths
@@ -84,22 +96,35 @@ def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """Checks if a file extension is valid (not in the skip list)."""
     return ext.lower() not in skip_types
 
-def extract_json_from_response(response: str) -> Optional[str]:
-    """Extracts JSON content from the model's response."""
+def extract_json_from_response(response: str) -> Optional[dict]:
+    """Extracts JSON content from the model's response.
 
+    Attempts multiple methods to extract JSON:
+    1. Function calling format.
+    2. JSON enclosed in triple backticks.
+    3. Entire response as JSON.
+
+    Args:
+        response (str): The raw response string from the model.
+
+    Returns:
+        Optional[dict]: The extracted JSON as a dictionary, or None if extraction fails.
+    """
     # First, try to extract JSON using the function calling format
     try:
         response_json = json.loads(response)
         if "function_call" in response_json and "arguments" in response_json["function_call"]:
-            return response_json["function_call"]["arguments"]
+            return json.loads(response_json["function_call"]["arguments"])
     except json.JSONDecodeError:
         pass  # Fallback to other extraction methods
-
 
     # Try to find JSON enclosed in triple backticks
     json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
     if json_match:
-        return json_match.group(1)
+        try:
+            return json.loads(json_match.group(1))
+        except json.JSONDecodeError:
+            pass
 
     # As a last resort, attempt to use the entire response if it's valid JSON
     try:
@@ -107,6 +132,8 @@ def extract_json_from_response(response: str) -> Optional[str]:
     except json.JSONDecodeError:
         return None
 
+# Updated function_schema with 'description' instead of 'docstring'
+# utils.py
 
 function_schema = {
     "name": "generate_documentation",
@@ -123,7 +150,7 @@ function_schema = {
                 "description": "A list of specific changes made in the code.",
                 "items": {
                     "type": "string"
-                },
+                }
             },
             "functions": {
                 "type": "array",
@@ -131,18 +158,32 @@ function_schema = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Function name."},
-                        "description": {"type": "string", "description": "Detailed explanation of what the function does."},
-                        "docstring": {"type": "string", "description": "Docstring for the function."},
+                        "name": {
+                            "type": "string",
+                            "description": "Function name."
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Detailed explanation of what the function does."
+                        },
                         "parameters": {
                             "type": "array",
                             "description": "List of parameters the function accepts.",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {"type": "string", "description": "Parameter name."},
-                                    "type": {"type": "string", "description": "Parameter data type."},
-                                    "description": {"type": "string", "description": "Description of the parameter."}
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Parameter name."
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "description": "Parameter data type."
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Description of the parameter."
+                                    }
                                 },
                                 "required": ["name", "type"]
                             }
@@ -151,24 +192,34 @@ function_schema = {
                             "type": "object",
                             "description": "Information about the return value.",
                             "properties": {
-                                "type": {"type": "string", "description": "Return data type."},
-                                "description": {"type": "string", "description": "Description of the return value."}
+                                "type": {
+                                    "type": "string",
+                                    "description": "Return data type."
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Description of the return value."
+                                }
                             },
                             "required": ["type"]
                         },
                         "decorators": {
                             "type": "array",
                             "description": "List of decorators applied to the function.",
-                            "items": {"type": "string"}
+                            "items": {
+                                "type": "string"
+                            }
                         },
                         "examples": {
                             "type": "array",
                             "description": "Usage examples of the function.",
-                            "items": {"type": "string"}
-                        },
+                            "items": {
+                                "type": "string"
+                            }
+                        }
                     },
                     "required": ["name", "description", "parameters", "returns"]
-                },
+                }
             },
             "classes": {
                 "type": "array",
@@ -176,18 +227,27 @@ function_schema = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "Class name."},
-                        "description": {"type": "string", "description": "Detailed description of the class."},
-                        "docstring": {"type": "string", "description": "Docstring for the class."},
+                        "name": {
+                            "type": "string",
+                            "description": "Class name."
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Detailed description of the class."
+                        },
                         "bases": {
                             "type": "array",
                             "description": "Base classes the class inherits from.",
-                            "items": {"type": "string"}
+                            "items": {
+                                "type": "string"
+                            }
                         },
                         "decorators": {
                             "type": "array",
                             "description": "List of decorators applied to the class.",
-                            "items": {"type": "string"}
+                            "items": {
+                                "type": "string"
+                            }
                         },
                         "methods": {
                             "type": "array",
@@ -195,18 +255,32 @@ function_schema = {
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {"type": "string", "description": "Method name."},
-                                    "description": {"type": "string", "description": "Detailed explanation of the method."},
-                                    "docstring": {"type": "string", "description": "Docstring for the method."},
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Method name."
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Detailed explanation of the method."
+                                    },
                                     "parameters": {
                                         "type": "array",
                                         "description": "List of parameters the method accepts.",
                                         "items": {
                                             "type": "object",
                                             "properties": {
-                                                "name": {"type": "string", "description": "Parameter name."},
-                                                "type": {"type": "string", "description": "Parameter data type."},
-                                                "description": {"type": "string", "description": "Description of the parameter."}
+                                                "name": {
+                                                    "type": "string",
+                                                    "description": "Parameter name."
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "description": "Parameter data type."
+                                                },
+                                                "description": {
+                                                    "type": "string",
+                                                    "description": "Description of the parameter."
+                                                }
                                             },
                                             "required": ["name", "type"]
                                         }
@@ -215,28 +289,38 @@ function_schema = {
                                         "type": "object",
                                         "description": "Information about the return value.",
                                         "properties": {
-                                            "type": {"type": "string", "description": "Return data type."},
-                                            "description": {"type": "string", "description": "Description of the return value."}
+                                            "type": {
+                                                "type": "string",
+                                                "description": "Return data type."
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "description": "Description of the return value."
+                                            }
                                         },
                                         "required": ["type"]
                                     },
                                     "decorators": {
                                         "type": "array",
                                         "description": "List of decorators applied to the method.",
-                                        "items": {"type": "string"}
+                                        "items": {
+                                            "type": "string"
+                                        }
                                     },
                                     "examples": {
                                         "type": "array",
                                         "description": "Usage examples of the method.",
-                                        "items": {"type": "string"}
-                                    },
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
                                 },
                                 "required": ["name", "description", "parameters", "returns"]
-                            },
-                        },
+                            }
+                        }
                     },
-                    "required": ["name", "description", "methods"]
-                },
+                    "required": ["name", "description", "bases", "decorators", "methods"]
+                }
             },
             "api_endpoints": {
                 "type": "array",
@@ -244,20 +328,44 @@ function_schema = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "route": {"type": "string", "description": "API route path."},
-                        "method": {"type": "string", "description": "HTTP method (GET, POST, etc.)."},
-                        "description": {"type": "string", "description": "Description of what the endpoint does."},
-                        "authentication": {"type": "string", "description": "Authentication requirements."},
+                        "route": {
+                            "type": "string",
+                            "description": "API route path."
+                        },
+                        "method": {
+                            "type": "string",
+                            "description": "HTTP method (GET, POST, etc.)."
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Description of what the endpoint does."
+                        },
+                        "authentication": {
+                            "type": "string",
+                            "description": "Authentication requirements."
+                        },
                         "parameters": {
                             "type": "array",
                             "description": "Parameters accepted by the API endpoint.",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {"type": "string", "description": "Parameter name."},
-                                    "type": {"type": "string", "description": "Parameter data type."},
-                                    "description": {"type": "string", "description": "Description of the parameter."},
-                                    "required": {"type": "boolean", "description": "Whether the parameter is required."}
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Parameter name."
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "description": "Parameter data type."
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Description of the parameter."
+                                    },
+                                    "required": {
+                                        "type": "boolean",
+                                        "description": "Whether the parameter is required."
+                                    }
                                 },
                                 "required": ["name", "type", "required"]
                             }
@@ -268,9 +376,18 @@ function_schema = {
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "status_code": {"type": "integer", "description": "HTTP status code."},
-                                    "description": {"type": "string", "description": "Description of the response."},
-                                    "body": {"type": "string", "description": "Response body content."}
+                                    "status_code": {
+                                        "type": "integer",
+                                        "description": "HTTP status code."
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Description of the response."
+                                    },
+                                    "body": {
+                                        "type": "string",
+                                        "description": "Response body content."
+                                    }
                                 },
                                 "required": ["status_code", "description"]
                             }
@@ -278,46 +395,69 @@ function_schema = {
                         "examples": {
                             "type": "array",
                             "description": "Example requests to the API endpoint.",
-                            "items": {"type": "string"}
-                        },
+                            "items": {
+                                "type": "string"
+                            }
+                        }
                     },
                     "required": ["route", "method", "description"]
                 }
             },
-            "elements": {  # HTML structure
+            "elements": {
                 "type": "array",
                 "description": "Details about HTML elements.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "tag": {"type": "string", "description": "HTML tag name."},
+                        "tag": {
+                            "type": "string",
+                            "description": "HTML tag name."
+                        },
                         "attributes": {
                             "type": "object",
                             "description": "Attributes of the HTML element.",
-                            "additionalProperties": {"type": "string"}
+                            "additionalProperties": {
+                                "type": "string",
+                                "description": "Value of the attribute."
+                            }
                         },
-                        "text": {"type": "string", "description": "Inner text of the element."},
-                        "description": {"type": "string", "description": "Purpose of the element."},
+                        "text": {
+                            "type": "string",
+                            "description": "Inner text of the element."
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Purpose of the element."
+                        }
                     },
                     "required": ["tag"]
-                },
+                }
             },
-            "rules": {  # CSS structure
+            "rules": {
                 "type": "array",
                 "description": "Details about CSS rules.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "selector": {"type": "string", "description": "CSS selector."},
-                        "declarations": {"type": "string", "description": "CSS declarations (properties and values)."},
-                        "description": {"type": "string", "description": "Purpose or effect of the rule."},
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector."
+                        },
+                        "declarations": {
+                            "type": "string",
+                            "description": "CSS declarations (properties and values)."
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Purpose or effect of the rule."
+                        }
                     },
                     "required": ["selector"]
-                },
-            },
+                }
+            }
         },
-        "required": ["summary", "changes"]  # Only "summary" and "changes" are required
-    },
+        "required": ["summary", "changes"]
+    }
 }
 
 
@@ -332,15 +472,15 @@ async def fetch_documentation(
     """Fetches generated documentation from the OpenAI API using function calling.
 
     Args:
-        session: The aiohttp client session.
-        prompt: The prompt to send to the API.
-        semaphore: Semaphore to control concurrency.
-        model_name: The name of the OpenAI model to use.
-        function_schema: The JSON schema for the expected function call output.
-        retry: The number of retry attempts.
+        session (aiohttp.ClientSession): The aiohttp client session.
+        prompt (str): The prompt to send to the API.
+        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
+        model_name (str): The name of the OpenAI model to use.
+        function_schema (dict): The JSON schema for the expected function call output.
+        retry (int, optional): The number of retry attempts. Defaults to 3.
 
     Returns:
-        A dictionary containing the generated documentation, or None if the request fails.
+        Optional[dict]: A dictionary containing the generated documentation, or None if the request fails.
     """
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
@@ -421,7 +561,7 @@ async def fetch_documentation(
 
     logger.error("Failed to generate documentation after multiple attempts.")
     return None
-    
+
 async def fetch_summary(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -512,7 +652,6 @@ async def fetch_summary(
 
     logger.error("Failed to generate summary after multiple attempts.")
     return None
-
 
 def generate_documentation_prompt(
     code_structure: dict,

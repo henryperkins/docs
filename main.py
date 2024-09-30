@@ -18,12 +18,25 @@ from utils import (
 from language_handlers import process_all_files
 
 # Configure logging
-logging.basicConfig(
-    filename='docs_generation.log',
-    level=logging.INFO,
-    format='%(asctime)s:%(levelname)s:%(message)s'
-)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create handlers
+file_handler = logging.FileHandler('docs_generation.log')
+file_handler.setLevel(logging.INFO)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# Create formatter and add it to handlers
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+# Add handlers to the logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
 
 def main():
     """Main function to orchestrate documentation generation."""
@@ -63,10 +76,15 @@ def main():
     excluded_files = set(DEFAULT_EXCLUDED_FILES)
     skip_types = set(DEFAULT_SKIP_TYPES)
     if args.skip_types:
-        skip_types.update(args.skip_types.split(','))
+        skip_types.update(ext.strip() for ext in args.skip_types.split(','))
 
-    # Load additional configurations
-    project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
+    # Check if config file exists
+    if not os.path.isfile(config_path):
+        logger.warning(f"Configuration file '{config_path}' not found. Proceeding with default and command-line settings.")
+        project_info_config, style_guidelines_config = '', ''
+    else:
+        # Load additional configurations
+        project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
 
     # Determine final project_info and style_guidelines
     project_info = project_info_arg or project_info_config
@@ -81,7 +99,13 @@ def main():
     logger.info(f"Starting documentation generation for {len(file_paths)} files.")
 
     # Clear the output file
-    open(output_file, 'w').close()
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write("# Documentation Generation Report\n\n")
+        logger.info(f"Cleared and initialized the output file '{output_file}'.")
+    except Exception as e:
+        logger.error(f"Failed to initialize output file '{output_file}': {e}")
+        sys.exit(1)
 
     # Initialize semaphore and locks
     semaphore = asyncio.Semaphore(concurrency)
@@ -91,23 +115,25 @@ def main():
     try:
         asyncio.run(
             process_all_files(
-                file_paths,
-                skip_types,
-                output_file,
-                semaphore,
-                output_lock,
-                model_name,
-                function_schema,
-                project_info,
-                style_guidelines,
-                safe_mode
+                file_paths=file_paths,
+                skip_types=skip_types,
+                output_file=output_file,
+                semaphore=semaphore,
+                output_lock=output_lock,
+                model_name=model_name,
+                function_schema=function_schema,
+                repo_root=repo_path,  # Pass repo_root correctly
+                project_info=project_info,
+                style_guidelines=style_guidelines,
+                safe_mode=safe_mode
             )
         )
     except Exception as e:
-        logger.error(f"Error during processing: {e}")
+        logger.error(f"Error during processing: {e}", exc_info=True)
         sys.exit(1)
 
     logger.info("Documentation generation completed successfully.")
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,5 @@
+{
+    "tabnine.ignoreCertificateErrors": true,
+    "tabnine.logEngine": true,
+    "tabnine.receiveBetaChannelUpdates": true
+}
