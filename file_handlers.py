@@ -259,7 +259,22 @@ async def fetch_documentation_with_retries(session: aiohttp.ClientSession, promp
             await asyncio.sleep(wait_time)
     logger.error("Max retries exceeded. Documentation generation failed.")
     return None
-
+    
+async def insert_docstrings_for_file(js_ts_file, documentation_file):
+    process = await asyncio.create_subprocess_exec(
+        'node',
+        'insert_docstrings.js',
+        js_ts_file,
+        documentation_file,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        logger.error(f"Error inserting docstrings into {js_ts_file}: {stderr.decode().strip()}")
+    else:
+        logger.info(stdout.decode().strip())
+        
 # Processing Functions
 async def process_file(
     session: aiohttp.ClientSession,
