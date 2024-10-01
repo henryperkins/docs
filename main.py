@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import logging
 import json
+import aiohttp
 from file_handlers import process_all_files
 from utils import (
     load_config,
@@ -19,24 +20,27 @@ from utils import (
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels of logs
 
-# Create formatter with module, function, and line number
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s')
+def configure_logging(log_level):
+    """Configures logging based on the provided log level."""
+    logger.setLevel(log_level)
 
-# Create file handler which logs debug and higher level messages
-file_handler = logging.FileHandler('docs_generation.log')
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(formatter)
+    # Create formatter with module, function, and line number
+    formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s')
 
-# Create console handler with a higher log level
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)  # Change to DEBUG for more verbosity on console
-console_handler.setFormatter(formatter)
+    # Create file handler which logs debug and higher level messages
+    file_handler = logging.FileHandler('docs_generation.log')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
 
-# Add handlers to the logger
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+    # Create console handler with a higher log level
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+
+    # Add handlers to the logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
 def validate_model_name(model_name: str) -> bool:
     """Validates the OpenAI model name format."""
@@ -55,10 +59,8 @@ def validate_model_name(model_name: str) -> bool:
         logger.error(f"Invalid model name '{model_name}'. Please choose a valid OpenAI model.")
         return False
 
-def main():
+async def main():
     """Main function to orchestrate documentation generation."""
-    logger.info("Starting Documentation Generation Tool.")
-
     parser = argparse.ArgumentParser(
         description="Generate and insert comments/docstrings using OpenAI's GPT-4 API."
     )
@@ -71,8 +73,14 @@ def main():
     parser.add_argument("--project-info", help="Information about the project", default="")
     parser.add_argument("--style-guidelines", help="Documentation style guidelines to follow", default="")
     parser.add_argument("--safe-mode", help="Run in safe mode (no files will be modified)", action='store_true')
+    parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
     args = parser.parse_args()
 
+    # Configure logging
+    log_level = getattr(logging, args.log_level.upper(), logging.INFO)
+    configure_logging(log_level)
+
+    logger.info("Starting Documentation Generation Tool.")
     logger.debug(f"Parsed arguments: {args}")
 
     # Validate OpenAI API key
@@ -166,8 +174,9 @@ def main():
     # Start the asynchronous processing
     logger.info("Starting asynchronous file processing.")
     try:
-        asyncio.run(
-            process_all_files(
+        async with aiohttp.ClientSession() as session:
+            await process_all_files(
+                session=session,
                 file_paths=file_paths,
                 skip_types=skip_types,
                 output_file=output_file,
@@ -180,7 +189,6 @@ def main():
                 style_guidelines=style_guidelines,
                 safe_mode=safe_mode
             )
-        )
     except Exception as e:
         logger.critical(f"Error during processing: {e}", exc_info=True)
         sys.exit(1)
@@ -189,4 +197,4 @@ def main():
     logger.info(f"Check the output file '{output_file}' for the generated documentation.")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

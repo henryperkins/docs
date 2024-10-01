@@ -61,6 +61,23 @@ console_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
+async def main():
+    async with aiohttp.ClientSession() as session:
+        semaphore = asyncio.Semaphore(10)
+        prompt = "Your prompt here"
+        model_name = "gpt-4"
+        result = await fetch_documentation_with_retries(
+            session=session,
+            prompt=prompt,
+            semaphore=semaphore,
+            model_name=model_name,
+            function_schema=function_schema
+        )
+        print(result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
 async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -> None:
     logger.debug(f"Entering insert_docstrings_for_file with js_ts_file={js_ts_file}, documentation_file={documentation_file}")
     process = await asyncio.create_subprocess_exec(
@@ -219,7 +236,7 @@ async def process_file(
             # Backup and write new content
             try:
                 backup_path = f"{file_path}.bak"
-                if os.path.exists(backup_path):
+                if os.path.exists(backup_path)):
                     os.remove(backup_path)
                 shutil.copy(file_path, backup_path)
                 logger.debug(f"Backup created at '{backup_path}'")
@@ -295,9 +312,9 @@ async def process_all_files(
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for idx, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
+                logger.error(f"Error processing file '{file_paths[idx]}": {result}", exc_info=True)
             else:
-                logger.debug(f"Completed processing file '{file_paths[idx]}'.")
+                logger.debug(f"Completed processing file '{file_paths[idx]}")
     logger.debug("Exiting process_all_files")
 
 def check_with_flake8(file_path: str) -> bool:
@@ -310,3 +327,4 @@ def check_with_flake8(file_path: str) -> bool:
         logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
         return False
     logger.debug("Exiting check_with_flake8")
+
