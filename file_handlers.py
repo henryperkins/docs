@@ -236,7 +236,7 @@ async def process_file(
             # Backup and write new content
             try:
                 backup_path = f"{file_path}.bak"
-                if os.path.exists(backup_path)):
+                if os.path.exists(backup_path):
                     os.remove(backup_path)
                 shutil.copy(file_path, backup_path)
                 logger.debug(f"Backup created at '{backup_path}'")
