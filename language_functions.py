@@ -216,10 +216,17 @@ def extract_html_structure(code: str) -> Dict[str, Any]:
             "tags": []
         }
         for tag in soup.find_all(True):
+            children = []
+            for child in tag.children:
+                if child.name:
+                    children.append({
+                        "name": child.name,
+                        "attributes": child.attrs
+                    })
             structure["tags"].append({
                 "name": tag.name,
                 "attributes": tag.attrs,
-                "children": [child.name for child in tag.children if child.name]
+                "children": children
             })
         return structure
     except Exception as e:
@@ -239,12 +246,28 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
     """
     try:
         soup = BeautifulSoup(original_code, 'html.parser')
-        comment_text = f" Summary: {documentation.get('summary', '')} Changes: {', '.join(documentation.get('changes', []))} "
-        comment = Comment(comment_text)
-        if soup.body:
-            soup.body.insert(0, comment)
+        existing_comments = soup.find_all(string=lambda text: isinstance(text, Comment))
+        
+        # Construct the new comment
+        new_comment_text = f" Summary: {documentation.get('summary', '')} Changes: {', '.join(documentation.get('changes', []))} "
+        
+        # Check for duplication
+        duplicate = False
+        for comment in existing_comments:
+            if new_comment_text.strip() in comment:
+                duplicate = True
+                break
+        
+        if not duplicate:
+            comment = Comment(new_comment_text)
+            if soup.body:
+                soup.body.insert(0, comment)
+            else:
+                soup.insert(0, comment)
+            logger.debug("Inserted new HTML comment.")
         else:
-            soup.insert(0, comment)
+            logger.debug("HTML comment already exists. Skipping insertion.")
+        
         return str(soup)
     except Exception as e:
         logger.error(f"Error inserting HTML comments: {e}", exc_info=True)
