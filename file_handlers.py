@@ -207,7 +207,7 @@ async def process_file(
                     return
             finally:
                 # Remove the temporary file after checking
-                if os.path.exists(temp_file_path):
+                if os.path.exists(backup_path):
                     os.remove(temp_file_path)
             logger.debug(f"Processed Python file '{file_path}'.")
         elif language in ["javascript", "typescript"]:
