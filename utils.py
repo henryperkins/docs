@@ -15,7 +15,11 @@ import tempfile  # Added for JS/TS extraction
 import astor  # Added for Python docstring insertion
 from bs4 import BeautifulSoup, Comment  # Added for HTML and CSS functions
 import tinycss2  # Added for CSS functions
+import json
 
+# Load function_schema from JSON file
+with open('function_schema.json', 'r', encoding='utf-8') as f:
+    function_schema = json.load(f)
 # Load environment variables
 load_dotenv()
 
