@@ -275,6 +275,7 @@ async def process_file(
     logger.debug("Exiting process_file")
 
 async def process_all_files(
+    session: aiohttp.ClientSession,  # Added parameter
     file_paths: List[str],
     skip_types: Set[str],
     output_file: str,
@@ -286,12 +287,10 @@ async def process_all_files(
     project_info: Optional[str] = None,
     style_guidelines: Optional[str] = None,
     safe_mode: bool = False,
-    session: aiohttp.ClientSession,  # Added parameter
 ) -> None:
     logger.debug(f"Entering process_all_files with {len(file_paths)} files")
     tasks = []
-    # Remove the internal session creation
-    # async with aiohttp.ClientSession() as session:
+    # Removed the internal session creation
     for file_path in file_paths:
         tasks.append(
             process_file(
@@ -316,7 +315,7 @@ async def process_all_files(
         if isinstance(result, Exception):
             logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
         else:
-            logger.debug(f"Completed processing file '{file_paths[idx]}")
+            logger.debug(f"Completed processing file '{file_paths[idx]}'")
     logger.debug("Exiting process_all_files")
 
 
