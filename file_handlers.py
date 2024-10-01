@@ -286,36 +286,39 @@ async def process_all_files(
     project_info: Optional[str] = None,
     style_guidelines: Optional[str] = None,
     safe_mode: bool = False,
+    session: aiohttp.ClientSession,  # Added parameter
 ) -> None:
     logger.debug(f"Entering process_all_files with {len(file_paths)} files")
     tasks = []
-    async with aiohttp.ClientSession() as session:
-        for file_path in file_paths:
-            tasks.append(
-                process_file(
-                    session=session,
-                    file_path=file_path,
-                    skip_types=skip_types,
-                    output_file=output_file,
-                    semaphore=semaphore,
-                    output_lock=output_lock,
-                    model_name=model_name,
-                    function_schema=function_schema,
-                    repo_root=repo_root,
-                    project_info=project_info,
-                    style_guidelines=style_guidelines,
-                    safe_mode=safe_mode
-                )
+    # Remove the internal session creation
+    # async with aiohttp.ClientSession() as session:
+    for file_path in file_paths:
+        tasks.append(
+            process_file(
+                session=session,
+                file_path=file_path,
+                skip_types=skip_types,
+                output_file=output_file,
+                semaphore=semaphore,
+                output_lock=output_lock,
+                model_name=model_name,
+                function_schema=function_schema,
+                repo_root=repo_root,
+                project_info=project_info,
+                style_guidelines=style_guidelines,
+                safe_mode=safe_mode
             )
-        logger.debug(f"Created {len(tasks)} tasks for processing files.")
-        # Use gather with return_exceptions=True to handle individual task errors without cancelling all
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for idx, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
-            else:
-                logger.debug(f"Completed processing file '{file_paths[idx]}")
+        )
+    logger.debug(f"Created {len(tasks)} tasks for processing files.")
+    # Use gather with return_exceptions=True to handle individual task errors without cancelling all
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for idx, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
+        else:
+            logger.debug(f"Completed processing file '{file_paths[idx]}")
     logger.debug("Exiting process_all_files")
+
 
 def check_with_flake8(file_path: str) -> bool:
     logger.debug(f"Entering check_with_flake8 with file_path={file_path}")
