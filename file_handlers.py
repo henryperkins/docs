@@ -312,7 +312,7 @@ async def process_all_files(
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for idx, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error(f"Error processing file '{file_paths[idx]}": {result}", exc_info=True)
+                logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
             else:
                 logger.debug(f"Completed processing file '{file_paths[idx]}")
     logger.debug("Exiting process_all_files")
