@@ -66,30 +66,28 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
             "functions": [],
             "classes": []
         }
-        logger.debug("Successfully parsed code into AST")  # Add logging for successful AST parsing
+        logger.debug("Successfully parsed code into AST")
 
         for node in ast.iter_child_nodes(tree):
-            # Handle both async and sync function definitions
-            if isinstance(node, ast.FunctionDef):
-                is_async = hasattr(node, 'type_comment') and node.type_comment == 'async'  # Check if async
-                func_type = "async" if is_async else "sync"  # Indicate whether it's async or sync
-                logger.debug(f"Found {func_type} function: {node.name}")
-
+            # Handle regular and async functions
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                func_type = "async" if isinstance(node, ast.AsyncFunctionDef) else "function"
+                logger.debug(f"Found {func_type}: {node.name}")
                 structure["functions"].append({
                     "name": node.name,
-                    "type": func_type,  # Add 'sync' or 'async'
                     "args": [arg.arg for arg in node.args.args],
-                    "docstring": ast.get_docstring(node)
+                    "docstring": ast.get_docstring(node),
+                    "async": isinstance(node, ast.AsyncFunctionDef)
                 })
             elif isinstance(node, ast.ClassDef):
                 methods = [
                     {
                         "name": method.name,
-                        "type": "async" if isinstance(method, ast.AsyncFunctionDef) else "sync",  # Check method type
                         "args": [arg.arg for arg in method.args.args],
-                        "docstring": ast.get_docstring(method)
+                        "docstring": ast.get_docstring(method),
+                        "async": isinstance(method, ast.AsyncFunctionDef)
                     }
-                    for method in node.body if isinstance(method, ast.FunctionDef) or isinstance(method, ast.AsyncFunctionDef)
+                    for method in node.body if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
                 ]
                 logger.debug(f"Found class: {node.name} with methods: {methods}")
                 structure["classes"].append({
@@ -97,7 +95,7 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
                     "methods": methods
                 })
 
-        logger.debug(f"Extracted structure: {structure}")  # Log the structure
+        logger.debug(f"Extracted structure: {structure}")
         return structure
     except SyntaxError as se:
         logger.error(f"Syntax error in Python code: {se}")
@@ -106,7 +104,6 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting Python structure: {e}", exc_info=True)
         return {}
-
 
 
 def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
