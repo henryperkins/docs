@@ -1,19 +1,31 @@
 {
-  "name": "js-doc-generation",
+  "name": "documentation-tools",
   "version": "1.0.0",
-  "description": "Tool to extract structure and insert docstrings into JavaScript/TypeScript files.",
+  "description": "Tools for generating and inserting documentation into JavaScript/TypeScript codebases.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "extract-structure": "node extract_structure.js",
+    "insert-docstrings": "node insert_docstrings.js"
   },
+  "keywords": [
+    "documentation",
+    "docstrings",
+    "javascript",
+    "typescript",
+    "babel",
+    "code-structure"
+  ],
+  "license": "MIT",
   "dependencies": {
-    "@babel/parser": "^7.21.0",
-    "@babel/traverse": "^7.21.0",
-    "@babel/generator": "^7.21.0",
+    "@babel/parser": "^7.21.3",
+    "@babel/traverse": "^7.21.3",
+    "@babel/generator": "^7.21.3",
     "@babel/types": "^7.21.0",
-    "@babel/plugin-syntax-typescript": "^7.21.0",
-    "@babel/plugin-syntax-jsx": "^7.21.0",
-    "@babel/plugin-proposal-class-properties": "^7.21.0",
-    "@babel/plugin-proposal-decorators": "^7.21.0"
+    "prettier": "^2.8.8",
+    "eslint": "^8.35.0",
+    "eslint-plugin-jsdoc": "^39.0.6"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
   }
 }
