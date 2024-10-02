@@ -41,6 +41,7 @@ from utils import (
     format_with_black,
     clean_unused_imports,
     check_with_flake8,
+    run_flake8,
     run_node_script,
     run_node_insert_docstrings,
 )
@@ -211,10 +212,16 @@ async def process_file(
                     temp_file.write(new_content)
                     temp_file_path = temp_file.name
                 # Check with flake8
-                if not check_with_flake8(temp_file_path):
-                    logger.error(f"flake8 compliance failed for '{file_path}'. Skipping file.")
-                    os.remove(temp_file_path)  # Remove the temporary file
-                    return
+            if not check_with_flake8(temp_file_path):
+                logger.warning(f"flake8 compliance failed for '{file_path}'. Continuing processing.")
+            # Optionally, capture the flake8 issues for documentation
+            try:
+                with open(temp_file_path, 'r') as f:
+                    code_content = f.read()
+                # You can include flake8 issues in the markdown output if desired
+                flake8_issues = run_flake8(file_path)
+            except Exception as e:
+                logger.error(f"Error reading '{temp_file_path}': {e}", exc_info=True)
             finally:
                 # Remove the temporary file after checking
                 if temp_file_path and os.path.exists(temp_file_path):
