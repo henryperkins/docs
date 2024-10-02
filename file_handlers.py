@@ -360,7 +360,7 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
 async def write_documentation_report(
     output_file: str,
     summary: str,
-    changes: list,
+    changes: List[str],
     new_content: str,
     language: str,
     output_lock: asyncio.Lock,
@@ -368,86 +368,146 @@ async def write_documentation_report(
     repo_root: str
 ) -> None:
     """
-    Writes the summary, changes, and new content to the output markdown report.
+    Writes the summary, changes, and new content to the output markdown report,
+    and includes a table of contents at the beginning.
 
     Parameters:
         output_file (str): Path to the output Markdown file.
         summary (str): Summary of the documentation.
-        changes (list): List of changes made.
+        changes (List[str]): List of changes made.
         new_content (str): Modified source code with inserted documentation.
         language (str): Programming language.
         output_lock (asyncio.Lock): Lock for synchronizing file writes.
         file_path (str): Path to the source file.
-        repo_root (str): Root path of the repository.
+        repo_root (str): Root directory of the repository.
     """
     try:
         # Determine the relative path of the file for documentation
         relative_path = os.path.relpath(file_path, repo_root)
+        file_header = f'# File: {relative_path}\n\n'
 
+        # Prepare the documentation sections
+        summary_section = f'## Summary\n\n{summary}\n\n'
+        changes_section = '## Changes Made\n\n'
+        if changes:
+            changes_section += '\n'.join(f'- {change}' for change in changes) + '\n\n'
+        else:
+            changes_section += 'No changes were made to this file.\n\n'
+
+        # Extract code structure from the new content
+        structure = await extract_code_structure(new_content, file_path, language)
+
+        # Build the functions section
+        function_section = ''
+        function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
+        function_table_rows = ''
+        if structure.get('functions'):
+            function_section += '## Functions\n\n'
+            for func in structure['functions']:
+                func_name = func.get('name', 'Unnamed Function')
+                func_args = ', '.join(func.get('args', []))
+                func_doc = func.get('docstring', 'No description provided.')
+                func_type = 'async ' if func.get('async', False) else ''
+                function_table_rows += f"| `{func_type}{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
+            function_section += function_table_header + function_table_rows + '\n'
+        else:
+            function_section += '## Functions\n\nNo functions are defined in this file.\n\n'
+
+        # Build the classes section
+        class_section = ''
+        if structure.get('classes'):
+            class_section += '## Classes\n\n'
+            for cls in structure['classes']:
+                cls_name = cls.get('name', 'Unnamed Class')
+                class_section += f'### `{cls_name}`\n\n'
+                if cls.get('methods'):
+                    class_section += '#### Methods:\n\n'
+                    for method in cls['methods']:
+                        method_name = method.get('name', 'Unnamed Method')
+                        method_args = ', '.join(method.get('args', []))
+                        method_doc = method.get('docstring', 'No description provided.')
+                        method_type = 'async ' if method.get('async', False) else ''
+                        class_section += f"- **`{method_type}{method_name}({method_args})`**: {method_doc.splitlines()[0]}\n"
+                    class_section += '\n'
+                else:
+                    class_section += 'No methods defined in this class.\n\n'
+        else:
+            class_section += '## Classes\n\nNo classes are defined in this file.\n\n'
+
+        # Include the code block with syntax highlighting
+        code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
+
+        # Build the documentation content for this file
+        file_content = (
+            file_header +
+            summary_section +
+            changes_section +
+            function_section +
+            class_section +
+            code_block
+        )
+
+        # Write content to the output file with the table of contents
         async with output_lock:
-            async with aiofiles.open(output_file, 'a', encoding='utf-8') as f:
-                # Create the header and sections for the documentation
-                header = f'# File: {relative_path}\n\n'
-                summary_section = f'## Summary\n\n{summary}\n\n'
+            # Check if the output file exists
+            file_exists = os.path.exists(output_file)
 
-                changes_section = '## Changes Made\n\n'
-                if changes:
-                    changes_section += '\n'.join(f'- {change}' for change in changes) + '\n\n'
-                else:
-                    changes_section += 'No changes were made to this file.\n\n'
+            if not file_exists:
+                # Initialize the output file with a title and table of contents placeholder
+                async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+                    await f.write('# Documentation Generation Report\n\n')
+                    await f.write('## Table of Contents\n\n')
+                    await f.write('<TOC_PLACEHOLDER>\n\n')
 
-                # Extract code structure from the new content
-                structure = await extract_code_structure(new_content, file_path, language)
+            # Read existing content
+            async with aiofiles.open(output_file, 'r', encoding='utf-8') as f:
+                existing_content = await f.read()
 
-                # Build function table
-                function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
-                function_table_rows = ''
-                if not structure.get('functions'):
-                    function_table_rows = '| No functions are defined in this file. | | |\n'
-                else:
-                    for func in structure['functions']:
-                        func_name = func.get('name', 'Unnamed Function')
-                        func_args = ', '.join(func.get('args', []))
-                        func_doc = func.get('docstring', 'No description provided.')
-                        func_type = 'async ' if func.get('async', False) else ''
-                        function_table_rows += f"| `{func_type}{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
+            # Remove the placeholder
+            existing_content = existing_content.replace('<TOC_PLACEHOLDER>\n\n', '')
 
-                # Build class table
-                class_table_header = '## Classes\n\n'
-                class_table_rows = ''
-                if not structure.get('classes'):
-                    class_table_rows = 'No classes are defined in this file.\n\n'
-                else:
-                    for cls in structure['classes']:
-                        cls_name = cls.get('name', 'Unnamed Class')
-                        class_table_rows += f'### `{cls_name}`\n\n'
-                        if cls.get('methods'):
-                            class_table_rows += '#### Methods:\n\n'
-                            for method in cls['methods']:
-                                method_name = method.get('name', 'Unnamed Method')
-                                method_args = ', '.join(method.get('args', []))
-                                method_doc = method.get('docstring', 'No description provided.')
-                                method_type = 'async ' if method.get('async', False) else ''
-                                class_table_rows += f"- **`{method_type}{method_name}({method_args})`**: {method_doc.splitlines()[0]}\n"
-                        else:
-                            class_table_rows += 'No methods defined in this class.\n\n'
+            # Append file content
+            existing_content += file_content
 
-                # Include the code block with syntax highlighting
-                code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
+            # Generate table of contents
+            toc = generate_table_of_contents(existing_content)
 
-                # Write all sections to the output file
-                await f.write(header)
-                await f.write(summary_section)
-                await f.write(changes_section)
-                await f.write('## Functions\n\n')
-                await f.write(function_table_header)
-                await f.write(function_table_rows)
-                await f.write(class_table_header)
-                await f.write(class_table_rows)
-                await f.write(code_block)
+            # Write updated content with the table of contents
+            async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+                # Insert the table of contents after the main title
+                updated_content = existing_content.replace(
+                    '# Documentation Generation Report\n\n',
+                    f'# Documentation Generation Report\n\n## Table of Contents\n\n{toc}\n\n'
+                )
+                await f.write(updated_content)
 
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
+
+def generate_table_of_contents(markdown_content: str) -> str:
+    """
+    Generates a markdown table of contents from the given markdown content.
+
+    Parameters:
+        markdown_content (str): The markdown content to generate the TOC from.
+
+    Returns:
+        str: The generated table of contents in markdown format.
+    """
+    import re
+
+    toc = []
+    for line in markdown_content.split('\n'):
+        match = re.match(r'^(#{2,6})\s+(.*)', line)
+        if match:
+            level = len(match.group(1)) - 1  # Adjust level to start from 1
+            title = match.group(2).strip()
+            # Generate an anchor link
+            anchor = re.sub(r'[^\w\s-]', '', title).lower()
+            anchor = re.sub(r'\s+', '-', anchor)
+            toc.append(f'{"  " * (level - 1)}- [{title}](#{anchor})')
+    return '\n'.join(toc)
+
 
 
 async def process_all_files(
