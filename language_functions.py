@@ -201,37 +201,43 @@ def is_valid_python_code(code: str) -> bool:
 async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
     logger.debug('Starting extract_js_ts_structure')
     try:
-        # Existing code...
-        
+        # Define the path to the JS/TS extraction script
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract_structure.js')
+        if not os.path.isfile(script_path):
+            logger.error(f"JS/TS extraction script '{script_path}' not found.")
+            return None
+
+        # Use a temporary file to pass code to the script
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.js' if language == 'javascript' else '.ts') as temp_file:
+            temp_file.write(code)
+            temp_file_path = temp_file.name
+
+        # Run the Node.js script
         process = await asyncio.create_subprocess_exec(
             'node', script_path, temp_file_path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
 
         stdout, stderr = await process.communicate()
-        os.remove(temp_file_path)
+        os.remove(temp_file_path)  # Clean up the temp file
 
         if process.returncode != 0:
             logger.error(f"JS/TS extraction script error for '{file_path}': {stderr.decode().strip()}")
             return None
 
-        if stderr:
-            logger.warning(f"Warnings from JS/TS extraction script for '{file_path}': {stderr.decode().strip()}")
-
+        # Parse the JSON output from the script
         try:
             structure = json.loads(stdout.decode())
+            logger.debug(f'Extracted JS/TS structure: {structure}')
+            return structure
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON output from JS/TS extraction script: {e}")
-            logger.error(f"Script output: {stdout.decode()}")
+            logger.error(f'Invalid JSON output from JS/TS extraction script: {e}')
+            logger.error(f'Script output:\n{stdout.decode()}')
             return None
-
-        logger.debug(f'Extracted JS/TS structure: {structure}')
-        return structure
 
     except Exception as e:
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
-
 
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
