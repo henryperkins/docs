@@ -201,7 +201,6 @@ def is_valid_python_code(code: str) -> bool:
 async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
     logger.debug('Starting extract_js_ts_structure')
     try:
-        # Define the path to the JS/TS extraction script
         script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract_structure.js')
         if not os.path.isfile(script_path):
             logger.error(f"JS/TS extraction script '{script_path}' not found.")
@@ -225,19 +224,20 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
             logger.error(f"JS/TS extraction script error for '{file_path}': {stderr.decode().strip()}")
             return None
 
-        # Parse the JSON output from the script
+        stdout_content = stdout.decode().strip()
         try:
-            structure = json.loads(stdout.decode())
+            structure = json.loads(stdout_content)
             logger.debug(f'Extracted JS/TS structure: {structure}')
             return structure
         except json.JSONDecodeError as e:
             logger.error(f'Invalid JSON output from JS/TS extraction script: {e}')
-            logger.error(f'Script output:\n{stdout.decode()}')
+            logger.error(f'Script output:\n{stdout_content}')
             return None
 
     except Exception as e:
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
+
 
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
