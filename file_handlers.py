@@ -122,10 +122,12 @@ async def process_file(
     logger.debug(f"Entering process_file with file_path={file_path}")
     summary = ""
     changes = []
+    
     try:
+        # Check if file extension is valid or binary, and get language type
         _, ext = os.path.splitext(file_path)
         if not is_valid_extension(ext, skip_types) or is_binary(file_path):
-            logger.debug(f"Skipping file '{file_path}' due to extension '{ext}' or binary content.")
+            logger.debug(f"Skipping file '{file_path}' due to invalid extension or binary content.")
             return
 
         language = get_language(ext)
@@ -135,6 +137,7 @@ async def process_file(
 
         logger.info(f"Processing file: {file_path}")
 
+        # Read the file content
         try:
             async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
@@ -143,36 +146,13 @@ async def process_file(
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return
 
-        # Attempt to extract the structure of the code
-        try:
-            if language == "python":
-                code_structure = extract_python_structure(content)
-            elif language in ["javascript", "typescript"]:
-                # Use the Node.js script to extract structure
-                structure_output = run_node_script('extract_structure.js', content)
-                if not structure_output:
-                    logger.warning(f"Could not extract code structure from '{file_path}'")
-                    return
-                code_structure = structure_output
-            elif language == "html":
-                code_structure = extract_html_structure(content)
-            elif language == "css":
-                code_structure = extract_css_structure(content)
-            else:
-                logger.warning(f"Language '{language}' not supported for structured extraction.")
-                return
-
-            if not code_structure:
-                logger.warning(f"Could not extract code structure from '{file_path}'")
-                return
-
-            logger.debug(f"Extracted code structure from '{file_path}': {code_structure}")
-
-        except Exception as e:
-            logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
+        # Extract code structure based on the language
+        code_structure = await extract_code_structure(content, file_path, language)
+        if not code_structure:
+            logger.warning(f"Could not extract code structure from '{file_path}'")
             return
-
-        # Generate the documentation using the updated prompt
+        
+        # Generate the documentation prompt and log it
         prompt = generate_documentation_prompt(
             code_structure=code_structure,
             project_info=project_info,
@@ -181,6 +161,7 @@ async def process_file(
         )
         logger.debug(f"Generated prompt for '{file_path}': {prompt}")
 
+        # Fetch documentation from OpenAI
         documentation = await fetch_documentation_with_retries(
             session=session,
             prompt=prompt,
@@ -188,142 +169,124 @@ async def process_file(
             model_name=model_name,
             function_schema=function_schema
         )
-
         if not documentation:
             logger.error(f"Failed to generate documentation for '{file_path}'.")
             return
 
-        summary = documentation.get("summary", "")
-        changes = documentation.get("changes", [])
+        summary, changes, new_content = await process_code_documentation(
+            content, documentation, language, file_path
+        )
 
-        documentation["source_code"] = content  # Always include the source code
-
-        # Compute relative path
-        relative_path = os.path.relpath(file_path, repo_root)
-
-        # Insert docstrings or comments based on language
-        if language == "python":
-            new_content = insert_python_docstrings(content, documentation)
-            # Validate Python code if applicable
-            if not is_valid_python_code(new_content):
-                logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
-                return
-            # Check with flake8
-            # Write to a temporary file for flake8 checking
-            temp_file_path = None  # Initialize before try
-            try:
-                with tempfile.NamedTemporaryFile('w', delete=False, suffix='.py') as temp_file:
-                    temp_file.write(new_content)
-                    temp_file_path = temp_file.name
-                # Check with flake8
-                if not check_with_flake8(temp_file_path):
-                    logger.warning(f"flake8 compliance failed for '{file_path}'. Continuing processing.")
-                # Optionally, capture the flake8 issues for documentation
-                try:
-                    with open(temp_file_path, 'r') as f:
-                        code_content = f.read()
-                    # You can include flake8 issues in the markdown output if desired
-                    flake8_issues = run_flake8(file_path)
-                except Exception as e:
-                    logger.error(f"Error reading '{temp_file_path}': {e}", exc_info=True)
-                finally:
-                    # Remove the temporary file after checking
-                    if temp_file_path and os.path.exists(temp_file_path):
-                        os.remove(temp_file_path)
-                logger.debug(f"Processed Python file '{file_path}'.")
-        except Exception as e:
-            logger.error(f"Error processing Python file '{file_path}': {e}", exc_info=True)
-            return
-        elif language in ["javascript", "typescript"]:
-            try:
-                # Insert docstrings using the Node.js script
-                new_content = run_node_insert_docstrings('insert_docstrings.js', content)
-                if not new_content:
-                    logger.warning(f"Could not insert docstrings into '{file_path}'")
-                    return
-                # Optionally, format the modified code using Black or Prettier
-                new_content = format_with_black(new_content)  # If desired, use a JS formatter like Prettier instead
-                # Clean unused imports if applicable (for JS/TS, you might use a different tool)
-                # For demonstration, using clean_unused_imports (which is for Python)
-                # Consider implementing a similar function for JS/TS if needed
-                new_content = clean_unused_imports(new_content)  # Not applicable for JS/TS
-                # Check with flake8 if necessary or use a JS linter like eslint
-                # For demonstration, skipping flake8 for JS/TS
-                logger.debug(f"Processed {language} file '{file_path}'.")
-            except Exception as e:
-                logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
-                return
-        elif language == "html":
-            try:
-                new_content = insert_html_comments(content, documentation)
-                # (Optional) Integrate HTML formatters here
-                logger.debug(f"Processed HTML file '{file_path}'.")
-            except Exception as e:
-                logger.error(f"Error processing HTML file '{file_path}': {e}", exc_info=True)
-                return
-        elif language == "css":
-            try:
-                if "rules" not in documentation:
-                    logger.error(f"Documentation for '{file_path}' lacks 'rules'. Skipping insertion.")
-                    new_content = content
-                else:
-                    new_content = insert_css_docstrings(content, documentation)
-                    # (Optional) Integrate CSS formatters here
-                    logger.debug(f"Processed CSS file '{file_path}'.")
-            except Exception as e:
-                logger.error(f"Error processing CSS file '{file_path}': {e}", exc_info=True)
-                return
-        else:
-            new_content = content
-
-        # Safe mode: Do not overwrite the original file, just log the changes
         if safe_mode:
             logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
         else:
-            # Backup and write new content
-            backup_path = f"{file_path}.bak"  # Initialize backup_path here
-            try:
-                if os.path.exists(backup_path):
-                    os.remove(backup_path)
-                shutil.copy(file_path, backup_path)
-                logger.debug(f"Backup created at '{backup_path}'")
+            await backup_and_write_new_content(file_path, new_content)
 
-                async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
-                    await f.write(new_content)
-                logger.info(f"Inserted documentation into '{file_path}'")
-            except Exception as e:
-                logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
-                # Restore from backup if write fails
-                if backup_path and os.path.exists(backup_path):
-                    shutil.copy(backup_path, file_path)
-                    os.remove(backup_path)
-                    logger.info(f"Restored original file from backup for '{file_path}'")
-                return
+        # Write the documentation report
+        await write_documentation_report(output_file, summary, changes, new_content, language, output_lock, file_path, repo_root)
+        
+        logger.info(f"Successfully processed and documented '{file_path}'")
+    
+    except Exception as e:
+        logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
 
-    # After inserting docstrings and formatting
+
+async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
+    """
+    Extracts the structure of the code based on the language.
+    """
     try:
+        if language == "python":
+            return extract_python_structure(content)
+        elif language in ["javascript", "typescript"]:
+            structure_output = run_node_script('extract_structure.js', content)
+            if not structure_output:
+                logger.warning(f"Could not extract code structure from '{file_path}'")
+                return None
+            return structure_output
+        elif language == "html":
+            return extract_html_structure(content)
+        elif language == "css":
+            return extract_css_structure(content)
+        else:
+            logger.warning(f"Language '{language}' not supported for structured extraction.")
+            return None
+    except Exception as e:
+        logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
+        return None
+
+
+async def process_code_documentation(content: str, documentation: dict, language: str, file_path: str) -> tuple[str, list, str]:
+    """
+    Inserts the docstrings or comments into the code based on the documentation.
+    """
+    summary = documentation.get("summary", "")
+    changes = documentation.get("changes", [])
+    new_content = content
+
+    try:
+        if language == "python":
+            new_content = insert_python_docstrings(content, documentation)
+            if not is_valid_python_code(new_content):
+                logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
+        elif language in ["javascript", "typescript"]:
+            new_content = run_node_insert_docstrings('insert_docstrings.js', content)
+            new_content = format_with_black(new_content)
+        elif language == "html":
+            new_content = insert_html_comments(content, documentation)
+        elif language == "css":
+            new_content = insert_css_docstrings(content, documentation)
+        
+        logger.debug(f"Processed {language} file '{file_path}'.")
+        return summary, changes, new_content
+    
+    except Exception as e:
+        logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
+        return summary, changes, content
+
+
+async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
+    """
+    Creates a backup of the file and writes the new content.
+    """
+    backup_path = f"{file_path}.bak"
+    try:
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        shutil.copy(file_path, backup_path)
+        logger.debug(f"Backup created at '{backup_path}'")
+
+        async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+            await f.write(new_content)
+        logger.info(f"Inserted documentation into '{file_path}'")
+    
+    except Exception as e:
+        logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
+        if backup_path and os.path.exists(backup_path):
+            shutil.copy(backup_path, file_path)
+            os.remove(backup_path)
+            logger.info(f"Restored original file from backup for '{file_path}'")
+
+
+async def write_documentation_report(
+    output_file: str, summary: str, changes: list, new_content: str, language: str,
+    output_lock: asyncio.Lock, file_path: str, repo_root: str
+) -> None:
+    """
+    Writes the summary, changes, and new content to the output markdown report.
+    """
+    try:
+        relative_path = os.path.relpath(file_path, repo_root)
         async with output_lock:
             async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
-                header = f"# File: {relative_path}\n\n"  # Use relative path
+                header = f"# File: {relative_path}\n\n"
                 summary_section = f"## Summary\n\n{summary}\n\n"
-                changes_section = (
-                    "## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
-                )
+                changes_section = f"## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
                 code_block = f"```{language}\n{new_content}\n```\n\n"
-
-                # Add flake8 issues if any
-                if flake8_output:
-                    flake8_section = f"## flake8 Issues\n\n```\n{flake8_output}\n```\n\n"
-                else:
-                    flake8_section = ""
-
                 await f.write(header)
                 await f.write(summary_section)
                 await f.write(changes_section)
                 await f.write(code_block)
-                await f.write(flake8_section)
-        logger.info(f"Successfully processed and documented '{file_path}'")
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
-except Exception as e:
-    logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
+
