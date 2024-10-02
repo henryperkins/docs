@@ -65,67 +65,147 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
+def load_config(config_path, excluded_dirs, excluded_files, skip_types):
     """
-    Loads additional configurations from a config.json file.
+    Loads configuration from a JSON file and updates exclusion sets.
     
-    Parameters:
+    Args:
         config_path (str): Path to the config.json file.
-        excluded_dirs (Set[str]): Set to add excluded directories.
-        excluded_files (Set[str]): Set to add excluded files.
-        skip_types (Set[str]): Set to add skipped file extensions.
+        excluded_dirs (set): Set of directories to exclude.
+        excluded_files (set): Set of files to exclude.
+        skip_types (set): Set of file extensions to skip.
     
     Returns:
-        Tuple[str, str]: Project information and style guidelines.
+        dict: Dictionary containing project_info and style_guidelines.
     """
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
-        project_info = config.get('project_info', '')
-        style_guidelines = config.get('style_guidelines', '')
+        
+        # Update exclusion sets if provided in config
         excluded_dirs.update(config.get('excluded_dirs', []))
         excluded_files.update(config.get('excluded_files', []))
         skip_types.update(config.get('skip_types', []))
-        logger.debug(f"Loaded configuration from '{config_path}'.")
+        
+        project_info = config.get('project_info', '')
+        style_guidelines = config.get('style_guidelines', '')
+        
         return project_info, style_guidelines
-    except Exception as e:
-        logger.error(f"Error loading config file '{config_path}': {e}")
+    except FileNotFoundError:
+        logger.warning(f"Configuration file '{config_path}' not found. Using default settings.")
         return '', ''
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON from '{config_path}': {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error loading config from '{config_path}': {e}")
+        raise
 
-def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> List[str]:
+def get_all_file_paths(repo_path, excluded_dirs, excluded_files):
     """
     Recursively retrieves all file paths in the repository, excluding specified directories and files.
     
-    Parameters:
+    Args:
         repo_path (str): Path to the repository.
-        excluded_dirs (Set[str]): Directories to exclude.
-        excluded_files (Set[str]): Files to exclude.
+        excluded_dirs (set): Set of directories to exclude.
+        excluded_files (set): Set of files to exclude.
     
     Returns:
-        List[str]: List of file paths.
+        list: List of file paths to process.
     """
     file_paths = []
     for root, dirs, files in os.walk(repo_path):
         # Modify dirs in-place to skip excluded directories
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
+        
         for file in files:
-            if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_files):
+            if file in excluded_files:
                 continue
-            file_path = os.path.join(root, file)
-            file_paths.append(file_path)
-    logger.debug(f"Retrieved {len(file_paths)} files from '{repo_path}'.")
+            file_ext = os.path.splitext(file)[1]
+            if file_ext in DEFAULT_SKIP_TYPES:
+                continue
+            full_path = os.path.join(root, file)
+            file_paths.append(full_path)
     return file_paths
 
-def load_json_schema(schema_path: str) -> dict:
-    """Loads a JSON schema from a file."""
+def load_json_schema(schema_path):
+    """
+    Loads a JSON schema from the specified path.
+    
+    Args:
+        schema_path (str): Path to the JSON schema file.
+    
+    Returns:
+        dict: Loaded JSON schema.
+    """
     try:
         with open(schema_path, 'r', encoding='utf-8') as f:
             schema = json.load(f)
-        logger.debug(f"Loaded JSON schema from {schema_path}")
+        logger.debug(f"Successfully loaded JSON schema from '{schema_path}'")
         return schema
+    except FileNotFoundError:
+        logger.error(f"JSON schema file '{schema_path}' not found.")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON from '{schema_path}': {e}")
+        return None
     except Exception as e:
-        logger.error(f"Failed to load JSON schema from {schema_path}: {e}")
-        return {}
+        logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
+        return None
+
+# Load function_schema from function_schema.json
+def load_function_schema():
+    """
+    Loads the function schema from 'function_schema.json'.
+    
+    Returns:
+        dict: Function schema.
+    """
+    schema_path = os.getenv('FUNCTION_SCHEMA_PATH', 'function_schema.json')
+    schema = load_json_schema(schema_path)
+    if not schema:
+        logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
+        exit(1)
+    return schema
+
+# Initialize function_schema at module load
+function_schema = load_function_schema()
+
+def call_openai_function(prompt, model_name, function_schema):
+    """
+    Calls the OpenAI API with the specified prompt and function schema.
+    
+    Args:
+        prompt (str): The prompt to send to OpenAI.
+        model_name (str): The OpenAI model to use.
+        function_schema (dict): The function schema for OpenAI's function calling.
+    
+    Returns:
+        dict: The response from OpenAI.
+    """
+    import openai
+    
+    openai.api_key = OPENAI_API_KEY
+    if not OPENAI_API_KEY:
+        logger.critical("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
+        exit(1)
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are an assistant that generates documentation."},
+                {"role": "user", "content": prompt}
+            ],
+            functions=[function_schema],
+            function_call={"name": function_schema["name"]}
+        )
+        logger.debug("OpenAI API call successful.")
+        return response
+    except Exception as e:
+        logger.error(f"Error calling OpenAI API: {e}")
+        return None
+        
 
 def format_with_black(code: str) -> str:
     """
@@ -529,50 +609,3 @@ async def fetch_summary(
 
     logger.error("Failed to generate summary after multiple attempts.")
     return None
-
-def call_openai_function(prompt: str, function_def: dict, model: str = "gpt-4-0613") -> dict:
-    """
-    Calls OpenAI's API with function calling enabled and validates the response against the provided schema.
-
-    Parameters:
-        prompt (str): The user prompt.
-        function_def (dict): The function definition including the JSON schema.
-        model (str): The OpenAI model to use.
-
-    Returns:
-        dict: The validated response from the API.
-    """
-    try:
-        response = openai.ChatCompletion.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant for generating documentation."},
-                {"role": "user", "content": prompt}
-            ],
-            functions=[function_def],
-            function_call="auto"
-        )
-
-        message = response["choices"][0]["message"]
-
-        if message.get("function_call"):
-            function_name = message["function_call"]["name"]
-            arguments = json.loads(message["function_call"]["arguments"])
-
-            # Validate against schema
-            validate(instance=arguments, schema=function_def["parameters"])
-            logger.info(f"Function '{function_name}' called successfully and validated.")
-            return arguments
-        else:
-            logger.warning("No function call detected in the response.")
-            return {}
-
-    except ValidationError as ve:
-        logger.error(f"Validation error: {ve}")
-        return {}
-    except OpenAIError as e:
-        logger.error(f"OpenAI API error: {e}")
-        return {}
-    except Exception as e:
-        logger.error(f"Error during OpenAI API call: {e}")
-        return {}
