@@ -110,6 +110,7 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
     logger.debug(f"Retrieved {len(file_paths)} files from '{repo_path}'.")
     return file_paths
 
+
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
@@ -192,6 +193,7 @@ def check_with_flake8(file_path: str) -> bool:
         except subprocess.CalledProcessError as e:
             logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
             return False
+
 
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """Checks if a file extension is valid (not in the skip list)."""
