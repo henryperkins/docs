@@ -95,6 +95,79 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
         logger.info(stdout.decode().strip())
     logger.debug("Exiting insert_docstrings_for_file")
 
+
+def format_with_black(code: str) -> str:
+    """
+    Formats Python code using Black.
+
+    Parameters:
+        code (str): The Python code to format.
+
+    Returns:
+        str: The formatted Python code.
+    """
+    try:
+        formatted_code = subprocess.check_output(['black', '--quiet', '-'], input=code.encode('utf-8'))
+        return formatted_code.decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Black formatting failed: {e}", exc_info=True)
+        return code  # Return unformatted code if Black fails
+
+def clean_unused_imports(code: str) -> str:
+    """
+    Removes unused imports from Python code using autoflake.
+
+    Parameters:
+        code (str): The Python code to clean.
+
+    Returns:
+        str: The cleaned Python code.
+    """
+    try:
+        cleaned_code = subprocess.check_output(
+            ['autoflake', '--remove-all-unused-imports', '--in-place', '--stdout'],
+            input=code.encode('utf-8')
+        )
+        return cleaned_code.decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Autoflake failed: {e}", exc_info=True)
+        return code  # Return original code if autoflake fails
+
+def check_with_flake8(file_path: str) -> bool:
+    """
+    Checks Python code compliance using flake8 and attempts to fix issues if found.
+
+    Parameters:
+        file_path (str): Path to the Python file to check.
+
+    Returns:
+        bool: True if the code passes flake8 checks after fixes, False otherwise.
+    """
+    logger.debug(f"Entering check_with_flake8 with file_path={file_path}")
+    result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
+    if result.returncode == 0:
+        logger.debug(f"No flake8 issues in {file_path}")
+        return True
+    else:
+        logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
+        # Attempt to auto-fix with autoflake and black
+        try:
+            logger.info(f"Attempting to auto-fix flake8 issues in {file_path}")
+            subprocess.run(['autoflake', '--remove-all-unused-imports', '--in-place', file_path], check=True)
+            subprocess.run(['black', '--quiet', file_path], check=True)
+            # Re-run flake8 to confirm
+            result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.debug(f"No flake8 issues after auto-fix in {file_path}")
+                return True
+            else:
+                logger.error(f"flake8 issues remain after auto-fix in {file_path}:\n{result.stdout}")
+                return False
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
+            return False
+
+
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -193,8 +266,7 @@ async def process_file(
             if not is_valid_python_code(new_content):
                 logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
                 return
-            # Format with Black
-            new_content = format_with_black(new_content)
+            # Check with flake8
             # Write to a temporary file for flake8 checking
             temp_file_path = None  # Initialize before try
             try:
@@ -274,6 +346,7 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
     logger.debug("Exiting process_file")
+    
 
 async def process_all_files(
     session: aiohttp.ClientSession,  # Added parameter
@@ -318,30 +391,5 @@ async def process_all_files(
         else:
             logger.debug(f"Completed processing file '{file_paths[idx]}'")
     logger.debug("Exiting process_all_files")
-
-
-def check_with_flake8(file_path: str) -> bool:
-    logger.debug(f"Entering check_with_flake8 with file_path={file_path}")
-    result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
-    if result.returncode == 0:
-        logger.debug(f"No flake8 issues in {file_path}")
-        return True
-    else:
-        logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
-        # Attempt to auto-fix
-        try:
-            subprocess.run(["autopep8", "--in-place", "--aggressive", "--aggressive", file_path], check=True)
-            logger.info(f"Auto-fixed flake8 issues in {file_path}")
-            # Re-run flake8 to confirm
-            result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
-            if result.returncode == 0:
-                logger.debug(f"No flake8 issues after auto-fix in {file_path}")
-                return True
-            else:
-                logger.error(f"flake8 issues remain after auto-fix in {file_path}:\n{result.stdout}")
-                return False
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
-            return False
 
 
