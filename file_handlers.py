@@ -328,6 +328,20 @@ def check_with_flake8(file_path: str) -> bool:
         return True
     else:
         logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
-        return False
-    logger.debug("Exiting check_with_flake8")
+        # Attempt to auto-fix
+        try:
+            subprocess.run(["autopep8", "--in-place", "--aggressive", "--aggressive", file_path], check=True)
+            logger.info(f"Auto-fixed flake8 issues in {file_path}")
+            # Re-run flake8 to confirm
+            result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.debug(f"No flake8 issues after auto-fix in {file_path}")
+                return True
+            else:
+                logger.error(f"flake8 issues remain after auto-fix in {file_path}:\n{result.stdout}")
+                return False
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
+            return False
+
 
