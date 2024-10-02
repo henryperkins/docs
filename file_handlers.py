@@ -1,3 +1,5 @@
+# file_handlers.py
+
 import os
 import sys
 import json
@@ -45,6 +47,8 @@ from utils import (
     run_flake8,
     run_node_script,
     run_node_insert_docstrings,
+    call_openai_function,  # Newly added for function calling
+    load_json_schema,     # Newly added for loading JSON schemas
 )
 
 logger = logging.getLogger(__name__)
@@ -64,9 +68,9 @@ console_handler.setLevel(logging.INFO)  # Change to DEBUG for more verbosity on 
 console_handler.setFormatter(formatter)
 
 # Add handlers to the logger
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
-
+if not logger.hasHandlers():
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
 async def main():
     async with aiohttp.ClientSession() as session:
@@ -82,10 +86,8 @@ async def main():
         )
         print(result)
 
-
 if __name__ == "__main__":
     asyncio.run(main())
-
 
 async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -> None:
     logger.debug(f"Entering insert_docstrings_for_file with js_ts_file={js_ts_file}, documentation_file={documentation_file}")
@@ -103,7 +105,6 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
     else:
         logger.info(stdout.decode().strip())
     logger.debug("Exiting insert_docstrings_for_file")
-
 
 async def process_file(
     session: aiohttp.ClientSession,
@@ -161,7 +162,7 @@ async def process_file(
         )
         logger.debug(f"Generated prompt for '{file_path}': {prompt}")
 
-        # Fetch documentation from OpenAI
+        # Fetch documentation from OpenAI using function calling
         documentation = await fetch_documentation(
             session=session,
             prompt=prompt,
@@ -173,6 +174,7 @@ async def process_file(
             logger.error(f"Failed to generate documentation for '{file_path}'.")
             return
 
+        # Insert documentation into code
         summary, changes, new_content = await process_code_documentation(
             content, documentation, language, file_path
         )
@@ -189,7 +191,6 @@ async def process_file(
     
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
-
 
 async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
     """
@@ -224,7 +225,7 @@ async def process_code_documentation(content: str, documentation: dict, language
     Inserts the docstrings or comments into the code based on the documentation.
     """
     summary = documentation.get("summary", "")
-    changes = documentation.get("changes", [])
+    changes = documentation.get("changes_made", [])
     new_content = content
 
     try:
@@ -247,7 +248,6 @@ async def process_code_documentation(content: str, documentation: dict, language
         logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
         return summary, changes, content
 
-
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
     """
     Creates a backup of the file and writes the new content.
@@ -269,7 +269,6 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             shutil.copy(backup_path, file_path)
             os.remove(backup_path)
             logger.info(f"Restored original file from backup for '{file_path}'")
-
 
 async def write_documentation_report(
     output_file: str, summary: str, changes: list, new_content: str, language: str,
@@ -295,7 +294,7 @@ async def write_documentation_report(
 
 async def process_all_files(
     session: aiohttp.ClientSession,
-    file_paths: list[str],
+    file_paths: List[str],
     skip_types: Set[str],
     output_file: str,
     semaphore: asyncio.Semaphore,
@@ -328,7 +327,8 @@ async def process_all_files(
         )
         tasks.append(task)
     
-    await asyncio.gather(*tasks)  # Run all tasks concurrently
+    # Use tqdm for progress tracking
+    for f in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+        await f
+    
     logger.info("Completed processing all files.")
-
-
