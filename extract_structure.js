@@ -1,129 +1,202 @@
 // extract_structure.js
 
-const fs = require('fs');
+const fs = require('fs/promises');
+const path = require('path');
 const babelParser = require('@babel/parser');
 const traverse = require('@babel/traverse').default;
 
 /**
- * Reads all data from stdin.
- * @returns {Promise<string>} The input code as a string.
+ * Extracts the structure of a JavaScript/TypeScript file, including functions and classes.
+ * @param {string} filePath - Path to the JavaScript/TypeScript file.
+ * @returns {Promise<Object>} - An object representing the code structure.
  */
-function readStdin() {
-    return new Promise((resolve, reject) => {
-        let data = '';
-        process.stdin.setEncoding('utf-8');
+async function extractStructure(filePath) {
+  try {
+    const code = await fs.readFile(filePath, 'utf-8');
 
-        process.stdin.on('data', chunk => {
-            data += chunk;
-        });
+    // Determine parser plugins based on file extension
+    const ext = path.extname(filePath).toLowerCase();
+    const isTypeScript = ext === '.ts' || ext === '.tsx';
+    const isJSX = ext === '.jsx' || ext === '.tsx';
 
-        process.stdin.on('end', () => {
-            resolve(data);
-        });
+    const plugins = [
+      'jsx',
+      'classProperties',
+      'dynamicImport',
+      'objectRestSpread',
+      'optionalChaining',
+      'nullishCoalescingOperator',
+      'decorators-legacy',
+      'exportDefaultFrom',
+      'exportNamespaceFrom',
+      'topLevelAwait',
+    ];
 
-        process.stdin.on('error', err => {
-            reject(err);
-        });
+    if (isTypeScript) {
+      plugins.push('typescript');
+    }
+
+    // Parse the code into an AST
+    const ast = babelParser.parse(code, {
+      sourceType: 'module',
+      plugins: plugins,
     });
-}
 
-/**
- * Extracts the structure of the code, including functions and classes.
- * @param {object} ast - The Abstract Syntax Tree of the code.
- * @returns {object} The extracted structure.
- */
-function extractStructure(ast) {
     const structure = {
-        functions: [],
-        classes: [],
+      functions: [],
+      classes: [],
     };
 
     traverse(ast, {
-        FunctionDeclaration(path) {
-            const func = {
-                name: path.node.id.name,
-                params: path.node.params.map(param => param.name || 'unknown'),
-                line: path.node.loc.start.line,
-            };
-            structure.functions.push(func);
-        },
-        VariableDeclaration(path) {
-            // Handle arrow functions assigned to variables
-            path.node.declarations.forEach(declaration => {
-                if (
-                    declaration.init &&
-                    (declaration.init.type === 'ArrowFunctionExpression' ||
-                        declaration.init.type === 'FunctionExpression')
-                ) {
-                    const func = {
-                        name: declaration.id.name,
-                        params: declaration.init.params.map(param => param.name || 'unknown'),
-                        line: declaration.loc.start.line,
-                    };
-                    structure.functions.push(func);
-                }
+      // Extract standalone functions
+      FunctionDeclaration(path) {
+        const node = path.node;
+        structure.functions.push({
+          name: node.id ? node.id.name : 'anonymous',
+          params: node.params.map((param) => getParamName(param)),
+          location: node.loc,
+        });
+      },
+      // Extract arrow functions assigned to variables
+      VariableDeclaration(path) {
+        const declarations = path.node.declarations;
+        declarations.forEach((declarator) => {
+          if (
+            declarator.init &&
+            (declarator.init.type === 'ArrowFunctionExpression' ||
+              declarator.init.type === 'FunctionExpression')
+          ) {
+            structure.functions.push({
+              name: declarator.id.name,
+              params: declarator.init.params.map((param) => getParamName(param)),
+              location: declarator.loc,
             });
-        },
-        ClassDeclaration(path) {
-            const cls = {
-                name: path.node.id.name,
-                methods: [],
-                line: path.node.loc.start.line,
+          }
+        });
+      },
+      // Extract class declarations
+      ClassDeclaration(path) {
+        const node = path.node;
+        const classInfo = {
+          name: node.id ? node.id.name : 'anonymous',
+          methods: [],
+          location: node.loc,
+        };
+
+        path.traverse({
+          ClassMethod(methodPath) {
+            const methodNode = methodPath.node;
+            classInfo.methods.push({
+              name: methodNode.key.name,
+              params: methodNode.params.map((param) => getParamName(param)),
+              location: methodNode.loc,
+            });
+          },
+        });
+
+        structure.classes.push(classInfo);
+      },
+      // Extract class expressions assigned to variables
+      VariableDeclaration(path) {
+        const declarations = path.node.declarations;
+        declarations.forEach((declarator) => {
+          if (declarator.init && declarator.init.type === 'ClassExpression') {
+            const classNode = declarator.init;
+            const classInfo = {
+              name: declarator.id.name,
+              methods: [],
+              location: classNode.loc,
             };
 
             path.traverse({
-                ClassMethod(classPath) {
-                    const method = {
-                        name: classPath.node.key.name,
-                        params: classPath.node.params.map(param => param.name || 'unknown'),
-                        kind: classPath.node.kind, // constructor, method, getter, setter
-                        line: classPath.node.loc.start.line,
-                    };
-                    cls.methods.push(method);
-                },
-                ClassProperty(classPath) {
-                    // Handle class properties if needed
-                },
+              ClassMethod(methodPath) {
+                const methodNode = methodPath.node;
+                classInfo.methods.push({
+                  name: methodNode.key.name,
+                  params: methodNode.params.map((param) => getParamName(param)),
+                  location: methodNode.loc,
+                });
+              },
             });
 
-            structure.classes.push(cls);
-        },
+            structure.classes.push(classInfo);
+          }
+        });
+      },
     });
 
     return structure;
+  } catch (error) {
+    console.error(`Error extracting structure from '${filePath}':`, error);
+    process.exit(1);
+  }
 }
 
 /**
- * Main function to execute the script.
+ * Retrieves the name of a parameter, handling different parameter types.
+ * @param {Object} param - The AST node representing the parameter.
+ * @returns {string} - The name of the parameter.
  */
-async function main() {
-    try {
-        const inputCode = await readStdin();
-
-        if (!inputCode.trim()) {
-            console.error('No input provided.');
-            process.exit(1);
-        }
-
-        const ast = babelParser.parse(inputCode, {
-            sourceType: 'module',
-            plugins: [
-                'typescript',
-                'jsx',
-                'classProperties',
-                'decorators-legacy',
-                'dynamicImport',
-                // Add other plugins as needed
-            ],
-        });
-
-        const structure = extractStructure(ast);
-
-        console.log(JSON.stringify(structure, null, 2));
-    } catch (error) {
-        console.error(`Error parsing JS/TS file: ${error.message}`);
-        process.exit(1);
-    }
+function getParamName(param) {
+  switch (param.type) {
+    case 'Identifier':
+      return param.name;
+    case 'AssignmentPattern':
+      return param.left.name;
+    case 'RestElement':
+      return '...' + param.argument.name;
+    case 'ObjectPattern':
+      return '{' + param.properties.map((prop) => prop.key.name).join(', ') + '}';
+    case 'ArrayPattern':
+      return '[' + param.elements.map((el) => (el ? el.name : '')).join(', ') + ']';
+    default:
+      return 'unknown';
+  }
 }
 
+/**
+ * Writes the structure object to a JSON file.
+ * @param {string} filePath - Path to the original JavaScript/TypeScript file.
+ * @param {Object} structure - The extracted structure object.
+ */
+async function writeStructureToFile(filePath, structure) {
+  try {
+    const jsonContent = JSON.stringify(structure, null, 2);
+    const outputPath = `${filePath}.structure.json`;
+    await fs.writeFile(outputPath, jsonContent, 'utf-8');
+    console.log(`Structure extracted and saved to '${outputPath}'`);
+  } catch (error) {
+    console.error(`Error writing structure to file for '${filePath}':`, error);
+    process.exit(1);
+  }
+}
+
+/**
+ * Main function to handle command-line arguments and execute extraction.
+ */
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.length !== 1) {
+    console.error('Usage: node extract_structure.js /path/to/file.js');
+    process.exit(1);
+  }
+
+  const filePath = args[0];
+
+  // Validate file existence
+  try {
+    await fs.access(filePath);
+  } catch (error) {
+    console.error(`File '${filePath}' does not exist or is not accessible.`);
+    process.exit(1);
+  }
+
+  // Extract structure
+  const structure = await extractStructure(filePath);
+
+  // Write structure to JSON file
+  await writeStructureToFile(filePath, structure);
+}
+
+// Execute the main function
 main();
