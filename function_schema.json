@@ -1,31 +1,62 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "DocumentationReport",
-  "type": "object",
-  "properties": {
-    "file": {
-      "type": "string",
-      "description": "Name of the file being documented."
-    },
-    "language": {
-      "type": "string",
-      "description": "Programming language of the file."
-    },
-    "summary": {
-      "type": "string",
-      "description": "A brief summary of the file's purpose and functionality."
-    },
-    "changes_made": {
-      "type": "array",
-      "description": "List of changes made to the file.",
-      "items": {
-        "type": "string"
+  "name": "generate_documentation",
+  "description": "Generates comprehensive documentation for the provided code structure.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "A brief summary of the code structure, highlighting its purpose and functionality."
+      },
+      "changes_made": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "A detailed list of changes made to the codebase during the documentation insertion process."
+      },
+      "code_snippet": {
+        "type": "string",
+        "description": "The specific snippet of code (function, class, or method) that has been documented."
+      },
+      "documentation_format": {
+        "type": "string",
+        "enum": ["docstring", "comment"],
+        "description": "The format in which the documentation should be inserted into the code. Options are 'docstring' for Python docstrings or 'comment' for inline comments in other languages."
+      },
+      "language": {
+        "type": "string",
+        "enum": ["python", "javascript", "typescript", "html", "css"],
+        "description": "The programming language of the code snippet to ensure appropriate documentation syntax."
+      },
+      "style_guidelines": {
+        "type": "string",
+        "description": "Specific style guidelines to follow when generating documentation, such as adhering to PEP 8 for Python or Airbnb style guide for JavaScript."
+      },
+      "project_info": {
+        "type": "string",
+        "description": "Additional information about the project to provide context for the documentation generation."
       }
     },
-    "code_snippet": {
-      "type": "string",
-      "description": "Relevant code snippet from the file."
-    }
+    "required": ["summary", "changes_made", "code_snippet", "documentation_format", "language"]
   },
-  "required": ["file", "language", "summary", "changes_made", "code_snippet"]
+  "returns": {
+    "type": "object",
+    "properties": {
+      "documentation": {
+        "type": "string",
+        "description": "The generated documentation to be inserted into the code."
+      },
+      "status": {
+        "type": "string",
+        "enum": ["success", "failure"],
+        "description": "The status of the documentation generation process."
+      },
+      "error_message": {
+        "type": "string",
+        "description": "Detailed error message in case the documentation generation fails."
+      }
+    },
+    "required": ["documentation", "status"]
+  }
 }
