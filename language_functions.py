@@ -58,30 +58,25 @@ def is_syntax_valid(code: str) -> bool:
 
 # Python-specific functions
 def extract_python_structure(code: str) -> Dict[str, Any]:
-    """
-    Extracts the structure of Python code, including functions and classes.
-
-    Parameters:
-        code (str): The Python source code.
-
-    Returns:
-        Dict[str, Any]: A dictionary containing functions and classes with their details.
-    """
     logger.debug("Starting extract_python_structure")
-    logger.debug(f"Input code (first 100 chars): {code[:100]}...")
+    logger.debug(f"Input code: {code[:100]}...")  # Log first 100 characters of the code for brevity
     try:
         tree = ast.parse(code)
         structure = {
             "functions": [],
             "classes": []
         }
-        logger.debug("Successfully parsed code into AST")
+        logger.debug("Successfully parsed code into AST")  # Add logging for successful AST parsing
 
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.FunctionDef):
-                logger.debug(f"Found function: {node.name}")
+                is_async = isinstance(node, ast.AsyncFunctionDef)  # Check if the function is async
+                func_type = "async" if is_async else "sync"  # Indicate whether it's async or sync
+                logger.debug(f"Found {func_type} function: {node.name}")
+
                 structure["functions"].append({
                     "name": node.name,
+                    "type": func_type,  # Add 'sync' or 'async'
                     "args": [arg.arg for arg in node.args.args],
                     "docstring": ast.get_docstring(node)
                 })
@@ -89,24 +84,19 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
                 methods = [
                     {
                         "name": method.name,
+                        "type": "async" if isinstance(method, ast.AsyncFunctionDef) else "sync",  # Check method type
                         "args": [arg.arg for arg in method.args.args],
                         "docstring": ast.get_docstring(method)
                     }
-                    for method in node.body if isinstance(method, ast.FunctionDef)
+                    for method in node.body if isinstance(method, ast.FunctionDef) or isinstance(method, ast.AsyncFunctionDef)
                 ]
-                logger.debug(f"Found class: {node.name} with methods: {[method['name'] for method in methods]}")
+                logger.debug(f"Found class: {node.name} with methods: {methods}")
                 structure["classes"].append({
                     "name": node.name,
                     "methods": methods
                 })
 
-        # If no functions are found, explicitly note it
-        if not structure["functions"]:
-            logger.info("No functions found in the Python source code.")
-        if not structure["classes"]:
-            logger.info("No classes found in the Python source code.")
-
-        logger.debug(f"Extracted structure: {structure}")
+        logger.debug(f"Extracted structure: {structure}")  # Log the structure
         return structure
     except SyntaxError as se:
         logger.error(f"Syntax error in Python code: {se}")
