@@ -363,6 +363,16 @@ async def write_documentation_report(
 ) -> None:
     """
     Writes the summary, changes, and new content to the output markdown report.
+
+    Parameters:
+        output_file (str): Path to the output Markdown file.
+        summary (str): Summary of the documentation.
+        changes (list): List of changes made.
+        new_content (str): Modified source code with inserted documentation.
+        language (str): Programming language.
+        output_lock (asyncio.Lock): Lock for synchronizing file writes.
+        file_path (str): Path to the source file.
+        repo_root (str): Root path of the repository.
     """
     try:
         relative_path = os.path.relpath(file_path, repo_root)
@@ -377,63 +387,70 @@ async def write_documentation_report(
                 else:
                     changes_section += "No changes were made to this file.\n\n"
 
-                # Extracting the structure of the code (functions and classes)
+                # Extract structure for functions and classes
                 structure = await extract_code_structure(new_content, file_path, language)
-                functions = structure.get("functions", [])
-                classes = structure.get("classes", [])
-
-                # Handling Functions Section
-                functions_section = "## Functions\n\n"
-                if not functions:
-                    functions_section += "No functions are defined in this file.\n\n"
-                elif len(functions) >= 4:
-                    # Generate table format for functions
-                    functions_section += "| Function | Arguments | Description |\n"
-                    functions_section += "|----------|-----------|-------------|\n"
-                    for func in functions:
+                
+                # Function table header
+                function_table_header = "| Function | Arguments | Description |\n|----------|-----------|-------------|\n"
+                function_table_rows = ""
+                detailed_function_descriptions = ""
+                
+                # If no functions are present
+                if not structure.get("functions"):
+                    function_table_rows = "| No functions are defined in this file. | | |\n"
+                else:
+                    for func in structure["functions"]:
                         func_name = func.get("name", "Unnamed Function")
                         func_args = ", ".join(func.get("args", []))
-                        func_doc = func.get("docstring", "No docstring provided.")
-                        functions_section += f"| `{func_name}` | `{func_args}` | {func_doc} |\n"
-                    functions_section += "\n"
-                else:
-                    # Generate list format for functions
-                    for func in functions:
-                        func_name = func.get("name", "Unnamed Function")
-                        func_args = ", ".join(func.get("args", []))
-                        func_doc = func.get("docstring", "No docstring provided.")
-                        functions_section += f"- **`{func_name}({func_args})`**: {func_doc}\n"
-                    functions_section += "\n"
+                        func_doc = func.get("docstring", "No description provided.")
+                        function_table_rows += f"| `{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
 
-                # Handling Classes Section
-                classes_section = "## Classes\n\n"
-                if not classes:
-                    classes_section += "No classes are defined in this file.\n\n"
+                        # Detailed function description
+                        detailed_function_descriptions += f"- **`{func_name}({func_args})`**\n\n"
+                        detailed_function_descriptions += f"  {func_doc}\n\n"
+
+                # Class table header
+                class_table_header = "## Classes\n\n"
+                class_table_rows = ""
+                detailed_class_descriptions = ""
+                
+                # If no classes are present
+                if not structure.get("classes"):
+                    class_table_rows = "No classes are defined in this file.\n\n"
                 else:
-                    for cls in classes:
+                    for cls in structure["classes"]:
                         cls_name = cls.get("name", "Unnamed Class")
-                        classes_section += f"### `{cls_name}`\n\n"
+                        class_table_rows += f"### `{cls_name}`\n\n"
+
                         if cls.get("methods"):
-                            classes_section += "#### Methods:\n\n"
+                            class_table_rows += "#### Methods:\n\n"
                             for method in cls["methods"]:
                                 method_name = method.get("name", "Unnamed Method")
                                 method_args = ", ".join(method.get("args", []))
-                                method_doc = method.get("docstring", "No docstring provided.")
-                                classes_section += f"- **`{method_name}({method_args})`**: {method_doc}\n"
-                            classes_section += "\n"
+                                method_doc = method.get("docstring", "No description provided.")
+                                class_table_rows += f"- **`{method_name}({method_args})`**: {method_doc.splitlines()[0]}\n"
+                                
+                                # Detailed method description
+                                detailed_class_descriptions += f"- **`{method_name}({method_args})`**\n\n"
+                                detailed_class_descriptions += f"  {method_doc}\n\n"
                         else:
-                            classes_section += "No methods defined in this class.\n\n"
-                
-                # Code Block Section
+                            class_table_rows += "No methods defined in this class.\n\n"
+
                 code_block = f"```{language}\n{new_content}\n```\n\n---\n\n"
-                
-                # Writing sections to the output file
+
+                # Write to file
                 await f.write(header)
                 await f.write(summary_section)
                 await f.write(changes_section)
-                await f.write(functions_section)
-                await f.write(classes_section)
+                await f.write("## Functions\n\n")
+                await f.write(function_table_header)
+                await f.write(function_table_rows)
+                await f.write(detailed_function_descriptions)
+                await f.write(class_table_header)
+                await f.write(class_table_rows)
+                await f.write(detailed_class_descriptions)
                 await f.write(code_block)
+
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
 
