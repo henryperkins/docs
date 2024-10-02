@@ -231,33 +231,48 @@ async def process_file(
                     if temp_file_path and os.path.exists(temp_file_path):
                         os.remove(temp_file_path)
                 logger.debug(f"Processed Python file '{file_path}'.")
+        except Exception as e:
+            logger.error(f"Error processing Python file '{file_path}': {e}", exc_info=True)
+            return
         elif language in ["javascript", "typescript"]:
-            # Insert docstrings using the Node.js script
-            new_content = run_node_insert_docstrings('insert_docstrings.js', content)
-            if not new_content:
-                logger.warning(f"Could not insert docstrings into '{file_path}'")
+            try:
+                # Insert docstrings using the Node.js script
+                new_content = run_node_insert_docstrings('insert_docstrings.js', content)
+                if not new_content:
+                    logger.warning(f"Could not insert docstrings into '{file_path}'")
+                    return
+                # Optionally, format the modified code using Black or Prettier
+                new_content = format_with_black(new_content)  # If desired, use a JS formatter like Prettier instead
+                # Clean unused imports if applicable (for JS/TS, you might use a different tool)
+                # For demonstration, using clean_unused_imports (which is for Python)
+                # Consider implementing a similar function for JS/TS if needed
+                new_content = clean_unused_imports(new_content)  # Not applicable for JS/TS
+                # Check with flake8 if necessary or use a JS linter like eslint
+                # For demonstration, skipping flake8 for JS/TS
+                logger.debug(f"Processed {language} file '{file_path}'.")
+            except Exception as e:
+                logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
                 return
-            # Optionally, format the modified code using Black or Prettier
-            new_content = format_with_black(new_content)  # If desired, use a JS formatter like Prettier instead
-            # Clean unused imports if applicable (for JS/TS, you might use a different tool)
-            # For demonstration, using clean_unused_imports (which is for Python)
-            # Consider implementing a similar function for JS/TS if needed
-            new_content = clean_unused_imports(new_content)  # Not applicable for JS/TS
-            # Check with flake8 if necessary or use a JS linter like eslint
-            # For demonstration, skipping flake8 for JS/TS
-            logger.debug(f"Processed {language} file '{file_path}'.")
         elif language == "html":
-            new_content = insert_html_comments(content, documentation)
-            # (Optional) Integrate HTML formatters here
-            logger.debug(f"Processed HTML file '{file_path}'.")
+            try:
+                new_content = insert_html_comments(content, documentation)
+                # (Optional) Integrate HTML formatters here
+                logger.debug(f"Processed HTML file '{file_path}'.")
+            except Exception as e:
+                logger.error(f"Error processing HTML file '{file_path}': {e}", exc_info=True)
+                return
         elif language == "css":
-            if "rules" not in documentation:
-                logger.error(f"Documentation for '{file_path}' lacks 'rules'. Skipping insertion.")
-                new_content = content
-            else:
-                new_content = insert_css_docstrings(content, documentation)
-                # (Optional) Integrate CSS formatters here
-                logger.debug(f"Processed CSS file '{file_path}'.")
+            try:
+                if "rules" not in documentation:
+                    logger.error(f"Documentation for '{file_path}' lacks 'rules'. Skipping insertion.")
+                    new_content = content
+                else:
+                    new_content = insert_css_docstrings(content, documentation)
+                    # (Optional) Integrate CSS formatters here
+                    logger.debug(f"Processed CSS file '{file_path}'.")
+            except Exception as e:
+                logger.error(f"Error processing CSS file '{file_path}': {e}", exc_info=True)
+                return
         else:
             new_content = content
 
@@ -285,28 +300,30 @@ async def process_file(
                     logger.info(f"Restored original file from backup for '{file_path}'")
                 return
 
-# After inserting docstrings and formatting
-try:
-    async with output_lock:
-        async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
-            header = f"# File: {relative_path}\n\n"  # Use relative path
-            summary_section = f"## Summary\n\n{summary}\n\n"
-            changes_section = (
-                "## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
-            )
-            code_block = f"```{language}\n{new_content}\n```\n\n"
-            
-            # Add flake8 issues if any
-            if flake8_output:
-                flake8_section = f"## flake8 Issues\n\n```\n{flake8_output}\n```\n\n"
-            else:
-                flake8_section = ""
-            
-            await f.write(header)
-            await f.write(summary_section)
-            await f.write(changes_section)
-            await f.write(code_block)
-            await f.write(flake8_section)
-    logger.info(f"Successfully processed and documented '{file_path}'")
+    # After inserting docstrings and formatting
+    try:
+        async with output_lock:
+            async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
+                header = f"# File: {relative_path}\n\n"  # Use relative path
+                summary_section = f"## Summary\n\n{summary}\n\n"
+                changes_section = (
+                    "## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
+                )
+                code_block = f"```{language}\n{new_content}\n```\n\n"
+
+                # Add flake8 issues if any
+                if flake8_output:
+                    flake8_section = f"## flake8 Issues\n\n```\n{flake8_output}\n```\n\n"
+                else:
+                    flake8_section = ""
+
+                await f.write(header)
+                await f.write(summary_section)
+                await f.write(changes_section)
+                await f.write(code_block)
+                await f.write(flake8_section)
+        logger.info(f"Successfully processed and documented '{file_path}'")
+    except Exception as e:
+        logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
 except Exception as e:
-    logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
+    logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
