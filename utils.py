@@ -68,55 +68,33 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
-    """
-    Loads additional configurations from a config.json file.
-    
-    Parameters:
-        config_path (str): Path to the config.json file.
-        excluded_dirs (Set[str]): Set to add excluded directories.
-        excluded_files (Set[str]): Set to add excluded files.
-        skip_types (Set[str]): Set to add skipped file extensions.
-    
-    Returns:
-        Tuple[str, str]: Project information and style guidelines.
-    """
+def load_config(config_path: str, excluded_dirs: set, excluded_files: set, skip_types: set):
+    """Loads configuration settings from a JSON file."""
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         project_info = config.get('project_info', '')
         style_guidelines = config.get('style_guidelines', '')
+        # Update excluded_dirs, excluded_files, and skip_types based on config
         excluded_dirs.update(config.get('excluded_dirs', []))
         excluded_files.update(config.get('excluded_files', []))
         skip_types.update(config.get('skip_types', []))
-        logger.debug(f"Loaded configuration from '{config_path}'.")
         return project_info, style_guidelines
     except Exception as e:
-        logger.error(f"Error loading config file '{config_path}': {e}")
-        return '', ''
+        logger.error(f"Failed to load config file '{config_path}': {e}")
+        raise
 
-def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> list[str]:
-    """
-    Recursively retrieves all file paths in the repository, excluding specified directories and files.
-    
-    Parameters:
-        repo_path (str): Path to the repository.
-        excluded_dirs (Set[str]): Directories to exclude.
-        excluded_files (Set[str]): Files to exclude.
-    
-    Returns:
-        List[str]: List of file paths.
-    """
+def get_all_file_paths(repo_path: str, excluded_dirs: set, excluded_files: set) -> list:
+    """Recursively retrieves all file paths in the repository, excluding specified directories and files."""
     file_paths = []
     for root, dirs, files in os.walk(repo_path):
-        # Modify dirs in-place to skip excluded directories
+        # Modify dirs in-place to exclude certain directories
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
         for file in files:
-            if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_files):
+            if file in excluded_files:
                 continue
             file_path = os.path.join(root, file)
             file_paths.append(file_path)
-    logger.debug(f"Retrieved {len(file_paths)} files from '{repo_path}'.")
     return file_paths
 
 def load_json_schema(schema_path: str) -> dict:
@@ -150,7 +128,7 @@ def call_openai_function(prompt: str, function_def: dict, model: str = "gpt-4-06
                 {"role": "user", "content": prompt}
             ],
             functions=[function_def],
-            function_call="auto"
+            function_call="auto"  # Let the model decide to call the function
         )
         
         message = response["choices"][0]["message"]
