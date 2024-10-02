@@ -98,44 +98,6 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
     logger.debug("Exiting insert_docstrings_for_file")
 
 
-def format_with_black(code: str) -> str:
-    """
-    Formats Python code using Black.
-
-    Parameters:
-        code (str): The Python code to format.
-
-    Returns:
-        str: The formatted Python code.
-    """
-    try:
-        formatted_code = subprocess.check_output(['black', '--quiet', '-'], input=code.encode('utf-8'))
-        return formatted_code.decode('utf-8')
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Black formatting failed: {e}", exc_info=True)
-        return code  # Return unformatted code if Black fails
-
-def clean_unused_imports(code: str) -> str:
-    """
-    Removes unused imports from Python code using autoflake.
-
-    Parameters:
-        code (str): The Python code to clean.
-
-    Returns:
-        str: The cleaned Python code.
-    """
-    try:
-        cleaned_code = subprocess.check_output(
-            ['autoflake', '--remove-all-unused-imports', '--in-place', '--stdout'],
-            input=code.encode('utf-8')
-        )
-        return cleaned_code.decode('utf-8')
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Autoflake failed: {e}", exc_info=True)
-        return code  # Return original code if autoflake fails
-
-
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -314,7 +276,6 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
     logger.debug("Exiting process_file")
-    
 
 async def process_all_files(
     session: aiohttp.ClientSession,  # Added parameter
