@@ -200,7 +200,6 @@ async def main():
                 skip_types=skip_types,
                 output_file=output_file,
                 semaphore=semaphore,
-                output_lock=output_lock,
                 model_name=model_name,
                 function_schema=function_schema_loaded,
                 repo_root=repo_path,
