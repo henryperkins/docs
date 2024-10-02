@@ -290,3 +290,42 @@ async def write_documentation_report(
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
 
+async def process_all_files(
+    session: aiohttp.ClientSession,
+    file_paths: list[str],
+    skip_types: Set[str],
+    output_file: str,
+    semaphore: asyncio.Semaphore,
+    output_lock: asyncio.Lock,
+    model_name: str,
+    function_schema: dict,
+    repo_root: str,
+    project_info: str,
+    style_guidelines: str,
+    safe_mode: bool = False,
+) -> None:
+    logger.info("Starting process of all files.")
+    tasks = []
+    
+    for file_path in file_paths:
+        # Call process_file for each file asynchronously
+        task = process_file(
+            session=session,
+            file_path=file_path,
+            skip_types=skip_types,
+            output_file=output_file,
+            semaphore=semaphore,
+            output_lock=output_lock,
+            model_name=model_name,
+            function_schema=function_schema,
+            repo_root=repo_root,
+            project_info=project_info,
+            style_guidelines=style_guidelines,
+            safe_mode=safe_mode
+        )
+        tasks.append(task)
+    
+    await asyncio.gather(*tasks)  # Run all tasks concurrently
+    logger.info("Completed processing all files.")
+
+
