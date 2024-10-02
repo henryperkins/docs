@@ -17,6 +17,8 @@ import astor  # Added for Python docstring insertion
 from bs4 import BeautifulSoup, Comment  # Added for HTML and CSS functions
 import tinycss2  # Added for CSS functions
 import json
+import openai
+from jsonschema import validate, ValidationError
 
 # Load function_schema from JSON file
 with open('function_schema.json', 'r', encoding='utf-8') as f:
@@ -25,8 +27,15 @@ with open('function_schema.json', 'r', encoding='utf-8') as f:
 load_dotenv()
 
 # Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler("documentation_generation.log"),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 # Constants
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
@@ -110,7 +119,61 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
     logger.debug(f"Retrieved {len(file_paths)} files from '{repo_path}'.")
     return file_paths
 
+def load_json_schema(schema_path: str) -> dict:
+    """Loads a JSON schema from a file."""
+    try:
+        with open(schema_path, 'r', encoding='utf-8') as f:
+            schema = json.load(f)
+        logger.debug(f"Loaded JSON schema from {schema_path}")
+        return schema
+    except Exception as e:
+        logger.error(f"Failed to load JSON schema from {schema_path}: {e}")
+        return {}
 
+def call_openai_function(prompt: str, function_def: dict, model: str = "gpt-4-0613") -> dict:
+    """
+    Calls OpenAI's API with function calling enabled and validates the response against the provided schema.
+    
+    Parameters:
+        prompt (str): The user prompt.
+        function_def (dict): The function definition including the JSON schema.
+        model (str): The OpenAI model to use.
+    
+    Returns:
+        dict: The validated response from the API.
+    """
+    try:
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant for generating documentation."},
+                {"role": "user", "content": prompt}
+            ],
+            functions=[function_def],
+            function_call="auto"
+        )
+        
+        message = response["choices"][0]["message"]
+        
+        if message.get("function_call"):
+            function_name = message["function_call"]["name"]
+            arguments = json.loads(message["function_call"]["arguments"])
+            
+            # Validate against schema
+            validate(instance=arguments, schema=function_def["parameters"])
+            logger.info(f"Function '{function_name}' called successfully and validated.")
+            return arguments
+        else:
+            logger.warning("No function call detected in the response.")
+            return {}
+    
+    except ValidationError as ve:
+        logger.error(f"Validation error: {ve}")
+        return {}
+    except Exception as e:
+        logger.error(f"Error during OpenAI API call: {e}")
+        return {}
+        
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
