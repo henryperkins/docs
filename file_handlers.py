@@ -393,7 +393,6 @@ async def write_documentation_report(
                 # Function table header
                 function_table_header = "| Function | Arguments | Description |\n|----------|-----------|-------------|\n"
                 function_table_rows = ""
-                detailed_function_descriptions = ""
                 
                 # If no functions are present
                 if not structure.get("functions"):
@@ -405,14 +404,9 @@ async def write_documentation_report(
                         func_doc = func.get("docstring", "No description provided.")
                         function_table_rows += f"| `{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
 
-                        # Detailed function description
-                        detailed_function_descriptions += f"- **`{func_name}({func_args})`**\n\n"
-                        detailed_function_descriptions += f"  {func_doc}\n\n"
-
                 # Class table header
                 class_table_header = "## Classes\n\n"
                 class_table_rows = ""
-                detailed_class_descriptions = ""
                 
                 # If no classes are present
                 if not structure.get("classes"):
@@ -429,10 +423,6 @@ async def write_documentation_report(
                                 method_args = ", ".join(method.get("args", []))
                                 method_doc = method.get("docstring", "No description provided.")
                                 class_table_rows += f"- **`{method_name}({method_args})`**: {method_doc.splitlines()[0]}\n"
-                                
-                                # Detailed method description
-                                detailed_class_descriptions += f"- **`{method_name}({method_args})`**\n\n"
-                                detailed_class_descriptions += f"  {method_doc}\n\n"
                         else:
                             class_table_rows += "No methods defined in this class.\n\n"
 
@@ -445,15 +435,12 @@ async def write_documentation_report(
                 await f.write("## Functions\n\n")
                 await f.write(function_table_header)
                 await f.write(function_table_rows)
-                await f.write(detailed_function_descriptions)
                 await f.write(class_table_header)
                 await f.write(class_table_rows)
-                await f.write(detailed_class_descriptions)
                 await f.write(code_block)
 
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
-
 
 async def process_all_files(
     session: aiohttp.ClientSession,
