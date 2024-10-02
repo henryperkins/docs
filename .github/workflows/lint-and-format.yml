@@ -39,7 +39,7 @@ jobs:
     - name: Run Black and Apply Fixes
       if: matrix.language == 'python'
       run: |
-        black .
+        black . --quiet
 
     - name: Set up Node.js
       if: matrix.language == 'javascript'
