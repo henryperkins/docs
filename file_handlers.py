@@ -196,6 +196,7 @@ async def process_file(
             # Format with Black
             new_content = format_with_black(new_content)
             # Write to a temporary file for flake8 checking
+            temp_file_path = None  # Initialize before try
             try:
                 with tempfile.NamedTemporaryFile('w', delete=False, suffix='.py') as temp_file:
                     temp_file.write(new_content)
@@ -207,7 +208,7 @@ async def process_file(
                     return
             finally:
                 # Remove the temporary file after checking
-                if os.path.exists(backup_path):
+                if temp_file_path and os.path.exists(temp_file_path):
                     os.remove(temp_file_path)
             logger.debug(f"Processed Python file '{file_path}'.")
         elif language in ["javascript", "typescript"]:
@@ -234,8 +235,8 @@ async def process_file(
             logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
         else:
             # Backup and write new content
+            backup_path = f"{file_path}.bak"  # Initialize backup_path here
             try:
-                backup_path = f"{file_path}.bak"
                 if os.path.exists(backup_path):
                     os.remove(backup_path)
                 shutil.copy(file_path, backup_path)
@@ -247,7 +248,7 @@ async def process_file(
             except Exception as e:
                 logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
                 # Restore from backup if write fails
-                if os.path.exists(backup_path):
+                if backup_path and os.path.exists(backup_path):
                     shutil.copy(backup_path, file_path)
                     os.remove(backup_path)
                     logger.info(f"Restored original file from backup for '{file_path}'")
