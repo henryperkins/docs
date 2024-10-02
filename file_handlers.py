@@ -363,16 +363,6 @@ async def write_documentation_report(
 ) -> None:
     """
     Writes the summary, changes, and new content to the output markdown report.
-
-    Parameters:
-        output_file (str): Path to the output Markdown file.
-        summary (str): Summary of the documentation.
-        changes (list): List of changes made.
-        new_content (str): Modified source code with inserted documentation.
-        language (str): Programming language.
-        output_lock (asyncio.Lock): Lock for synchronizing file writes.
-        file_path (str): Path to the source file.
-        repo_root (str): Root path of the repository.
     """
     try:
         relative_path = os.path.relpath(file_path, repo_root)
@@ -386,24 +376,41 @@ async def write_documentation_report(
                     changes_section += "\n".join(f"- {change}" for change in changes) + "\n\n"
                 else:
                     changes_section += "No changes were made to this file.\n\n"
-                
-                # Handling absence of functions or classes
+
+                # Extracting the structure of the code (functions and classes)
                 structure = await extract_code_structure(new_content, file_path, language)
-                if not structure.get("functions"):
-                    functions_section = "## Functions\n\nNo functions are defined in this file.\n\n"
-                else:
-                    functions_section = "## Functions\n\n"
-                    for func in structure["functions"]:
+                functions = structure.get("functions", [])
+                classes = structure.get("classes", [])
+
+                # Handling Functions Section
+                functions_section = "## Functions\n\n"
+                if not functions:
+                    functions_section += "No functions are defined in this file.\n\n"
+                elif len(functions) >= 4:
+                    # Generate table format for functions
+                    functions_section += "| Function | Arguments | Description |\n"
+                    functions_section += "|----------|-----------|-------------|\n"
+                    for func in functions:
                         func_name = func.get("name", "Unnamed Function")
                         func_args = ", ".join(func.get("args", []))
                         func_doc = func.get("docstring", "No docstring provided.")
-                        functions_section += f"### `{func_name}({func_args})`\n\n{func_doc}\n\n"
-                
-                if not structure.get("classes"):
-                    classes_section = "## Classes\n\nNo classes are defined in this file.\n\n"
+                        functions_section += f"| `{func_name}` | `{func_args}` | {func_doc} |\n"
+                    functions_section += "\n"
                 else:
-                    classes_section = "## Classes\n\n"
-                    for cls in structure["classes"]:
+                    # Generate list format for functions
+                    for func in functions:
+                        func_name = func.get("name", "Unnamed Function")
+                        func_args = ", ".join(func.get("args", []))
+                        func_doc = func.get("docstring", "No docstring provided.")
+                        functions_section += f"- **`{func_name}({func_args})`**: {func_doc}\n"
+                    functions_section += "\n"
+
+                # Handling Classes Section
+                classes_section = "## Classes\n\n"
+                if not classes:
+                    classes_section += "No classes are defined in this file.\n\n"
+                else:
+                    for cls in classes:
                         cls_name = cls.get("name", "Unnamed Class")
                         classes_section += f"### `{cls_name}`\n\n"
                         if cls.get("methods"):
@@ -417,8 +424,10 @@ async def write_documentation_report(
                         else:
                             classes_section += "No methods defined in this class.\n\n"
                 
+                # Code Block Section
                 code_block = f"```{language}\n{new_content}\n```\n\n---\n\n"
                 
+                # Writing sections to the output file
                 await f.write(header)
                 await f.write(summary_section)
                 await f.write(changes_section)
