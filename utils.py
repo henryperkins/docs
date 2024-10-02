@@ -313,7 +313,7 @@ def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, any
     try:
         logger.debug(f"Running Node.js script: {script_path}")
         result = subprocess.run(
-            ['node', script_path],
+            ['node', 'scripts/extract_structure.js'],
             input=input_code,
             capture_output=True,
             text=True,
@@ -349,7 +349,7 @@ def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[st
     try:
         logger.debug(f"Running Node.js script: {script_path}")
         result = subprocess.run(
-            ['node', script_path],
+            ['node', 'scripts/insert_docstrings.js'],
             input=input_code,
             capture_output=True,
             text=True,
