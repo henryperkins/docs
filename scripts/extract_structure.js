@@ -50,12 +50,12 @@ fs.readFile(filePath, 'utf8', (err, code) => {
       },
       ClassDeclaration(node) {
         const methods = [];
-        node.body.body.forEach(method => {
-          if (method.type === 'MethodDefinition') {
+        node.body.body.forEach(element => {
+          if (element.type === 'MethodDefinition') {
             methods.push({
-              name: method.key.name,
-              args: method.value.params.map(param => param.name || 'param'),
-              async: method.value.async,
+              name: element.key.name,
+              args: element.value.params.map(param => param.name || 'param'),
+              async: element.value.async,
               docstring: '' // Placeholder
             });
           }
