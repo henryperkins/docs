@@ -1,13 +1,13 @@
 # file_handlers.py
 
 import os
-import sys
+import fnmatch
 import json
 import logging
 import ast
 import astor
 import shutil
-from typing import Set, List, Optional, Dict
+from typing import Set, List, Optional, Dict, Tuple
 import aiofiles
 import aiohttp
 import asyncio
@@ -47,8 +47,8 @@ from utils import (
     run_flake8,
     run_node_script,
     run_node_insert_docstrings,
-    call_openai_function,  # Newly added for function calling
-    load_json_schema,     # Newly added for loading JSON schemas
+    call_openai_function,
+    load_json_schema,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,38 +73,76 @@ if not logger.hasHandlers():
     logger.addHandler(console_handler)
 
 async def main():
+    # Load the function schema from the JSON schema file
+    schema_path = 'function_schema.json'  # Ensure the path is correct
+    function_schema = load_json_schema(schema_path)
+    
+    if not function_schema:
+        logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
+        return
+
     async with aiohttp.ClientSession() as session:
-        semaphore = asyncio.Semaphore(10)
-        prompt = "Your prompt here"
-        model_name = "gpt-4"
-        result = await fetch_documentation_with_retries(
-            session=session,
-            prompt=prompt,
-            semaphore=semaphore,
-            model_name=model_name,
-            function_schema=function_schema
+        semaphore = asyncio.Semaphore(10)  # Adjust concurrency as needed
+        
+        # Define a meaningful prompt based on your documentation needs
+        prompt = (
+            "You are an experienced software developer tasked with generating comprehensive documentation "
+            "for the following Python code structure."
         )
-        print(result)
+        
+        model_name = "gpt-4"
+        
+        try:
+            documentation = await fetch_documentation(
+                session=session,
+                prompt=prompt,
+                semaphore=semaphore,
+                model_name=model_name,
+                function_schema=function_schema
+            )
+            
+            if documentation:
+                # Pretty-print the documentation for readability
+                formatted_doc = json.dumps(documentation, indent=2)
+                logger.info("Received Documentation:")
+                logger.info(formatted_doc)
+            else:
+                logger.warning("No documentation was returned from the API.")
+        
+        except Exception as e:
+            logger.error(f"An error occurred while fetching documentation: {e}", exc_info=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
 
 async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -> None:
+    """
+    Inserts docstrings into JS/TS files by running an external Node.js script.
+
+    Parameters:
+        js_ts_file (str): Path to the JS/TS source file.
+        documentation_file (str): Path to the documentation JSON file.
+    """
     logger.debug(f"Entering insert_docstrings_for_file with js_ts_file={js_ts_file}, documentation_file={documentation_file}")
-    process = await asyncio.create_subprocess_exec(
-        'node',
-        'insert_docstrings.js',
-        js_ts_file,
-        documentation_file,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        logger.error(f"Error inserting docstrings into {js_ts_file}: {stderr.decode().strip()}")
-    else:
-        logger.info(stdout.decode().strip())
-    logger.debug("Exiting insert_docstrings_for_file")
+    try:
+        process = await asyncio.create_subprocess_exec(
+            'node',
+            'scripts/insert_docstrings.js',
+            js_ts_file,
+            documentation_file,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            logger.error(f"Error inserting docstrings into {js_ts_file}: {stderr.decode().strip()}")
+        else:
+            logger.info(stdout.decode().strip())
+    except Exception as e:
+        logger.error(f"Exception while inserting docstrings into {js_ts_file}: {e}", exc_info=True)
+    finally:
+        logger.debug("Exiting insert_docstrings_for_file")
+
 
 async def process_file(
     session: aiohttp.ClientSession,
@@ -120,10 +158,29 @@ async def process_file(
     style_guidelines: Optional[str] = None,
     safe_mode: bool = False,
 ) -> None:
+    """
+    Processes a single file: extracts structure, generates documentation, inserts documentation,
+    validates, backs up, writes changes, and logs the process.
+
+    Parameters:
+        session (aiohttp.ClientSession): The HTTP session for API calls.
+        file_path (str): Path to the file to process.
+        skip_types (Set[str]): Set of file extensions to skip.
+        output_file (str): Path to the output Markdown report.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API calls.
+        output_lock (asyncio.Lock): Lock to synchronize writing to the output report.
+        model_name (str): OpenAI model to use.
+        function_schema (dict): JSON schema for OpenAI function calling.
+        repo_root (str): Root directory of the repository.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Style guidelines for documentation.
+        safe_mode (bool): If True, do not modify files.
+    """
     logger.debug(f"Entering process_file with file_path={file_path}")
     summary = ""
     changes = []
-    
+    new_content = ""
+
     try:
         # Check if file extension is valid or binary, and get language type
         _, ext = os.path.splitext(file_path)
@@ -142,7 +199,7 @@ async def process_file(
         try:
             async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
-            logger.debug(f"File content for {file_path}:\n{content}")
+            logger.debug(f"File content for {file_path}:\n{content[:500]}...")  # Log first 500 characters for brevity
         except Exception as e:
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return
@@ -152,7 +209,7 @@ async def process_file(
         if not code_structure:
             logger.warning(f"Could not extract code structure from '{file_path}'")
             return
-        
+
         # Generate the documentation prompt and log it
         prompt = generate_documentation_prompt(
             code_structure=code_structure,
@@ -160,7 +217,7 @@ async def process_file(
             style_guidelines=style_guidelines,
             language=language
         )
-        logger.debug(f"Generated prompt for '{file_path}': {prompt}")
+        logger.debug(f"Generated prompt for '{file_path}': {prompt[:500]}...")  # Log first 500 characters for brevity
 
         # Fetch documentation from OpenAI using function calling
         documentation = await fetch_documentation(
@@ -174,7 +231,15 @@ async def process_file(
             logger.error(f"Failed to generate documentation for '{file_path}'.")
             return
 
-        # Insert documentation into code
+        # Extract summary and changes from documentation
+        summary = documentation.get("summary", "").strip()
+        changes = documentation.get("changes_made", [])
+
+        if not summary and not changes:
+            logger.warning(f"No documentation details provided for '{file_path}'. Skipping insertion.")
+            return
+
+        # Insert documentation into code based on language
         summary, changes, new_content = await process_code_documentation(
             content, documentation, language, file_path
         )
@@ -186,15 +251,24 @@ async def process_file(
 
         # Write the documentation report
         await write_documentation_report(output_file, summary, changes, new_content, language, output_lock, file_path, repo_root)
-        
+
         logger.info(f"Successfully processed and documented '{file_path}'")
-    
+
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
+
 
 async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
     """
     Extracts the structure of the code based on the language.
+
+    Parameters:
+        content (str): The source code.
+        file_path (str): Path to the source file.
+        language (str): Programming language.
+
+    Returns:
+        Optional[dict]: Extracted code structure or None.
     """
     try:
         if language == "python":
@@ -202,11 +276,7 @@ async def extract_code_structure(content: str, file_path: str, language: str) ->
             return extract_python_structure(content)
         elif language in ["javascript", "typescript"]:
             logger.debug(f"Extracting JS/TS structure for file '{file_path}'")
-            structure_output = run_node_script('extract_structure.js', content)
-            if not structure_output:
-                logger.warning(f"Could not extract code structure from '{file_path}'")
-                return None
-            return structure_output
+            return await extract_js_ts_structure(file_path, content, language)
         elif language == "html":
             logger.debug(f"Extracting HTML structure for file '{file_path}'")
             return extract_html_structure(content)
@@ -220,9 +290,19 @@ async def extract_code_structure(content: str, file_path: str, language: str) ->
         logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
         return None
 
+
 async def process_code_documentation(content: str, documentation: dict, language: str, file_path: str) -> tuple[str, list, str]:
     """
     Inserts the docstrings or comments into the code based on the documentation.
+
+    Parameters:
+        content (str): The original source code.
+        documentation (dict): Documentation details from AI.
+        language (str): Programming language.
+        file_path (str): Path to the source file.
+
+    Returns:
+        tuple[str, list, str]: Summary, list of changes, and modified code.
     """
     summary = documentation.get("summary", "")
     changes = documentation.get("changes_made", [])
@@ -234,16 +314,17 @@ async def process_code_documentation(content: str, documentation: dict, language
             if not is_valid_python_code(new_content):
                 logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
         elif language in ["javascript", "typescript"]:
-            new_content = run_node_insert_docstrings('insert_docstrings.js', content)
-            new_content = format_with_black(new_content)
+            new_content = insert_js_ts_docstrings(content, documentation)
         elif language == "html":
             new_content = insert_html_comments(content, documentation)
         elif language == "css":
             new_content = insert_css_docstrings(content, documentation)
+        else:
+            logger.warning(f"Unsupported language '{language}' for documentation insertion.")
         
         logger.debug(f"Processed {language} file '{file_path}'.")
         return summary, changes, new_content
-    
+
     except Exception as e:
         logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
         return summary, changes, content
@@ -251,24 +332,30 @@ async def process_code_documentation(content: str, documentation: dict, language
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
     """
     Creates a backup of the file and writes the new content.
+
+    Parameters:
+        file_path (str): Path to the original file.
+        new_content (str): Modified content to write.
     """
     backup_path = f"{file_path}.bak"
     try:
         if os.path.exists(backup_path):
             os.remove(backup_path)
+            logger.debug(f"Removed existing backup at '{backup_path}'.")
         shutil.copy(file_path, backup_path)
-        logger.debug(f"Backup created at '{backup_path}'")
+        logger.debug(f"Backup created at '{backup_path}'.")
 
         async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
             await f.write(new_content)
-        logger.info(f"Inserted documentation into '{file_path}'")
-    
+        logger.info(f"Inserted documentation into '{file_path}'.")
+
     except Exception as e:
         logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
-        if backup_path and os.path.exists(backup_path):
+        # Attempt to restore from backup
+        if os.path.exists(backup_path):
             shutil.copy(backup_path, file_path)
             os.remove(backup_path)
-            logger.info(f"Restored original file from backup for '{file_path}'")
+            logger.info(f"Restored original file from backup for '{file_path}'.")
 
 async def write_documentation_report(
     output_file: str, summary: str, changes: list, new_content: str, language: str,
@@ -276,6 +363,16 @@ async def write_documentation_report(
 ) -> None:
     """
     Writes the summary, changes, and new content to the output markdown report.
+
+    Parameters:
+        output_file (str): Path to the output Markdown file.
+        summary (str): Summary of the documentation.
+        changes (list): List of changes made.
+        new_content (str): Modified source code with inserted documentation.
+        language (str): Programming language.
+        output_lock (asyncio.Lock): Lock for synchronizing file writes.
+        file_path (str): Path to the source file.
+        repo_root (str): Root path of the repository.
     """
     try:
         relative_path = os.path.relpath(file_path, repo_root)
@@ -283,14 +380,54 @@ async def write_documentation_report(
             async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
                 header = f"# File: {relative_path}\n\n"
                 summary_section = f"## Summary\n\n{summary}\n\n"
-                changes_section = f"## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
-                code_block = f"```{language}\n{new_content}\n```\n\n"
+                changes_section = "## Changes Made\n\n"
+                
+                if changes:
+                    changes_section += "\n".join(f"- {change}" for change in changes) + "\n\n"
+                else:
+                    changes_section += "No changes were made to this file.\n\n"
+                
+                # Handling absence of functions or classes
+                structure = await extract_code_structure(new_content, file_path, language)
+                if not structure.get("functions"):
+                    functions_section = "## Functions\n\nNo functions are defined in this file.\n\n"
+                else:
+                    functions_section = "## Functions\n\n"
+                    for func in structure["functions"]:
+                        func_name = func.get("name", "Unnamed Function")
+                        func_args = ", ".join(func.get("args", []))
+                        func_doc = func.get("docstring", "No docstring provided.")
+                        functions_section += f"### `{func_name}({func_args})`\n\n{func_doc}\n\n"
+                
+                if not structure.get("classes"):
+                    classes_section = "## Classes\n\nNo classes are defined in this file.\n\n"
+                else:
+                    classes_section = "## Classes\n\n"
+                    for cls in structure["classes"]:
+                        cls_name = cls.get("name", "Unnamed Class")
+                        classes_section += f"### `{cls_name}`\n\n"
+                        if cls.get("methods"):
+                            classes_section += "#### Methods:\n\n"
+                            for method in cls["methods"]:
+                                method_name = method.get("name", "Unnamed Method")
+                                method_args = ", ".join(method.get("args", []))
+                                method_doc = method.get("docstring", "No docstring provided.")
+                                classes_section += f"- **`{method_name}({method_args})`**: {method_doc}\n"
+                            classes_section += "\n"
+                        else:
+                            classes_section += "No methods defined in this class.\n\n"
+                
+                code_block = f"```{language}\n{new_content}\n```\n\n---\n\n"
+                
                 await f.write(header)
                 await f.write(summary_section)
                 await f.write(changes_section)
+                await f.write(functions_section)
+                await f.write(classes_section)
                 await f.write(code_block)
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
+
 
 async def process_all_files(
     session: aiohttp.ClientSession,
