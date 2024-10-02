@@ -7,6 +7,8 @@ import asyncio
 import logging
 import json
 import aiohttp
+import shutil
+from logging.handlers import RotatingFileHandler
 from file_handlers import process_all_files
 from utils import (
     load_config,
@@ -20,6 +22,8 @@ from utils import (
     load_json_schema,     # Newly added for loading JSON schemas
 )
 
+import aiofiles
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -30,8 +34,8 @@ def configure_logging(log_level):
     # Create formatter with module, function, and line number
     formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s')
 
-    # Create file handler which logs debug and higher level messages
-    file_handler = logging.FileHandler('docs_generation.log')
+    # Create rotating file handler which logs debug and higher level messages
+    file_handler = RotatingFileHandler('docs_generation.log', maxBytes=5*1024*1024, backupCount=5)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
@@ -77,6 +81,7 @@ async def main():
     parser.add_argument("--style-guidelines", help="Documentation style guidelines to follow", default="")
     parser.add_argument("--safe-mode", help="Run in safe mode (no files will be modified)", action='store_true')
     parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
+    parser.add_argument("--schema", help="Path to function_schema.json", default="function_schema.json")
     args = parser.parse_args()
 
     # Configure logging
@@ -101,6 +106,7 @@ async def main():
     project_info_arg = args.project_info
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
+    schema_path = args.schema
 
     logger.info(f"Repository Path: {repo_path}")
     logger.info(f"Configuration File: {config_path}")
@@ -108,6 +114,7 @@ async def main():
     logger.info(f"Output Markdown File: {output_file}")
     logger.info(f"OpenAI Model: {model_name}")
     logger.info(f"Safe Mode: {'Enabled' if safe_mode else 'Disabled'}")
+    logger.info(f"Function Schema Path: {schema_path}")
 
     # Validate model name
     if not validate_model_name(model_name):
@@ -133,7 +140,9 @@ async def main():
     else:
         # Load additional configurations
         try:
-            project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
+            config_data = load_config(config_path, excluded_dirs, excluded_files, skip_types)
+            project_info_config = config_data.get('project_info', '')
+            style_guidelines_config = config_data.get('style_guidelines', '')
             logger.debug(f"Loaded configurations from '{config_path}': Project Info='{project_info_config}', Style Guidelines='{style_guidelines_config}'")
         except Exception as e:
             logger.error(f"Failed to load configuration from '{config_path}': {e}")
@@ -149,7 +158,6 @@ async def main():
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
     # Load JSON schema for function calling
-    schema_path = 'function_schema.json'  # Ensure this path is correct
     function_schema_loaded = load_json_schema(schema_path)
     if not function_schema_loaded:
         logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
@@ -168,10 +176,10 @@ async def main():
         sys.exit(0)
 
     logger.info("Initializing output Markdown file.")
-    # Clear and initialize the output file with a header
+    # Clear and initialize the output file with a header asynchronously
     try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write("# Documentation Generation Report\n\n")
+        async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+            await f.write("# Documentation Generation Report\n\n")
         logger.debug(f"Output file '{output_file}' initialized.")
     except Exception as e:
         logger.critical(f"Failed to initialize output file '{output_file}': {e}")
@@ -207,4 +215,8 @@ async def main():
     logger.info(f"Check the output file '{output_file}' for the generated documentation.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Documentation generation interrupted by user.")
+        sys.exit(0)
