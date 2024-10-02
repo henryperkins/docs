@@ -199,58 +199,37 @@ def is_valid_python_code(code: str) -> bool:
 
 # JS/TS-specific functions
 async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
-    """
-    Extracts the structure of JavaScript/TypeScript code by running an external Node.js script.
-
-    Parameters:
-        file_path (str): The path to the JS/TS file.
-        code (str): The JS/TS source code.
-        language (str): The programming language ('javascript' or 'typescript').
-
-    Returns:
-        Optional[Dict[str, Any]]: The extracted structure as a dictionary, or None if extraction fails.
-    """
-    logger.debug("Starting extract_js_ts_structure")
-    logger.debug(f"File path: {file_path}, Language: {language}")
-    logger.debug(f"Code (first 100 chars): {code[:100]}...")
+    logger.debug('Starting extract_js_ts_structure')
     try:
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract_structure.js')
-        if not os.path.isfile(script_path):
-            logger.error(f"JS/TS extraction script '{script_path}' not found.")
-            return None
-
-        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.js' if language == 'javascript' else '.ts') as temp_file:
-            temp_file.write(code)
-            temp_file_path = temp_file.name
-
+        # Existing code...
+        
         process = await asyncio.create_subprocess_exec(
             'node', script_path, temp_file_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await process.communicate()
 
+        stdout, stderr = await process.communicate()
         os.remove(temp_file_path)
 
         if process.returncode != 0:
             logger.error(f"JS/TS extraction script error for '{file_path}': {stderr.decode().strip()}")
             return None
 
-        structure = json.loads(stdout.decode())
-        logger.debug(f"Extracted JS/TS structure: {structure}")
+        if stderr:
+            logger.warning(f"Warnings from JS/TS extraction script for '{file_path}': {stderr.decode().strip()}")
 
-        # If no functions are found, explicitly note it
-        if not structure.get("functions"):
-            logger.info(f"No functions found in the {language} source code of '{file_path}'.")
-        if not structure.get("classes"):
-            logger.info(f"No classes found in the {language} source code of '{file_path}'.")
+        try:
+            structure = json.loads(stdout.decode())
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON output from JS/TS extraction script: {e}")
+            logger.error(f"Script output: {stdout.decode()}")
+            return None
 
+        logger.debug(f'Extracted JS/TS structure: {structure}')
         return structure
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON output from JS/TS extraction script: {e}")
-        return None
+
     except Exception as e:
-        logger.error(f"Unexpected error while extracting JS/TS structure from '{file_path}': {e}", exc_info=True)
+        logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
 
 
