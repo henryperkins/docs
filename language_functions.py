@@ -239,26 +239,59 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
         return None
 
 
-def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
-    logger.debug('Starting insert_python_docstrings')
+def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
+    """
+    Inserts docstrings into JavaScript/TypeScript code by running an external Node.js script.
+
+    Parameters:
+        original_code (str): The original JS/TS source code.
+        documentation (Dict[str, Any]): Documentation details to insert.
+
+    Returns:
+        str: The modified JS/TS code with inserted docstrings.
+    """
+    logger.debug('Starting insert_js_ts_docstrings')
+    logger.debug(f'Original code (first 100 chars): {original_code[:100]}...')
+    logger.debug(f'Documentation: {documentation}')
+
     try:
-        tree = ast.parse(original_code)
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                node_name = getattr(node, 'name', 'unknown')
-                node_type = 'function' if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else 'class'
-                doc_key = 'functions' if node_type == 'function' else 'classes'
-                doc_list = documentation.get(doc_key, [])
-                doc_entry = next((item for item in doc_list if item['name'] == node_name), None)
-                if doc_entry and doc_entry.get('docstring'):
-                    docstring = ast.Expr(value=ast.Constant(value=doc_entry['docstring'], kind=None))
-                    node.body.insert(0, docstring)
-                    logger.debug(f'Inserted docstring in {node_type}: {node_name}')
-        modified_code = astor.to_source(tree)
-        logger.debug('Completed inserting Python docstrings')
+        # Define the path to the Node.js script
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'insert_docstrings.js')
+        if not os.path.isfile(script_path):
+            logger.error(f"JS/TS insertion script '{script_path}' not found.")
+            return original_code
+
+        # Write the original code to a temporary file
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.js') as code_file:
+            code_file.write(original_code)
+            code_file_path = code_file.name
+
+        # Write the documentation to a temporary JSON file
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.json') as doc_file:
+            json.dump(documentation, doc_file)
+            doc_file_path = doc_file.name
+
+        # Run the Node.js script to insert docstrings
+        process = subprocess.run(
+            ['node', script_path, code_file_path, doc_file_path],
+            capture_output=True,
+            text=True
+        )
+
+        # Clean up temporary files
+        os.remove(code_file_path)
+        os.remove(doc_file_path)
+
+        if process.returncode != 0:
+            logger.error(f"Error inserting JS/TS docstrings: {process.stderr.strip()}")
+            return original_code
+
+        modified_code = process.stdout
+        logger.debug('Completed inserting JS/TS docstrings')
         return modified_code
+
     except Exception as e:
-        logger.error(f'Error inserting Python docstrings: {e}', exc_info=True)
+        logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
 
 
