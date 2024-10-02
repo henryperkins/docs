@@ -39,7 +39,7 @@ OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea'}  # Added .venv and .idea
 DEFAULT_EXCLUDED_FILES = {'.DS_Store'}
-DEFAULT_SKIP_TYPES = {'.json', '.md', '.txt', '.csv', '.lock'}  # Added .lock files
+DEFAULT_SKIP_TYPES = {'.json', '.md', '.txt', '.csv', '.lock'}  # Remove '.js', '.html', '.css'
 
 LANGUAGE_MAPPING = {
     '.py': 'python',
@@ -87,22 +87,9 @@ def load_config(config_path: str, excluded_dirs: set, excluded_files: set, skip_
 
 
 def get_all_file_paths(repo_path, excluded_dirs, excluded_files):
-    """
-    Recursively retrieves all file paths in the repository, excluding specified directories and files.
-    
-    Args:
-        repo_path (str): Path to the repository.
-        excluded_dirs (set): Set of directories to exclude.
-        excluded_files (set): Set of files to exclude.
-    
-    Returns:
-        list: List of file paths to process.
-    """
     file_paths = []
     for root, dirs, files in os.walk(repo_path):
-        # Modify dirs in-place to skip excluded directories
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
-        
         for file in files:
             if file in excluded_files:
                 continue
