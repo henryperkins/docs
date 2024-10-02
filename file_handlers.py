@@ -239,37 +239,21 @@ async def process_file(
 
 
 async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
-    """
-    Extracts the structure of the code based on the language.
-
-    Parameters:
-        content (str): The source code.
-        file_path (str): Path to the source file.
-        language (str): Programming language.
-
-    Returns:
-        Optional[dict]: Extracted code structure or None.
-    """
     try:
-        if language == "python":
-            logger.debug(f"Extracting Python structure for file '{file_path}'")
+        if language == 'python':
             return extract_python_structure(content)
-        elif language in ["javascript", "typescript"]:
-            logger.debug(f"Extracting JS/TS structure for file '{file_path}'")
+        elif language in ['javascript', 'typescript']:
             return await extract_js_ts_structure(file_path, content, language)
-        elif language == "html":
-            logger.debug(f"Extracting HTML structure for file '{file_path}'")
+        elif language == 'html':
             return extract_html_structure(content)
-        elif language == "css":
-            logger.debug(f"Extracting CSS structure for file '{file_path}'")
+        elif language == 'css':
             return extract_css_structure(content)
         else:
-            logger.warning(f"Unsupported language for structure extraction: {language}")
+            logger.warning(f'Unsupported language for structure extraction: {language}')
             return None
     except Exception as e:
         logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
         return None
-
 
 async def process_code_documentation(content: str, documentation: dict, language: str, file_path: str) -> tuple[str, list, str]:
     """
