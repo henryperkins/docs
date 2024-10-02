@@ -47,14 +47,15 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
             "classes": []
         }
         logger.debug("Successfully parsed code into AST")  # Add logging for successful AST parsing
+
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.FunctionDef):
+                logger.debug(f"Found function: {node.name}")
                 structure["functions"].append({
                     "name": node.name,
                     "args": [arg.arg for arg in node.args.args],
                     "docstring": ast.get_docstring(node)
                 })
-                logger.debug(f"Extracted function: {node.name}")
             elif isinstance(node, ast.ClassDef):
                 methods = [
                     {
@@ -64,12 +65,13 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
                     }
                     for method in node.body if isinstance(method, ast.FunctionDef)
                 ]
+                logger.debug(f"Found class: {node.name} with methods: {methods}")
                 structure["classes"].append({
                     "name": node.name,
                     "methods": methods
                 })
-                logger.debug(f"Extracted class: {node.name} with methods: {methods}")
-        logger.debug("Completed extracting Python structure")
+
+        logger.debug(f"Extracted structure: {structure}")  # Log the structure
         return structure
     except SyntaxError as se:
         logger.error(f"Syntax error in Python code: {se}")
@@ -77,8 +79,8 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
         return {}
     except Exception as e:
         logger.error(f"Error extracting Python structure: {e}", exc_info=True)
-        logger.error(f"Full problematic code: {code}")  # Log full code if error occurs
         return {}
+
 
 
 
