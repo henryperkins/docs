@@ -16,13 +16,10 @@ import tempfile  # Added for JS/TS extraction
 import astor  # Added for Python docstring insertion
 from bs4 import BeautifulSoup, Comment  # Added for HTML and CSS functions
 import tinycss2  # Added for CSS functions
-import json
 import openai
 from jsonschema import validate, ValidationError
+from openai import OpenAIError  # For OpenAI exception handling
 
-# Load function_schema from JSON file
-with open('function_schema.json', 'r', encoding='utf-8') as f:
-    function_schema = json.load(f)
 # Load environment variables
 load_dotenv()
 
@@ -68,33 +65,55 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-def load_config(config_path: str, excluded_dirs: set, excluded_files: set, skip_types: set):
-    """Loads configuration settings from a JSON file."""
+def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
+    """
+    Loads additional configurations from a config.json file.
+    
+    Parameters:
+        config_path (str): Path to the config.json file.
+        excluded_dirs (Set[str]): Set to add excluded directories.
+        excluded_files (Set[str]): Set to add excluded files.
+        skip_types (Set[str]): Set to add skipped file extensions.
+    
+    Returns:
+        Tuple[str, str]: Project information and style guidelines.
+    """
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         project_info = config.get('project_info', '')
         style_guidelines = config.get('style_guidelines', '')
-        # Update excluded_dirs, excluded_files, and skip_types based on config
         excluded_dirs.update(config.get('excluded_dirs', []))
         excluded_files.update(config.get('excluded_files', []))
         skip_types.update(config.get('skip_types', []))
+        logger.debug(f"Loaded configuration from '{config_path}'.")
         return project_info, style_guidelines
     except Exception as e:
-        logger.error(f"Failed to load config file '{config_path}': {e}")
-        raise
+        logger.error(f"Error loading config file '{config_path}': {e}")
+        return '', ''
 
-def get_all_file_paths(repo_path: str, excluded_dirs: set, excluded_files: set) -> list:
-    """Recursively retrieves all file paths in the repository, excluding specified directories and files."""
+def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> List[str]:
+    """
+    Recursively retrieves all file paths in the repository, excluding specified directories and files.
+    
+    Parameters:
+        repo_path (str): Path to the repository.
+        excluded_dirs (Set[str]): Directories to exclude.
+        excluded_files (Set[str]): Files to exclude.
+    
+    Returns:
+        List[str]: List of file paths.
+    """
     file_paths = []
     for root, dirs, files in os.walk(repo_path):
-        # Modify dirs in-place to exclude certain directories
+        # Modify dirs in-place to skip excluded directories
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
         for file in files:
-            if file in excluded_files:
+            if any(fnmatch.fnmatch(file, pattern) for pattern in excluded_files):
                 continue
             file_path = os.path.join(root, file)
             file_paths.append(file_path)
+    logger.debug(f"Retrieved {len(file_paths)} files from '{repo_path}'.")
     return file_paths
 
 def load_json_schema(schema_path: str) -> dict:
@@ -108,50 +127,6 @@ def load_json_schema(schema_path: str) -> dict:
         logger.error(f"Failed to load JSON schema from {schema_path}: {e}")
         return {}
 
-def call_openai_function(prompt: str, function_def: dict, model: str = "gpt-4-0613") -> dict:
-    """
-    Calls OpenAI's API with function calling enabled and validates the response against the provided schema.
-    
-    Parameters:
-        prompt (str): The user prompt.
-        function_def (dict): The function definition including the JSON schema.
-        model (str): The OpenAI model to use.
-    
-    Returns:
-        dict: The validated response from the API.
-    """
-    try:
-        response = openai.ChatCompletion.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant for generating documentation."},
-                {"role": "user", "content": prompt}
-            ],
-            functions=[function_def],
-            function_call="auto"  # Let the model decide to call the function
-        )
-        
-        message = response["choices"][0]["message"]
-        
-        if message.get("function_call"):
-            function_name = message["function_call"]["name"]
-            arguments = json.loads(message["function_call"]["arguments"])
-            
-            # Validate against schema
-            validate(instance=arguments, schema=function_def["parameters"])
-            logger.info(f"Function '{function_name}' called successfully and validated.")
-            return arguments
-        else:
-            logger.warning("No function call detected in the response.")
-            return {}
-    
-    except ValidationError as ve:
-        logger.error(f"Validation error: {ve}")
-        return {}
-    except Exception as e:
-        logger.error(f"Error during OpenAI API call: {e}")
-        return {}
-        
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
@@ -367,6 +342,29 @@ def extract_json_from_response(response: str) -> Optional[dict]:
     except json.JSONDecodeError:
         return None
 
+def generate_documentation_prompt(code_structure: dict, project_info: Optional[str], style_guidelines: Optional[str], language: str) -> str:
+    """
+    Generates a prompt for the OpenAI API based on the code structure.
+
+    Parameters:
+        code_structure (dict): The extracted structure of the code.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Documentation style guidelines.
+        language (str): The programming language of the code.
+
+    Returns:
+        str: The generated prompt.
+    """
+    prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a codebase."
+    if project_info:
+        prompt += f"\n\n**Project Information:** {project_info}"
+    if style_guidelines:
+        prompt += f"\n\n**Style Guidelines:** {style_guidelines}"
+    prompt += f"\n\n**Language:** {language.capitalize()}"
+    prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
+    prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
+    return prompt
+
 async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -532,25 +530,49 @@ async def fetch_summary(
     logger.error("Failed to generate summary after multiple attempts.")
     return None
 
-def generate_documentation_prompt(code_structure: dict, project_info: Optional[str], style_guidelines: Optional[str], language: str) -> str:
+def call_openai_function(prompt: str, function_def: dict, model: str = "gpt-4-0613") -> dict:
     """
-    Generates a prompt for the OpenAI API based on the code structure.
-    
+    Calls OpenAI's API with function calling enabled and validates the response against the provided schema.
+
     Parameters:
-        code_structure (dict): The extracted structure of the code.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Documentation style guidelines.
-        language (str): The programming language of the code.
-    
+        prompt (str): The user prompt.
+        function_def (dict): The function definition including the JSON schema.
+        model (str): The OpenAI model to use.
+
     Returns:
-        str: The generated prompt.
+        dict: The validated response from the API.
     """
-    prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a codebase."
-    if project_info:
-        prompt += f"\n\n**Project Information:** {project_info}"
-    if style_guidelines:
-        prompt += f"\n\n**Style Guidelines:** {style_guidelines}"
-    prompt += f"\n\n**Language:** {language.capitalize()}"
-    prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
-    prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
-    return prompt
+    try:
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant for generating documentation."},
+                {"role": "user", "content": prompt}
+            ],
+            functions=[function_def],
+            function_call="auto"
+        )
+
+        message = response["choices"][0]["message"]
+
+        if message.get("function_call"):
+            function_name = message["function_call"]["name"]
+            arguments = json.loads(message["function_call"]["arguments"])
+
+            # Validate against schema
+            validate(instance=arguments, schema=function_def["parameters"])
+            logger.info(f"Function '{function_name}' called successfully and validated.")
+            return arguments
+        else:
+            logger.warning("No function call detected in the response.")
+            return {}
+
+    except ValidationError as ve:
+        logger.error(f"Validation error: {ve}")
+        return {}
+    except OpenAIError as e:
+        logger.error(f"OpenAI API error: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"Error during OpenAI API call: {e}")
+        return {}
