@@ -41,6 +41,8 @@ from utils import (
     format_with_black,
     clean_unused_imports,
     check_with_flake8,
+    run_node_script,
+    run_node_insert_docstrings,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,7 +143,12 @@ async def process_file(
             if language == "python":
                 code_structure = extract_python_structure(content)
             elif language in ["javascript", "typescript"]:
-                code_structure = await extract_js_ts_structure(file_path, content, language)
+                # Use the Node.js script to extract structure
+                structure_output = run_node_script('extract_structure.js', content)
+                if not structure_output:
+                    logger.warning(f"Could not extract code structure from '{file_path}'")
+                    return
+                code_structure = structure_output
             elif language == "html":
                 code_structure = extract_html_structure(content)
             elif language == "css":
@@ -214,8 +221,19 @@ async def process_file(
                     os.remove(temp_file_path)
             logger.debug(f"Processed Python file '{file_path}'.")
         elif language in ["javascript", "typescript"]:
-            new_content = insert_js_ts_docstrings(content, documentation)
-            # (Optional) Integrate JavaScript/TypeScript formatters like Prettier here
+            # Insert docstrings using the Node.js script
+            new_content = run_node_insert_docstrings('insert_docstrings.js', content)
+            if not new_content:
+                logger.warning(f"Could not insert docstrings into '{file_path}'")
+                return
+            # Optionally, format the modified code using Black or Prettier
+            new_content = format_with_black(new_content)  # If desired, use a JS formatter like Prettier instead
+            # Clean unused imports if applicable (for JS/TS, you might use a different tool)
+            # For demonstration, using clean_unused_imports (which is for Python)
+            # Consider implementing a similar function for JS/TS if needed
+            # new_content = clean_unused_imports(new_content)  # Not applicable for JS/TS
+            # Check with flake8 if necessary or use a JS linter like eslint
+            # For demonstration, skipping flake8 for JS/TS
             logger.debug(f"Processed {language} file '{file_path}'.")
         elif language == "html":
             new_content = insert_html_comments(content, documentation)
@@ -276,6 +294,7 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
     logger.debug("Exiting process_file")
+    
 
 async def process_all_files(
     session: aiohttp.ClientSession,  # Added parameter
