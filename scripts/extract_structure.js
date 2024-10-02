@@ -1,202 +1,76 @@
-// extract_structure.js
+// scripts/extract_structure.js
 
-const fs = require('fs/promises');
-const path = require('path');
-const babelParser = require('@babel/parser');
-const traverse = require('@babel/traverse').default;
+const fs = require('fs');
+const acorn = require('acorn');
+const walk = require('acorn-walk');
 
-/**
- * Extracts the structure of a JavaScript/TypeScript file, including functions and classes.
- * @param {string} filePath - Path to the JavaScript/TypeScript file.
- * @returns {Promise<Object>} - An object representing the code structure.
- */
-async function extractStructure(filePath) {
+const filePath = process.argv[2];
+
+if (!filePath) {
+  console.error('No file path provided.');
+  process.exit(1);
+}
+
+fs.readFile(filePath, 'utf8', (err, code) => {
+  if (err) {
+    console.error('Error reading the file:', err);
+    process.exit(1);
+  }
+
   try {
-    const code = await fs.readFile(filePath, 'utf-8');
-
-    // Determine parser plugins based on file extension
-    const ext = path.extname(filePath).toLowerCase();
-    const isTypeScript = ext === '.ts' || ext === '.tsx';
-    const isJSX = ext === '.jsx' || ext === '.tsx';
-
-    const plugins = [
-      'jsx',
-      'classProperties',
-      'dynamicImport',
-      'objectRestSpread',
-      'optionalChaining',
-      'nullishCoalescingOperator',
-      'decorators-legacy',
-      'exportDefaultFrom',
-      'exportNamespaceFrom',
-      'topLevelAwait',
-    ];
-
-    if (isTypeScript) {
-      plugins.push('typescript');
-    }
-
-    // Parse the code into an AST
-    const ast = babelParser.parse(code, {
-      sourceType: 'module',
-      plugins: plugins,
-    });
-
+    const parsed = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
     const structure = {
       functions: [],
-      classes: [],
+      classes: []
     };
 
-    traverse(ast, {
-      // Extract standalone functions
-      FunctionDeclaration(path) {
-        const node = path.node;
+    walk.simple(parsed, {
+      FunctionDeclaration(node) {
         structure.functions.push({
           name: node.id ? node.id.name : 'anonymous',
-          params: node.params.map((param) => getParamName(param)),
-          location: node.loc,
+          args: node.params.map(param => param.name || 'param'),
+          async: node.async,
+          docstring: '' // Placeholder for docstring extraction if needed
         });
       },
-      // Extract arrow functions assigned to variables
-      VariableDeclaration(path) {
-        const declarations = path.node.declarations;
-        declarations.forEach((declarator) => {
+      VariableDeclaration(node) {
+        node.declarations.forEach(declarator => {
           if (
             declarator.init &&
-            (declarator.init.type === 'ArrowFunctionExpression' ||
-              declarator.init.type === 'FunctionExpression')
+            (declarator.init.type === 'FunctionExpression' || declarator.init.type === 'ArrowFunctionExpression')
           ) {
             structure.functions.push({
               name: declarator.id.name,
-              params: declarator.init.params.map((param) => getParamName(param)),
-              location: declarator.loc,
+              args: declarator.init.params.map(param => param.name || 'param'),
+              async: declarator.init.async,
+              docstring: '' // Placeholder
             });
           }
         });
       },
-      // Extract class declarations
-      ClassDeclaration(path) {
-        const node = path.node;
-        const classInfo = {
-          name: node.id ? node.id.name : 'anonymous',
-          methods: [],
-          location: node.loc,
-        };
-
-        path.traverse({
-          ClassMethod(methodPath) {
-            const methodNode = methodPath.node;
-            classInfo.methods.push({
-              name: methodNode.key.name,
-              params: methodNode.params.map((param) => getParamName(param)),
-              location: methodNode.loc,
+      ClassDeclaration(node) {
+        const methods = [];
+        node.body.body.forEach(method => {
+          if (method.type === 'MethodDefinition') {
+            methods.push({
+              name: method.key.name,
+              args: method.value.params.map(param => param.name || 'param'),
+              async: method.value.async,
+              docstring: '' // Placeholder
             });
-          },
-        });
-
-        structure.classes.push(classInfo);
-      },
-      // Extract class expressions assigned to variables
-      VariableDeclaration(path) {
-        const declarations = path.node.declarations;
-        declarations.forEach((declarator) => {
-          if (declarator.init && declarator.init.type === 'ClassExpression') {
-            const classNode = declarator.init;
-            const classInfo = {
-              name: declarator.id.name,
-              methods: [],
-              location: classNode.loc,
-            };
-
-            path.traverse({
-              ClassMethod(methodPath) {
-                const methodNode = methodPath.node;
-                classInfo.methods.push({
-                  name: methodNode.key.name,
-                  params: methodNode.params.map((param) => getParamName(param)),
-                  location: methodNode.loc,
-                });
-              },
-            });
-
-            structure.classes.push(classInfo);
           }
         });
-      },
+        structure.classes.push({
+          name: node.id.name,
+          methods: methods,
+          docstring: '' // Placeholder
+        });
+      }
     });
 
-    return structure;
-  } catch (error) {
-    console.error(`Error extracting structure from '${filePath}':`, error);
+    console.log(JSON.stringify(structure, null, 2));
+  } catch (parseErr) {
+    console.error('Error parsing JavaScript code:', parseErr);
     process.exit(1);
   }
-}
-
-/**
- * Retrieves the name of a parameter, handling different parameter types.
- * @param {Object} param - The AST node representing the parameter.
- * @returns {string} - The name of the parameter.
- */
-function getParamName(param) {
-  switch (param.type) {
-    case 'Identifier':
-      return param.name;
-    case 'AssignmentPattern':
-      return param.left.name;
-    case 'RestElement':
-      return '...' + param.argument.name;
-    case 'ObjectPattern':
-      return '{' + param.properties.map((prop) => prop.key.name).join(', ') + '}';
-    case 'ArrayPattern':
-      return '[' + param.elements.map((el) => (el ? el.name : '')).join(', ') + ']';
-    default:
-      return 'unknown';
-  }
-}
-
-/**
- * Writes the structure object to a JSON file.
- * @param {string} filePath - Path to the original JavaScript/TypeScript file.
- * @param {Object} structure - The extracted structure object.
- */
-async function writeStructureToFile(filePath, structure) {
-  try {
-    const jsonContent = JSON.stringify(structure, null, 2);
-    const outputPath = `${filePath}.structure.json`;
-    await fs.writeFile(outputPath, jsonContent, 'utf-8');
-    console.log(`Structure extracted and saved to '${outputPath}'`);
-  } catch (error) {
-    console.error(`Error writing structure to file for '${filePath}':`, error);
-    process.exit(1);
-  }
-}
-
-/**
- * Main function to handle command-line arguments and execute extraction.
- */
-async function main() {
-  const args = process.argv.slice(2);
-  if (args.length !== 1) {
-    console.error('Usage: node extract_structure.js /path/to/file.js');
-    process.exit(1);
-  }
-
-  const filePath = args[0];
-
-  // Validate file existence
-  try {
-    await fs.access(filePath);
-  } catch (error) {
-    console.error(`File '${filePath}' does not exist or is not accessible.`);
-    process.exit(1);
-  }
-
-  // Extract structure
-  const structure = await extractStructure(filePath);
-
-  // Write structure to JSON file
-  await writeStructureToFile(filePath, structure);
-}
-
-// Execute the main function
-main();
+});
