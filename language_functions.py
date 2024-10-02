@@ -69,8 +69,9 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
         logger.debug("Successfully parsed code into AST")  # Add logging for successful AST parsing
 
         for node in ast.iter_child_nodes(tree):
+            # Handle both async and sync function definitions
             if isinstance(node, ast.FunctionDef):
-                is_async = isinstance(node, ast.AsyncFunctionDef)  # Check if the function is async
+                is_async = hasattr(node, 'type_comment') and node.type_comment == 'async'  # Check if async
                 func_type = "async" if is_async else "sync"  # Indicate whether it's async or sync
                 logger.debug(f"Found {func_type} function: {node.name}")
 
@@ -105,6 +106,7 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting Python structure: {e}", exc_info=True)
         return {}
+
 
 
 def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
