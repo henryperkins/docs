@@ -9,6 +9,7 @@ import logging
 import aiohttp
 import asyncio
 import re
+import subprocess
 from dotenv import load_dotenv
 from typing import Set, List, Optional, Dict, Tuple
 import tempfile  # Added for JS/TS extraction
