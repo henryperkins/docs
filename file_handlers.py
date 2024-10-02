@@ -162,7 +162,7 @@ async def process_file(
         logger.debug(f"Generated prompt for '{file_path}': {prompt}")
 
         # Fetch documentation from OpenAI
-        documentation = await fetch_documentation_with_retries(
+        documentation = await fetch_documentation(
             session=session,
             prompt=prompt,
             semaphore=semaphore,
