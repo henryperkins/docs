@@ -148,78 +148,68 @@ async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
     skip_types: Set[str],
-    output_file: str,
     semaphore: asyncio.Semaphore,
-    output_lock: asyncio.Lock,
     model_name: str,
     function_schema: dict,
     repo_root: str,
     project_info: Optional[str] = None,
     style_guidelines: Optional[str] = None,
-    safe_mode: bool = False,
-) -> None:
+    safe_mode: bool = False
+) -> str:
     """
     Processes a single file: extracts structure, generates documentation, inserts documentation,
-    validates, backs up, writes changes, and logs the process.
+    validates, backs up, writes changes, and returns the documentation content.
 
     Parameters:
         session (aiohttp.ClientSession): The HTTP session for API calls.
         file_path (str): Path to the file to process.
         skip_types (Set[str]): Set of file extensions to skip.
-        output_file (str): Path to the output Markdown report.
         semaphore (asyncio.Semaphore): Semaphore to limit concurrent API calls.
-        output_lock (asyncio.Lock): Lock to synchronize writing to the output report.
         model_name (str): OpenAI model to use.
         function_schema (dict): JSON schema for OpenAI function calling.
         repo_root (str): Root directory of the repository.
         project_info (Optional[str]): Information about the project.
         style_guidelines (Optional[str]): Style guidelines for documentation.
         safe_mode (bool): If True, do not modify files.
-    """
-    logger.debug(f"Entering process_file with file_path={file_path}")
-    summary = ""
-    changes = []
-    new_content = ""
 
+    Returns:
+        str: The documentation content for this file.
+    """
+    logger.debug(f'Entering process_file with file_path={file_path}')
+    summary = ''
+    changes = []
+    new_content = ''
+    documentation_content = ''
     try:
-        # Check if file extension is valid or binary, and get language type
         _, ext = os.path.splitext(file_path)
         if not is_valid_extension(ext, skip_types) or is_binary(file_path):
-            logger.debug(f"Skipping file '{file_path}' due to invalid extension or binary content.")
-            return
-
+            logger.debug(
+                f"Skipping file '{file_path}' due to invalid extension or binary content."
+            )
+            return ''
         language = get_language(ext)
-        if language == "plaintext":
+        if language == 'plaintext':
             logger.debug(f"Skipping unsupported language in '{file_path}'.")
-            return
-
-        logger.info(f"Processing file: {file_path}")
-
-        # Read the file content
+            return ''
+        logger.info(f'Processing file: {file_path}')
         try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                 content = await f.read()
-            logger.debug(f"File content for {file_path}:\n{content[:500]}...")  # Log first 500 characters for brevity
+            logger.debug(f'File content for {file_path}:\n{content[:500]}...')
         except Exception as e:
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
-            return
-
-        # Extract code structure based on the language
+            return ''
         code_structure = await extract_code_structure(content, file_path, language)
         if not code_structure:
             logger.warning(f"Could not extract code structure from '{file_path}'")
-            return
-
-        # Generate the documentation prompt and log it
+            return ''
         prompt = generate_documentation_prompt(
             code_structure=code_structure,
             project_info=project_info,
             style_guidelines=style_guidelines,
             language=language
         )
-        logger.debug(f"Generated prompt for '{file_path}': {prompt[:500]}...")  # Log first 500 characters for brevity
-
-        # Fetch documentation from OpenAI using function calling
+        logger.debug(f"Generated prompt for '{file_path}': {prompt[:500]}...")
         documentation = await fetch_documentation(
             session=session,
             prompt=prompt,
@@ -229,33 +219,23 @@ async def process_file(
         )
         if not documentation:
             logger.error(f"Failed to generate documentation for '{file_path}'.")
-            return
-
-        # Extract summary and changes from documentation
-        summary = documentation.get("summary", "").strip()
-        changes = documentation.get("changes_made", [])
-
-        if not summary and not changes:
-            logger.warning(f"No documentation details provided for '{file_path}'. Skipping insertion.")
-            return
-
-        # Insert documentation into code based on language
+            return ''
         summary, changes, new_content = await process_code_documentation(
             content, documentation, language, file_path
         )
-
         if safe_mode:
             logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
         else:
             await backup_and_write_new_content(file_path, new_content)
-
-        # Write the documentation report
-        await write_documentation_report(output_file, summary, changes, new_content, language, output_lock, file_path, repo_root)
-
+        documentation_content = await write_documentation_report(
+            summary, changes, new_content, language, file_path, repo_root
+        )
         logger.info(f"Successfully processed and documented '{file_path}'")
-
+        return documentation_content
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
+        return ''
+
 
 
 async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
@@ -358,28 +338,26 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
 async def write_documentation_report(
-    output_file: str,
     summary: str,
     changes: List[str],
     new_content: str,
     language: str,
-    output_lock: asyncio.Lock,
     file_path: str,
     repo_root: str
-) -> None:
+) -> str:
     """
-    Writes the summary, changes, and new content to the output markdown report,
-    and includes a table of contents at the beginning.
+    Generates the documentation report content for a single file.
 
     Parameters:
-        output_file (str): Path to the output Markdown file.
         summary (str): Summary of the documentation.
         changes (List[str]): List of changes made.
         new_content (str): Modified source code with inserted documentation.
         language (str): Programming language.
-        output_lock (asyncio.Lock): Lock for synchronizing file writes.
         file_path (str): Path to the source file.
         repo_root (str): Root directory of the repository.
+
+    Returns:
+        str: The documentation content for the file.
     """
     try:
         # Determine the relative path of the file for documentation
@@ -437,7 +415,7 @@ async def write_documentation_report(
         # Include the code block with syntax highlighting
         code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
 
-        # Build the documentation content for this file
+        # Combine all sections
         file_content = (
             file_header +
             summary_section +
@@ -447,42 +425,13 @@ async def write_documentation_report(
             code_block
         )
 
-        # Write content to the output file with the table of contents
-        async with output_lock:
-            # Check if the output file exists
-            file_exists = os.path.exists(output_file)
-
-            if not file_exists:
-                # Initialize the output file with a title and table of contents placeholder
-                async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
-                    await f.write('# Documentation Generation Report\n\n')
-                    await f.write('## Table of Contents\n\n')
-                    await f.write('<TOC_PLACEHOLDER>\n\n')
-
-            # Read existing content
-            async with aiofiles.open(output_file, 'r', encoding='utf-8') as f:
-                existing_content = await f.read()
-
-            # Remove the placeholder
-            existing_content = existing_content.replace('<TOC_PLACEHOLDER>\n\n', '')
-
-            # Append file content
-            existing_content += file_content
-
-            # Generate table of contents
-            toc = generate_table_of_contents(existing_content)
-
-            # Write updated content with the table of contents
-            async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
-                # Insert the table of contents after the main title
-                updated_content = existing_content.replace(
-                    '# Documentation Generation Report\n\n',
-                    f'# Documentation Generation Report\n\n## Table of Contents\n\n{toc}\n\n'
-                )
-                await f.write(updated_content)
+        return file_content
 
     except Exception as e:
-        logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
+        logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
+        return ''
+
+
 
 def generate_table_of_contents(markdown_content: str) -> str:
     """
@@ -508,45 +457,108 @@ def generate_table_of_contents(markdown_content: str) -> str:
             toc.append(f'{"  " * (level - 1)}- [{title}](#{anchor})')
     return '\n'.join(toc)
 
+def generate_table_of_contents(markdown_content: str) -> str:
+    """
+    Generates a markdown table of contents from the given markdown content.
+
+    Parameters:
+        markdown_content (str): The markdown content to generate the TOC from.
+
+    Returns:
+        str: The generated table of contents in markdown format.
+    """
+    import re
+
+    toc = []
+    seen_anchors = set()
+    for line in markdown_content.split('\n'):
+        match = re.match(r'^(#{2,6})\s+(.*)', line)
+        if match:
+            level = len(match.group(1)) - 1  # Adjust level to start from 1
+            title = match.group(2).strip()
+            # Generate an anchor link
+            anchor = re.sub(r'[^\w\s\-]', '', title).lower()
+            anchor = re.sub(r'\s+', '-', anchor)
+            # Ensure unique anchors
+            original_anchor = anchor
+            counter = 1
+            while anchor in seen_anchors:
+                anchor = f"{original_anchor}-{counter}"
+                counter += 1
+            seen_anchors.add(anchor)
+            toc.append(f'{"  " * (level - 1)}- [{title}](#{anchor})')
+    return '\n'.join(toc)
 
 
 async def process_all_files(
     session: aiohttp.ClientSession,
     file_paths: List[str],
     skip_types: Set[str],
-    output_file: str,
     semaphore: asyncio.Semaphore,
-    output_lock: asyncio.Lock,
     model_name: str,
     function_schema: dict,
     repo_root: str,
     project_info: str,
     style_guidelines: str,
     safe_mode: bool = False,
+    output_file: str = 'output.md'
 ) -> None:
-    logger.info("Starting process of all files.")
+    """
+    Processes all files concurrently and writes the combined documentation to the output file.
+
+    Parameters:
+        session (aiohttp.ClientSession): The HTTP session for API calls.
+        file_paths (List[str]): List of file paths to process.
+        skip_types (Set[str]): Set of file extensions to skip.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API calls.
+        model_name (str): OpenAI model to use.
+        function_schema (dict): JSON schema for OpenAI function calling.
+        repo_root (str): Root directory of the repository.
+        project_info (str): Information about the project.
+        style_guidelines (str): Style guidelines for documentation.
+        safe_mode (bool): If True, do not modify files.
+        output_file (str): Path to the output Markdown report.
+    """
+    logger.info('Starting process of all files.')
     tasks = []
-    
     for file_path in file_paths:
-        # Call process_file for each file asynchronously
-        task = process_file(
-            session=session,
-            file_path=file_path,
-            skip_types=skip_types,
-            output_file=output_file,
-            semaphore=semaphore,
-            output_lock=output_lock,
-            model_name=model_name,
-            function_schema=function_schema,
-            repo_root=repo_root,
-            project_info=project_info,
-            style_guidelines=style_guidelines,
-            safe_mode=safe_mode
+        task = asyncio.create_task(
+            process_file(
+                session=session,
+                file_path=file_path,
+                skip_types=skip_types,
+                semaphore=semaphore,
+                model_name=model_name,
+                function_schema=function_schema,
+                repo_root=repo_root,
+                project_info=project_info,
+                style_guidelines=style_guidelines,
+                safe_mode=safe_mode
+            )
         )
         tasks.append(task)
-    
-    # Use tqdm for progress tracking
+
+    documentation_contents = []
     for f in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
-        await f
-    
-    logger.info("Completed processing all files.")
+        file_content = await f
+        if file_content:
+            documentation_contents.append(file_content)
+
+    logger.info('Completed processing all files.')
+
+    # After processing all files, combine the contents
+    final_content = '\n'.join(documentation_contents)
+
+    # Generate TOC
+    toc = generate_table_of_contents(final_content)
+
+    # Build the final report with TOC
+    report_content = '# Documentation Generation Report\n\n## Table of Contents\n\n' + toc + '\n\n' + final_content
+
+    # Write to the output file
+    try:
+        async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+            await f.write(report_content)
+        logger.info(f'Documentation report written to {output_file}')
+    except Exception as e:
+        logger.error(f"Error writing final documentation to '{output_file}': {e}", exc_info=True)
