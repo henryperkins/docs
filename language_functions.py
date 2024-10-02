@@ -20,10 +20,32 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+
+def is_syntax_valid(code: str) -> bool:
+    """Check for syntax validity using flake8."""
+    with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w") as temp_file:
+        temp_file.write(code)
+        temp_file_path = temp_file.name
+    try:
+        result = subprocess.run(["flake8", temp_file_path], capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        else:
+            logger.error(f"flake8 found issues:\n{result.stdout}")
+            return False
+    finally:
+        os.remove(temp_file_path)
+        
 # Python-specific functions
 def extract_python_structure(code: str) -> Dict[str, Any]:
     logger.debug("Starting extract_python_structure")
     logger.debug(f"Input code: {code[:100]}...")  # Log first 100 characters of the code for brevity
+
+    # Check for valid syntax using flake8
+    if not is_syntax_valid(code):
+        logger.error("Invalid Python syntax detected. Aborting extraction.")
+        return {}
+
     try:
         tree = ast.parse(code)
         structure = {
@@ -54,9 +76,15 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
                 logger.debug(f"Extracted class: {node.name} with methods: {methods}")
         logger.debug("Completed extracting Python structure")
         return structure
+    except SyntaxError as se:
+        logger.error(f"Syntax error in Python code: {se}")
+        logger.error(f"Problematic code:\n{code}")
+        return {}
     except Exception as e:
         logger.error(f"Error extracting Python structure: {e}", exc_info=True)
         return {}
+
+
 
 def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
@@ -239,7 +267,8 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
         logger.debug("Completed inserting HTML comments")
         return modified_code
     except Exception as e:
-        logger.error(f"Error inserting HTML comments: {e}", exc_info=True)
+        logger.error(f"Error inserting HTML comments in file: {e}", exc_info=True)
+        logger.error(f"Problematic HTML Code:\n{original_code}")
         return original_code
 
 # CSS-specific functions
