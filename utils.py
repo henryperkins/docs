@@ -114,10 +114,10 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
-    
+
     Parameters:
         code (str): The Python code to format.
-    
+
     Returns:
         str: The formatted Python code.
     """
@@ -135,16 +135,16 @@ def format_with_black(code: str) -> str:
 def clean_unused_imports(code: str) -> str:
     """
     Removes unused imports from Python code using autoflake.
-    
+
     Parameters:
         code (str): The Python code to clean.
-    
+
     Returns:
         str: The cleaned Python code.
     """
     try:
         cleaned_code = subprocess.check_output(
-            ['autoflake', '--remove-all-unused-imports', '--in-place', '--stdout'],
+            ['autoflake', '--remove-all-unused-imports', '--stdout'],
             input=code.encode('utf-8'),
             stderr=subprocess.STDOUT
         )
@@ -163,10 +163,10 @@ def clean_unused_imports(code: str) -> str:
 def check_with_flake8(file_path: str) -> bool:
     """
     Checks Python code compliance using flake8 and attempts to fix issues if found.
-    
+
     Parameters:
         file_path (str): Path to the Python file to check.
-    
+
     Returns:
         bool: True if the code passes flake8 checks after fixes, False otherwise.
     """
@@ -194,6 +194,73 @@ def check_with_flake8(file_path: str) -> bool:
             logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
             return False
 
+def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any]]:
+    """
+    Runs a Node.js script that outputs JSON (e.g., extract_structure.js) and returns the parsed JSON.
+
+    Parameters:
+        script_path (str): Path to the Node.js script.
+        input_code (str): The code to process.
+
+    Returns:
+        Optional[Dict[str, Any]]: The JSON output from the script if successful, None otherwise.
+    """
+    try:
+        logger.debug(f"Running Node.js script: {script_path}")
+        result = subprocess.run(
+            ['node', script_path],
+            input=input_code,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        logger.debug(f"Successfully ran {script_path}")
+        output_json = json.loads(result.stdout)
+        return output_json
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error running {script_path}: {e.stderr}")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON output from {script_path}: {e}")
+        return None
+    except FileNotFoundError:
+        logger.error(f"Node.js script {script_path} not found.")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error running {script_path}: {e}")
+        return None
+
+def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[str]:
+    """
+    Runs the insert_docstrings.js script and returns the modified code.
+
+    Parameters:
+        script_path (str): Path to the insert_docstrings.js script.
+        input_code (str): The code to process.
+
+    Returns:
+        Optional[str]: The modified code if successful, None otherwise.
+    """
+    try:
+        logger.debug(f"Running Node.js script: {script_path}")
+        result = subprocess.run(
+            ['node', script_path],
+            input=input_code,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        logger.debug(f"Successfully ran {script_path}")
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error running {script_path}: {e.stderr}")
+        return None
+    except FileNotFoundError:
+        logger.error(f"Node.js script {script_path} not found.")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error running {script_path}: {e}")
+        return None
 
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """Checks if a file extension is valid (not in the skip list)."""
