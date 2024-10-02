@@ -74,11 +74,15 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
     try:
         tree = ast.parse(original_code)
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) or isinstance(node, ast.ClassDef):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
                 docstring = ast.get_docstring(node)
                 if not docstring:
                     summary = documentation.get("summary", "").strip()
                     if summary:
+                        # Truncate summary to prevent E501 errors
+                        max_length = 100  # Adjust as needed
+                        if len(summary) > max_length:
+                            summary = summary[:max_length] + "..."
                         # Use ast.Constant for string literals (Python 3.8+)
                         docstring_node = ast.Expr(value=ast.Constant(value=summary))
                         node.body.insert(0, docstring_node)
