@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup, Comment
 import tinycss2
 
 logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set logging level to DEBUG
 handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -58,24 +59,32 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
         return {}
 
 def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
+    """
+    Inserts docstrings into Python functions and classes based on provided documentation.
+
+    Parameters:
+        original_code (str): The original Python source code.
+        documentation (Dict[str, Any]): A dictionary containing documentation details,
+                                        primarily the 'summary' for docstrings.
+
+    Returns:
+        str: The modified Python source code with inserted docstrings.
+    """
     logger.debug("Starting insert_python_docstrings")
-    logger.debug(f"Original code: {original_code[:100]}...")  # Log first 100 characters of the code for brevity
-    logger.debug(f"Documentation: {documentation}")
     try:
         tree = ast.parse(original_code)
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(node, ast.FunctionDef) or isinstance(node, ast.ClassDef):
                 docstring = ast.get_docstring(node)
                 if not docstring:
-                    summary = documentation.get("summary", "")
-                    node.body.insert(0, ast.Expr(value=ast.Str(s=summary)))
-                    logger.debug(f"Inserted docstring in function: {node.name}")
-            elif isinstance(node, ast.ClassDef):
-                docstring = ast.get_docstring(node)
-                if not docstring:
-                    summary = documentation.get("summary", "")
-                    node.body.insert(0, ast.Expr(value=ast.Str(s=summary)))
-                    logger.debug(f"Inserted docstring in class: {node.name}")
+                    summary = documentation.get("summary", "").strip()
+                    if summary:
+                        # Use ast.Constant for string literals (Python 3.8+)
+                        docstring_node = ast.Expr(value=ast.Constant(value=summary))
+                        node.body.insert(0, docstring_node)
+                        node_lineno = getattr(node, 'lineno', 'unknown')
+                        node_type = 'function' if isinstance(node, ast.FunctionDef) else 'class'
+                        logger.debug(f"Inserted docstring in {node_type}: {node.name} at line {node_lineno}")
         modified_code = astor.to_source(tree)
         logger.debug("Completed inserting Python docstrings")
         return modified_code
