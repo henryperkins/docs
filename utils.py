@@ -326,90 +326,79 @@ def extract_json_from_response(response: str) -> Optional[dict]:
     except json.JSONDecodeError:
         return None
 
-async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict) -> Optional[dict]:
+async def fetch_documentation(
+    session: aiohttp.ClientSession,
+    prompt: str,
+    semaphore: asyncio.Semaphore,
+    model_name: str,
+    function_schema: dict,
+    retry: int = 3,
+) -> Optional[dict]:
     """
-    Fetches documentation from OpenAI's API based on the provided prompt.
-    
-    Parameters:
-        session (aiohttp.ClientSession): The aiohttp client session.
+    Fetches documentation from OpenAI's API with optional retries.
+
+    Args:
+        session (aiohttp.ClientSession): The session to use for making the API request.
         prompt (str): The prompt to send to the API.
-        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
-        model_name (str): The OpenAI model to use.
+        semaphore (asyncio.Semaphore): A semaphore to limit the number of concurrent API requests.
+        model_name (str): The model to use for the OpenAI request (e.g., 'gpt-4').
         function_schema (dict): The JSON schema for the function call.
-    
+        retry (int, optional): Number of retry attempts for failed requests. Defaults to 3.
+
     Returns:
         Optional[dict]: The generated documentation, or None if failed.
     """
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": model_name,
-        "messages": [
-            {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
-            {"role": "user", "content": prompt}
-        ],
-        "functions": [function_schema],
-        "function_call": "auto"  # Let the model decide which function to call
-    }
-    
-    async with semaphore:
-        try:
-            async with session.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload) as resp:
-                response_text = await resp.text()
-                if resp.status != 200:
-                    logger.error(f"OpenAI API request failed with status {resp.status}: {response_text}")
-                    return None
-                response = await resp.json()
-                logger.debug(f"Full API Response: {json.dumps(response, indent=2)}")
-                choice = response.get("choices", [])[0]
-                message = choice.get('message', {})
-                
-                # Check for function_call
-                if 'function_call' in message:
-                    arguments = message['function_call'].get('arguments', '{}')
-                    try:
-                        documentation = json.loads(arguments)
-                        logger.debug("Received documentation via function_call.")
-                        return documentation
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Error decoding JSON from function_call arguments: {e}")
-                        logger.error(f"Arguments Content: {arguments}")
-                        return None
-                else:
-                    # Fallback: Extract documentation directly from content
-                    content = message.get('content', '')
-                    if content:
-                        logger.debug("No function_call detected. Attempting to extract documentation from content.")
-                        # Implement parsing logic based on expected content format
+    for attempt in range(1, retry + 1):
+        async with semaphore:
+            try:
+                headers = {
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "functions": [function_schema],
+                    "function_call": "auto"  # Let the model decide which function to call
+                }
+
+                async with session.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload) as resp:
+                    response_text = await resp.text()
+                    if resp.status != 200:
+                        logger.error(f"OpenAI API request failed with status {resp.status}: {response_text}")
+                        continue  # Retry on failure
+                    response = await resp.json()
+                    logger.debug(f"Full API Response: {json.dumps(response, indent=2)}")
+
+                    choice = response.get("choices", [])[0]
+                    message = choice.get('message', {})
+
+                    # Check for function_call
+                    if 'function_call' in message:
+                        arguments = message['function_call'].get('arguments', '{}')
                         try:
-                            # Example Parsing Logic:
-                            # Assume the content has sections like "Summary:" and "Changes:"
-                            summary = ""
-                            changes = []
-                            lines = content.split('\n')
-                            for i, line in enumerate(lines):
-                                if line.startswith("Summary:"):
-                                    summary = line.replace("Summary:", "").strip()
-                                elif line.startswith("Changes:"):
-                                    changes = [l.replace("-", "").strip() for l in lines[i+1:] if l.startswith("-")]
-                            documentation = {
-                                "summary": summary,
-                                "changes": changes
-                            }
-                            logger.debug("Extracted documentation from content.")
+                            documentation = json.loads(arguments)
+                            logger.debug("Received documentation via function_call.")
                             return documentation
-                        except Exception as e:
-                            logger.error(f"Error parsing documentation content: {e}")
-                            logger.error(f"Content Received: {content}")
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Error decoding JSON from function_call arguments: {e}")
+                            logger.error(f"Arguments Content: {arguments}")
                             return None
                     else:
-                        logger.error("No content found in the API response.")
+                        logger.error("No function_call found in the response.")
                         return None
-        except Exception as e:
-            logger.error(f"Error fetching documentation from OpenAI API: {e}")
-            return None
+
+            except Exception as e:
+                logger.error(f"Error fetching documentation from OpenAI API: {e}")
+                if attempt < retry:
+                    logger.info(f"Retrying... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff on retries
+                else:
+                    logger.error("All retry attempts failed.")
+                    return None
 
 async def fetch_summary(
     session: aiohttp.ClientSession,
@@ -524,73 +513,3 @@ def generate_documentation_prompt(code_structure: dict, project_info: Optional[s
     prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
     prompt += "\n\n**Instructions:** Based on the above code structure, generate the following documentation sections:\n1. **Summary:** A detailed summary of the codebase.\n2. **Changes Made:** A comprehensive list of changes or updates made to the code.\n\n**Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"
     return prompt
-async def fetch_documentation_with_retries(
-    session: aiohttp.ClientSession,
-    prompt: str,
-    semaphore: asyncio.Semaphore,
-    model_name: str,
-    function_schema: dict,
-    retry: int = 3,
-) -> Optional[dict]:
-    """
-    Fetches documentation from OpenAI's API with retries.
-
-    Args:
-        session (aiohttp.ClientSession): The session to use for making the API request.
-        prompt (str): The prompt to send to the API.
-        semaphore (asyncio.Semaphore): A semaphore to limit the number of concurrent API requests.
-        model_name (str): The model to use for the OpenAI request (e.g., 'gpt-4').
-        function_schema (dict): The JSON schema for the function call.
-        retry (int, optional): Number of retry attempts for failed requests. Defaults to 3.
-
-    Returns:
-        Optional[dict]: The generated documentation, or None if failed.
-    """
-    for attempt in range(1, retry + 1):
-        try:
-            async with semaphore:
-                headers = {
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "functions": [function_schema],
-                    "function_call": "auto"  # Let the model decide which function to call
-                }
-                async with session.post(OPENAI_API_URL, headers=headers, json=payload) as resp:
-                    response_text = await resp.text()
-                    if resp.status != 200:
-                        logger.error(f"OpenAI API request failed with status {resp.status}: {response_text}")
-                        return None
-                    response = await resp.json()
-                    logger.debug(f"Full API Response: {json.dumps(response, indent=2)}")
-                    choice = response.get("choices", [])[0]
-                    message = choice.get('message', {})
-                    
-                    # Check for function_call
-                    if 'function_call' in message:
-                        arguments = message['function_call'].get('arguments', '{}')
-                        try:
-                            documentation = json.loads(arguments)
-                            logger.debug("Received documentation via function_call.")
-                            return documentation
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Error decoding JSON from function_call arguments: {e}")
-                            logger.error(f"Arguments Content: {arguments}")
-                            return None
-                    else:
-                        logger.error("No function_call found in the response.")
-                        return None
-
-        except Exception as e:
-            logger.error(f"Error fetching documentation from OpenAI API: {e}")
-            if attempt < retry:
-                logger.info(f"Retrying... (Attempt {attempt}/{retry})")
-            else:
-                logger.error("All retry attempts failed.")
-    return None
