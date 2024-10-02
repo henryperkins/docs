@@ -133,19 +133,21 @@ async def main():
         skip_types.update(ext.strip() for ext in args.skip_types.split(','))
         logger.debug(f"Updated skip_types: {skip_types}")
 
-    # Check if config file exists
-        if not os.path.isfile(config_path):
-            logger.warning(f"Configuration file '{config_path}' not found. Proceeding with default and command-line settings.")
-            project_info_config, style_guidelines_config = '', ''
-        else:
-            # Load additional configurations
-            try:
-                # Expecting a tuple (project_info, style_guidelines)
-                project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
-                logger.debug(f"Loaded configurations from '{config_path}': Project Info='{project_info_config}', Style Guidelines='{style_guidelines_config}'")
-            except Exception as e:
-                logger.error(f"Failed to load configuration from '{config_path}': {e}")
-                sys.exit(1)
+    # Initialize these variables with default values to avoid UnboundLocalError
+    project_info_config = ''
+    style_guidelines_config = ''
+
+    # Check if the config file exists
+    if not os.path.isfile(config_path):
+        logger.warning(f"Configuration file '{config_path}' not found. Proceeding with default and command-line settings.")
+    else:
+        # Load additional configurations
+        try:
+            project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
+            logger.debug(f"Loaded configurations from '{config_path}': Project Info='{project_info_config}', Style Guidelines='{style_guidelines_config}'")
+        except Exception as e:
+            logger.error(f"Failed to load configuration from '{config_path}': {e}")
+            sys.exit(1)
 
     # Determine final project_info and style_guidelines
     project_info = project_info_arg or project_info_config
