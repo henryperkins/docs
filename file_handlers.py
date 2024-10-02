@@ -231,7 +231,7 @@ async def process_file(
             # Clean unused imports if applicable (for JS/TS, you might use a different tool)
             # For demonstration, using clean_unused_imports (which is for Python)
             # Consider implementing a similar function for JS/TS if needed
-            # new_content = clean_unused_imports(new_content)  # Not applicable for JS/TS
+            new_content = clean_unused_imports(new_content)  # Not applicable for JS/TS
             # Check with flake8 if necessary or use a JS linter like eslint
             # For demonstration, skipping flake8 for JS/TS
             logger.debug(f"Processed {language} file '{file_path}'.")
@@ -274,22 +274,31 @@ async def process_file(
                     logger.info(f"Restored original file from backup for '{file_path}'")
                 return
 
-        # Output the final results to the markdown file
-        try:
-            async with output_lock:
-                async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
-                    header = f"# File: {relative_path}\n\n"  # Use relative path
-                    summary_section = f"## Summary\n\n{summary}\n\n"
-                    changes_section = (
-                        "## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
-                    )
-                    code_block = f"```{language}\n{new_content}\n```\n\n"
-                    await f.write(header)
-                    await f.write(summary_section)
-                    await f.write(changes_section)
-                    await f.write(code_block)
-            logger.info(f"Successfully processed and documented '{file_path}'")
-        except Exception as e:
+# After inserting docstrings and formatting
+try:
+    async with output_lock:
+        async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
+            header = f"# File: {relative_path}\n\n"  # Use relative path
+            summary_section = f"## Summary\n\n{summary}\n\n"
+            changes_section = (
+                "## Changes Made\n\n" + "\n".join(f"- {change}" for change in changes) + "\n\n"
+            )
+            code_block = f"```{language}\n{new_content}\n```\n\n"
+            
+            # Add flake8 issues if any
+            if flake8_output:
+                flake8_section = f"## flake8 Issues\n\n```\n{flake8_output}\n```\n\n"
+            else:
+                flake8_section = ""
+            
+            await f.write(header)
+            await f.write(summary_section)
+            await f.write(changes_section)
+            await f.write(code_block)
+            await f.write(flake8_section)
+    logger.info(f"Successfully processed and documented '{file_path}'")
+except Exception as e:
+    logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
             logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
