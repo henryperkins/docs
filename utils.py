@@ -194,6 +194,30 @@ def check_with_flake8(file_path: str) -> bool:
             logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
             return False
 
+def run_flake8(file_path: str) -> Optional[str]:
+    """
+    Runs flake8 on the specified file and returns the output.
+
+    Parameters:
+        file_path (str): Path to the Python file to check.
+
+    Returns:
+        Optional[str]: The flake8 output if any issues are found, else None.
+    """
+    try:
+        result = subprocess.run(
+            ["flake8", file_path],
+            capture_output=True,
+            text=True,
+            check=False  # Do not raise exception on non-zero exit
+        )
+        if result.stdout:
+            return result.stdout.strip()
+        return None
+    except Exception as e:
+        logger.error(f"Error running flake8 on '{file_path}': {e}", exc_info=True)
+        return None
+
 def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any]]:
     """
     Runs a Node.js script that outputs JSON (e.g., extract_structure.js) and returns the parsed JSON.
