@@ -321,6 +321,7 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             os.remove(backup_path)
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
+
 async def write_documentation_report(
     summary: str,
     changes: List[str],
@@ -356,69 +357,114 @@ async def write_documentation_report(
         else:
             changes_section += 'No changes were made to this file.\n\n'
 
-        # Extract code structure from the new content
-        structure = await extract_code_structure(new_content, file_path, language)
-
-        # Build the functions section
-        function_section = ''
-        if structure.get('functions'):
-            function_section += '## Functions\n\n'
-            function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
-            function_table_rows = ''
-            for func in structure['functions']:
-                func_name = func.get('name', 'Unnamed Function')
-                func_args = ', '.join(func.get('args', []))
-                func_doc = func.get('docstring', 'No description provided.')
-                func_type = 'async ' if func.get('async', False) else ''
-                function_table_rows += f"| `{func_type}{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
-            function_section += function_table_header + function_table_rows + '\n'
-        else:
-            function_section += '## Functions\n\nNo functions are defined in this file.\n\n'
-
-        # Build the classes section
-        class_section = ''
-        if structure.get('classes'):
-            class_section += '## Classes\n\n'
-            for cls in structure['classes']:
-                cls_name = cls.get('name', 'Unnamed Class')
-                class_section += f'### Class: `{cls_name}`\n\n'
-                class_doc = cls.get('docstring', 'No description provided.')
-                class_section += f"{class_doc}\n\n"
-
-                if cls.get('methods'):
-                    class_section += '#### Methods:\n\n'
-                    method_table_header = '| Method | Arguments | Description |\n|--------|-----------|-------------|\n'
-                    method_table_rows = ''
-                    for method in cls['methods']:
-                        method_name = method.get('name', 'Unnamed Method')
-                        method_args = ', '.join(method.get('args', []))
-                        method_doc = method.get('docstring', 'No description provided.')
-                        method_type = 'async ' if method.get('async', False) else ''
-                        method_table_rows += f"| `{method_type}{method_name}` | `{method_args}` | {method_doc.splitlines()[0]} |\n"
-                    class_section += method_table_header + method_table_rows + '\n'
-                else:
-                    class_section += 'No methods defined in this class.\n\n'
-        else:
-            class_section += '## Classes\n\nNo classes are defined in this file.\n\n'
-
         # Include the code block with syntax highlighting
         code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
 
-        # Combine all sections
+        # Initialize the content
         file_content = (
             file_header +
             summary_section +
-            changes_section +
-            function_section +
-            class_section +
-            code_block
+            changes_section
         )
+
+        # Extract code structure from the new content
+        structure = await extract_code_structure(new_content, file_path, language)
+
+        # Add functions and classes based on language
+        if language in ['python', 'javascript', 'typescript']:
+            # Handle functions
+            function_section = ''
+            if structure.get('functions'):
+                function_section += '## Functions\n\n'
+                function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
+                function_table_rows = ''
+                for func in structure['functions']:
+                    func_name = func.get('name', 'Unnamed Function')
+                    func_args = ', '.join(func.get('args', []))
+                    func_doc = func.get('docstring', 'No description provided.')
+                    func_type = 'async ' if func.get('async', False) else ''
+                    function_table_rows += f"| `{func_type}{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
+                function_section += function_table_header + function_table_rows + '\n'
+            else:
+                function_section += '## Functions\n\nNo functions are defined in this file.\n\n'
+
+            # Handle classes
+            class_section = ''
+            if structure.get('classes'):
+                class_section += '## Classes\n\n'
+                for cls in structure['classes']:
+                    cls_name = cls.get('name', 'Unnamed Class')
+                    class_doc = cls.get('docstring', 'No description provided.')
+                    class_section += f'### Class: `{cls_name}`\n\n{class_doc}\n\n'
+
+                    if cls.get('methods'):
+                        class_section += '#### Methods:\n\n'
+                        method_table_header = '| Method | Arguments | Description |\n|--------|-----------|-------------|\n'
+                        method_table_rows = ''
+                        for method in cls['methods']:
+                            method_name = method.get('name', 'Unnamed Method')
+                            method_args = ', '.join(method.get('args', []))
+                            method_doc = method.get('docstring', 'No description provided.')
+                            method_type = 'async ' if method.get('async', False) else ''
+                            method_table_rows += f"| `{method_type}{method_name}` | `{method_args}` | {method_doc.splitlines()[0]} |\n"
+                        class_section += method_table_header + method_table_rows + '\n'
+                    else:
+                        class_section += 'No methods defined in this class.\n\n'
+            else:
+                class_section += '## Classes\n\nNo classes are defined in this file.\n\n'
+
+            # Append to the content
+            file_content += function_section + class_section
+
+        elif language == 'html':
+            # Handle HTML tags
+            tag_section = ''
+            if structure.get('tags'):
+                tag_section += '## Tags\n\n'
+                for tag in structure['tags']:
+                    tag_name = tag.get('name', 'Unnamed Tag')
+                    tag_attrs = ', '.join(f'{k}="{v}"' for k, v in tag.get('attributes', {}).items())
+                    tag_section += f'- `<{tag_name} {tag_attrs}>`\n'
+                tag_section += '\n'
+            else:
+                tag_section += '## Tags\n\nNo tags are defined in this file.\n\n'
+            file_content += tag_section
+
+        elif language == 'css':
+            # Handle CSS rules
+            rules_section = ''
+            if structure.get('rules'):
+                rules_section += '## CSS Rules\n\n'
+                for rule in structure['rules']:
+                    selectors = rule.get('selectors', 'Unnamed Selector')
+                    rules_section += f'### Selector: `{selectors}`\n\n'
+                    declarations = rule.get('declarations', [])
+                    if declarations:
+                        rules_section += '#### Declarations:\n\n'
+                        for decl in declarations:
+                            property_name = decl.get('property')
+                            value = decl.get('value')
+                            rules_section += f'- **{property_name}**: {value}\n'
+                        rules_section += '\n'
+                    else:
+                        rules_section += 'No declarations in this rule.\n\n'
+                rules_section += '\n'
+            else:
+                rules_section += '## CSS Rules\n\nNo CSS rules are defined in this file.\n\n'
+            file_content += rules_section
+
+        else:
+            logger.warning(f"No specific handling for language '{language}' in 'write_documentation_report'")
+
+        # Add the code block at the end
+        file_content += code_block
 
         return file_content
 
     except Exception as e:
         logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
         return ''
+
 
 def generate_table_of_contents(markdown_content: str) -> str:
     """
