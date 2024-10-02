@@ -25,6 +25,7 @@ from language_functions import (
     extract_css_structure,
     insert_css_docstrings,
 )
+
 from utils import (
     load_config,
     is_binary,
@@ -66,6 +67,7 @@ console_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
+
 async def main():
     async with aiohttp.ClientSession() as session:
         semaphore = asyncio.Semaphore(10)
@@ -80,8 +82,10 @@ async def main():
         )
         print(result)
 
+
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -> None:
     logger.debug(f"Entering insert_docstrings_for_file with js_ts_file={js_ts_file}, documentation_file={documentation_file}")
@@ -212,21 +216,21 @@ async def process_file(
                     temp_file.write(new_content)
                     temp_file_path = temp_file.name
                 # Check with flake8
-            if not check_with_flake8(temp_file_path):
-                logger.warning(f"flake8 compliance failed for '{file_path}'. Continuing processing.")
-            # Optionally, capture the flake8 issues for documentation
-            try:
-                with open(temp_file_path, 'r') as f:
-                    code_content = f.read()
-                # You can include flake8 issues in the markdown output if desired
-                flake8_issues = run_flake8(file_path)
-            except Exception as e:
-                logger.error(f"Error reading '{temp_file_path}': {e}", exc_info=True)
-            finally:
-                # Remove the temporary file after checking
-                if temp_file_path and os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
-            logger.debug(f"Processed Python file '{file_path}'.")
+                if not check_with_flake8(temp_file_path):
+                    logger.warning(f"flake8 compliance failed for '{file_path}'. Continuing processing.")
+                # Optionally, capture the flake8 issues for documentation
+                try:
+                    with open(temp_file_path, 'r') as f:
+                        code_content = f.read()
+                    # You can include flake8 issues in the markdown output if desired
+                    flake8_issues = run_flake8(file_path)
+                except Exception as e:
+                    logger.error(f"Error reading '{temp_file_path}': {e}", exc_info=True)
+                finally:
+                    # Remove the temporary file after checking
+                    if temp_file_path and os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
+                logger.debug(f"Processed Python file '{file_path}'.")
         elif language in ["javascript", "typescript"]:
             # Insert docstrings using the Node.js script
             new_content = run_node_insert_docstrings('insert_docstrings.js', content)
@@ -306,54 +310,3 @@ try:
     logger.info(f"Successfully processed and documented '{file_path}'")
 except Exception as e:
     logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
-            logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
-    except Exception as e:
-        logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
-    logger.debug("Exiting process_file")
-    
-
-async def process_all_files(
-    session: aiohttp.ClientSession,  # Added parameter
-    file_paths: List[str],
-    skip_types: Set[str],
-    output_file: str,
-    semaphore: asyncio.Semaphore,
-    output_lock: asyncio.Lock,
-    model_name: str,
-    function_schema: dict,
-    repo_root: str,
-    project_info: Optional[str] = None,
-    style_guidelines: Optional[str] = None,
-    safe_mode: bool = False,
-) -> None:
-    logger.debug(f"Entering process_all_files with {len(file_paths)} files")
-    tasks = []
-    # Removed the internal session creation
-    for file_path in file_paths:
-        tasks.append(
-            process_file(
-                session=session,
-                file_path=file_path,
-                skip_types=skip_types,
-                output_file=output_file,
-                semaphore=semaphore,
-                output_lock=output_lock,
-                model_name=model_name,
-                function_schema=function_schema,
-                repo_root=repo_root,
-                project_info=project_info,
-                style_guidelines=style_guidelines,
-                safe_mode=safe_mode
-            )
-        )
-    logger.debug(f"Created {len(tasks)} tasks for processing files.")
-    # Use gather with return_exceptions=True to handle individual task errors without cancelling all
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for idx, result in enumerate(results):
-        if isinstance(result, Exception):
-            logger.error(f"Error processing file '{file_paths[idx]}': {result}", exc_info=True)
-        else:
-            logger.debug(f"Completed processing file '{file_paths[idx]}'")
-    logger.debug("Exiting process_all_files")
-
-
