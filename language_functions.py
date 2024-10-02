@@ -40,18 +40,13 @@ def is_syntax_valid(code: str) -> bool:
 def extract_python_structure(code: str) -> Dict[str, Any]:
     logger.debug("Starting extract_python_structure")
     logger.debug(f"Input code: {code[:100]}...")  # Log first 100 characters of the code for brevity
-
-    # Check for valid syntax using flake8
-    if not is_syntax_valid(code):
-        logger.error("Invalid Python syntax detected. Aborting extraction.")
-        return {}
-
     try:
         tree = ast.parse(code)
         structure = {
             "functions": [],
             "classes": []
         }
+        logger.debug("Successfully parsed code into AST")  # Add logging for successful AST parsing
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.FunctionDef):
                 structure["functions"].append({
@@ -82,6 +77,7 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
         return {}
     except Exception as e:
         logger.error(f"Error extracting Python structure: {e}", exc_info=True)
+        logger.error(f"Full problematic code: {code}")  # Log full code if error occurs
         return {}
 
 
