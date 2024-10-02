@@ -58,37 +58,62 @@ def is_syntax_valid(code: str) -> bool:
 
 # Python-specific functions
 def extract_python_structure(code: str) -> Dict[str, Any]:
+    """
+    Extracts the structure of Python code, including functions (sync and async) and classes with their methods.
+
+    Parameters:
+        code (str): The Python source code.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the structure of the code.
+    """
     logger.debug("Starting extract_python_structure")
     logger.debug(f"Input code: {code[:100]}...")  # Log first 100 characters of the code for brevity
     try:
+        # Parse the code into an AST
         tree = ast.parse(code)
+        # Initialize the structure dictionary
         structure = {
             "functions": [],
             "classes": []
         }
         logger.debug("Successfully parsed code into AST")
 
-        for node in ast.iter_child_nodes(tree):
-            # Handle regular and async functions
+        # Helper function to recursively set parent attributes
+        def set_parent(node, parent=None):
+            for child in ast.iter_child_nodes(node):
+                child.parent = parent
+                set_parent(child, parent=node)
+
+        # Set parent attributes for all nodes
+        set_parent(tree)
+
+        # Traverse all AST nodes
+        for node in ast.walk(tree):
+            # Handle top-level functions (excluding methods within classes)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                func_type = "async" if isinstance(node, ast.AsyncFunctionDef) else "function"
-                logger.debug(f"Found {func_type}: {node.name}")
-                structure["functions"].append({
-                    "name": node.name,
-                    "args": [arg.arg for arg in node.args.args],
-                    "docstring": ast.get_docstring(node),
-                    "async": isinstance(node, ast.AsyncFunctionDef)
-                })
+                if not isinstance(getattr(node, 'parent', None), ast.ClassDef):
+                    func_type = "async" if isinstance(node, ast.AsyncFunctionDef) else "function"
+                    logger.debug(f"Found top-level {func_type}: {node.name}")
+                    structure["functions"].append({
+                        "name": node.name,
+                        "args": [arg.arg for arg in node.args.args],
+                        "docstring": ast.get_docstring(node),
+                        "async": isinstance(node, ast.AsyncFunctionDef)
+                    })
+            # Handle classes and their methods
             elif isinstance(node, ast.ClassDef):
-                methods = [
-                    {
-                        "name": method.name,
-                        "args": [arg.arg for arg in method.args.args],
-                        "docstring": ast.get_docstring(method),
-                        "async": isinstance(method, ast.AsyncFunctionDef)
-                    }
-                    for method in node.body if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
-                ]
+                methods = []
+                for child in node.body:
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        method_type = "async" if isinstance(child, ast.AsyncFunctionDef) else "function"
+                        methods.append({
+                            "name": child.name,
+                            "args": [arg.arg for arg in child.args.args],
+                            "docstring": ast.get_docstring(child),
+                            "async": isinstance(child, ast.AsyncFunctionDef),
+                            "type": method_type
+                        })
                 logger.debug(f"Found class: {node.name} with methods: {methods}")
                 structure["classes"].append({
                     "name": node.name,
@@ -97,6 +122,7 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
 
         logger.debug(f"Extracted structure: {structure}")
         return structure
+
     except SyntaxError as se:
         logger.error(f"Syntax error in Python code: {se}")
         logger.error(f"Problematic code:\n{code}")
