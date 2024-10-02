@@ -4,8 +4,8 @@
   "description": "Tools for generating and inserting documentation into JavaScript/TypeScript codebases.",
   "main": "index.js",
   "scripts": {
-    "extract-structure": "node extract_structure.js",
-    "insert-docstrings": "node insert_docstrings.js"
+    "extract-structure": "node scripts/extract_structure.js",
+    "insert-docstrings": "node scripts/insert_docstrings.js"
   },
   "keywords": [
     "documentation",
@@ -21,11 +21,11 @@
     "@babel/traverse": "^7.21.3",
     "@babel/generator": "^7.21.3",
     "@babel/types": "^7.21.0",
-    "prettier": "^2.8.8",
-    "eslint": "^8.35.0",
-    "eslint-plugin-jsdoc": "^39.0.6"
+    "prettier": "^2.8.8"
   },
   "devDependencies": {
+    "eslint": "^8.35.0",
+    "eslint-plugin-jsdoc": "^39.0.6",
     "nodemon": "^2.0.22"
   }
 }
