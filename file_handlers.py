@@ -37,7 +37,7 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     generate_documentation_prompt,
-    fetch_documentation_with_retries,
+    fetch_documentation,
     function_schema,
     format_with_black,
     clean_unused_imports,
