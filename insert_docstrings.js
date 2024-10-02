@@ -1,146 +1,165 @@
+// insert_docstrings.js
+
 const fs = require('fs');
-const path = require('path');
-const ts = require('typescript');
-const prettier = require('prettier');
+const babelParser = require('@babel/parser');
+const traverse = require('@babel/traverse').default;
+const generator = require('@babel/generator').default;
+const t = require('@babel/types');
 
-const function_schema = {
-    // Your function schema details here
-};
+/**
+ * Reads all data from stdin.
+ * @returns {Promise<string>} The input code as a string.
+ */
+function readStdin() {
+    return new Promise((resolve, reject) => {
+        let data = '';
+        process.stdin.setEncoding('utf-8');
 
-function createJSDoc(doc) {
-    let comment = `Summary: ${doc.description || doc.docstring}`;
-
-    if (doc.parameters && doc.parameters.length > 0) {
-        comment += `\n\n@parameters`;
-        doc.parameters.forEach(param => {
-            comment += `\n * @param {${param.type}} ${param.name} - ${param.description || ''}`;
+        process.stdin.on('data', chunk => {
+            data += chunk;
         });
-    }
 
-    if (doc.returns) {
-        comment += `\n\n@returns {${doc.returns.type}} - ${doc.returns.description || ''}`;
-    }
+        process.stdin.on('end', () => {
+            resolve(data);
+        });
 
-    return comment;
+        process.stdin.on('error', err => {
+            reject(err);
+        });
+    });
 }
 
-function hasJSDoc(node) {
-    const comments = node.leadingComments;
-    return comments && comments.some(comment => comment.type === 'CommentBlock' && comment.value.startsWith('*'));
-}
-
-async function insertDocstrings(filePath, documentation) {
-    const code = fs.readFileSync(filePath, 'utf8');
-    const ext = path.extname(filePath).toLowerCase();
-    let transformedCode = code;
-
-    try {
-        if (ext === '.ts' || ext === '.tsx' || ext === '.js' || ext === '.jsx') {
-            const sourceFile = ts.createSourceFile(
-                filePath,
-                transformedCode,
-                ts.ScriptTarget.Latest,
-                true,
-                ext.includes('ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS
-            );
-
-            const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
-            const transformer = (context) => (rootNode) => {
-                function visit(node) {
-                    if (ts.isFunctionDeclaration(node) && node.name) {
-                        const funcDoc = documentation.functions.find(f => f.name === node.name.text);
-                        if (funcDoc && !hasJSDoc(node)) {
-                            const jsDocComment = createJSDoc(funcDoc);
-                            const updatedNode = ts.addSyntheticLeadingComment(
-                                node,
-                                ts.SyntaxKind.MultiLineCommentTrivia,
-                                `*\n * ${jsDocComment.replace(/\n/g, '\n * ')}\n `,
-                                true
-                            );
-                            return updatedNode;
-                        }
+/**
+ * Inserts JSDoc comments into functions and classes that lack them.
+ * @param {object} ast - The Abstract Syntax Tree of the code.
+ */
+function insertDocstrings(ast) {
+    traverse(ast, {
+        FunctionDeclaration(path) {
+            if (!hasDocstring(path)) {
+                const docComment = generateDocstringForFunction(path.node);
+                path.addComment('leading', docComment);
+                const funcName = path.node.id ? path.node.id.name : 'anonymous';
+                const line = path.node.loc.start.line;
+                console.log(`Inserted docstring in function: ${funcName} at line ${line}`);
+            }
+        },
+        ClassDeclaration(path) {
+            if (!hasDocstring(path)) {
+                const docComment = generateDocstringForClass(path.node);
+                path.addComment('leading', docComment);
+                const className = path.node.id ? path.node.id.name : 'anonymous';
+                const line = path.node.loc.start.line;
+                console.log(`Inserted docstring in class: ${className} at line ${line}`);
+            }
+        },
+        VariableDeclaration(path) {
+            // Handle arrow functions and function expressions assigned to variables
+            path.node.declarations.forEach(declaration => {
+                if (
+                    declaration.init &&
+                    (declaration.init.type === 'ArrowFunctionExpression' ||
+                        declaration.init.type === 'FunctionExpression')
+                ) {
+                    const funcPath = path.get('declarations').find(decl => decl.node === declaration).get('init');
+                    if (!hasDocstring(funcPath)) {
+                        const docComment = generateDocstringForFunction(declaration.init, declaration.id.name);
+                        funcPath.addComment('leading', docComment);
+                        const funcName = declaration.id.name;
+                        const line = declaration.loc.start.line;
+                        console.log(`Inserted docstring in function: ${funcName} at line ${line}`);
                     }
-
-                    if (ts.isClassDeclaration(node) && node.name) {
-                        const classDoc = documentation.classes.find(c => c.name === node.name.text);
-                        if (classDoc && !hasJSDoc(node)) {
-                            const jsDocComment = createJSDoc(classDoc);
-                            const updatedClass = ts.addSyntheticLeadingComment(
-                                node,
-                                ts.SyntaxKind.MultiLineCommentTrivia,
-                                `*\n * ${jsDocComment.replace(/\n/g, '\n * ')}\n `,
-                                true
-                            );
-                            const updatedMembers = node.members.map(member => {
-                                if (ts.isMethodDeclaration(member) && member.name) {
-                                    const methodDoc = classDoc.methods.find(m => m.name === member.name.text);
-                                    if (methodDoc && !hasJSDoc(member)) {
-                                        const methodJsDoc = createJSDoc(methodDoc);
-                                        return ts.addSyntheticLeadingComment(
-                                            member,
-                                            ts.SyntaxKind.MultiLineCommentTrivia,
-                                            `*\n * ${methodJsDoc.replace(/\n/g, '\n * ')}\n `,
-                                            true
-                                        );
-                                    }
-                                }
-                                return member;
-                            });
-
-                            return ts.factory.updateClassDeclaration(
-                                updatedClass,
-                                updatedClass.modifiers,
-                                updatedClass.name,
-                                updatedClass.typeParameters,
-                                updatedClass.heritageClauses,
-                                updatedMembers
-                            );
-                        }
-                    }
-
-                    return ts.visitEachChild(node, visit, context);
                 }
-                return ts.visitNode(rootNode, visit);
-            };
-
-            const result = ts.transform(sourceFile, [transformer]);
-            const transformedSourceFile = result.transformed[0];
-            transformedCode = printer.printFile(transformedSourceFile);
-
-            transformedCode = prettier.format(transformedCode, {
-                parser: ext.includes('ts') ? 'typescript' : 'babel',
-                singleQuote: true,
-                trailingComma: 'all',
             });
+        },
+    });
+}
+
+/**
+ * Checks if a node already has a docstring.
+ * @param {object} path - The Babel path object.
+ * @returns {boolean} True if docstring exists, else False.
+ */
+function hasDocstring(path) {
+    const leadingComments = path.node.leadingComments;
+    if (leadingComments && leadingComments.length > 0) {
+        // Check if the first leading comment is a JSDoc comment
+        const firstComment = leadingComments[0];
+        if (firstComment.type === 'CommentBlock' && firstComment.value.startsWith('*')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Generates a JSDoc comment for a function.
+ * @param {object} node - The function node.
+ * @param {string} [funcName] - Optional function name for anonymous functions.
+ * @returns {string} The JSDoc comment string.
+ */
+function generateDocstringForFunction(node, funcName) {
+    const name = funcName || (node.id ? node.id.name : 'anonymous');
+    const params = node.params.map(param => param.name || 'unknown');
+    let doc = `*\n * ${name} - Description of the function.\n`;
+
+    params.forEach(param => {
+        doc += ` * @param {type} ${param} - Description of ${param}.\n`;
+    });
+
+    doc += ` * @returns {type} Description of return value.\n `;
+    return doc;
+}
+
+/**
+ * Generates a JSDoc comment for a class.
+ * @param {object} node - The class node.
+ * @returns {string} The JSDoc comment string.
+ */
+function generateDocstringForClass(node) {
+    const name = node.id ? node.id.name : 'anonymous';
+    let doc = `*\n * ${name} - Description of the class.\n`;
+
+    // Optionally, add more details about class properties and methods
+    doc += ` *\n * @class\n `;
+    return doc;
+}
+
+/**
+ * Main function to execute the script.
+ */
+async function main() {
+    try {
+        const inputCode = await readStdin();
+
+        if (!inputCode.trim()) {
+            console.error('No input provided.');
+            process.exit(1);
         }
 
-        fs.writeFileSync(filePath, transformedCode, 'utf8');
-        console.log(`Inserted docstrings into ${filePath}`);
+        const ast = babelParser.parse(inputCode, {
+            sourceType: 'module',
+            plugins: [
+                'typescript',
+                'jsx',
+                'classProperties',
+                'decorators-legacy',
+                'dynamicImport',
+                // Add other plugins as needed
+            ],
+        });
+
+        insertDocstrings(ast);
+
+        const output = generator(ast, {
+            comments: true,
+        }, inputCode).code;
+
+        console.log(output);
     } catch (error) {
-        console.error(`Error inserting docstrings into ${filePath}: ${error.message}`);
+        console.error(`Error inserting docstrings into JS/TS file: ${error.message}`);
         process.exit(1);
     }
 }
 
-if (require.main === module) {
-    const filePath = process.argv[2];
-    const docPath = process.argv[3];
-
-    if (!filePath || !docPath) {
-        console.error('Usage: node insert_docstrings.js <path_to_js_or_ts_file> <path_to_doc_file>');
-        process.exit(1);
-    }
-
-    const absoluteFilePath = path.resolve(filePath);
-    const absoluteDocPath = path.resolve(docPath);
-
-    if (!fs.existsSync(absoluteFilePath) || !fs.existsSync(absoluteDocPath)) {
-        console.error(`File not found: ${absoluteFilePath} or ${absoluteDocPath}`);
-        process.exit(1);
-    }
-
-    const docContent = fs.readFileSync(absoluteDocPath, 'utf8');
-    const documentation = JSON.parse(docContent);
-
-    insertDocstrings(absoluteFilePath, documentation);
-}
+main();
