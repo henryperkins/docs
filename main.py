@@ -16,6 +16,8 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     function_schema,
+    call_openai_function,  # Newly added for function calling
+    load_json_schema,     # Newly added for loading JSON schemas
 )
 
 # Configure logging
@@ -146,6 +148,22 @@ async def main():
     if style_guidelines:
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
+    # Load JSON schema for function calling
+    schema_path = 'schemas/documentation_report.json'
+    documentation_report_schema = load_json_schema(schema_path)
+    if not documentation_report_schema:
+        logger.critical("Failed to load documentation report schema.")
+        sys.exit(1)
+    else:
+        logger.debug("Documentation report schema loaded successfully.")
+
+    # Define the function for OpenAI
+    documentation_report_function = {
+        "name": "generate_documentation_report",
+        "description": "Generates a structured documentation report for a given file.",
+        "parameters": documentation_report_schema
+    }
+
     # Get all file paths
     try:
         file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files)
@@ -188,7 +206,8 @@ async def main():
                 repo_root=repo_path,
                 project_info=project_info,
                 style_guidelines=style_guidelines,
-                safe_mode=safe_mode
+                safe_mode=safe_mode,
+                documentation_report_function=documentation_report_function  # Pass the function definition
             )
     except Exception as e:
         logger.critical(f"Error during processing: {e}", exc_info=True)
