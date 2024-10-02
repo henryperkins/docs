@@ -86,7 +86,7 @@ def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[s
         logger.error(f"Error loading config file '{config_path}': {e}")
         return '', ''
 
-def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> List[str]:
+def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str]) -> list[str]:
     """
     Recursively retrieves all file paths in the repository, excluding specified directories and files.
     
