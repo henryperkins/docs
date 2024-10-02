@@ -149,20 +149,11 @@ async def main():
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
     # Load JSON schema for function calling
-    schema_path = 'schemas/documentation_report.json'
-    documentation_report_schema = load_json_schema(schema_path)
-    if not documentation_report_schema:
-        logger.critical("Failed to load documentation report schema.")
+    schema_path = 'function_schema.json'  # Ensure this path is correct
+    function_schema_loaded = load_json_schema(schema_path)
+    if not function_schema_loaded:
+        logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
         sys.exit(1)
-    else:
-        logger.debug("Documentation report schema loaded successfully.")
-
-    # Define the function for OpenAI
-    documentation_report_function = {
-        "name": "generate_documentation_report",
-        "description": "Generates a structured documentation report for a given file.",
-        "parameters": documentation_report_schema
-    }
 
     # Get all file paths
     try:
@@ -202,12 +193,11 @@ async def main():
                 semaphore=semaphore,
                 output_lock=output_lock,
                 model_name=model_name,
-                function_schema=function_schema,
+                function_schema=function_schema_loaded,
                 repo_root=repo_path,
                 project_info=project_info,
                 style_guidelines=style_guidelines,
-                safe_mode=safe_mode,
-                documentation_report_function=documentation_report_function  # Pass the function definition
+                safe_mode=safe_mode
             )
     except Exception as e:
         logger.critical(f"Error during processing: {e}", exc_info=True)
