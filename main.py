@@ -39,8 +39,9 @@ def configure_logging(log_level):
     console_handler.setFormatter(formatter)
 
     # Add handlers to the logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    if not logger.hasHandlers():
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
 
 def validate_model_name(model_name: str) -> bool:
     """Validates the OpenAI model name format."""
@@ -50,7 +51,7 @@ def validate_model_name(model_name: str) -> bool:
         "gpt-4-32k",
         "gpt-4-32k-0314",
         "gpt-4o-mini-2024-07-18",
-        "gpt-4o-2024-08-06", # Ensure this model supports function calling
+        "gpt-4o-2024-08-06",  # Ensure this model supports function calling
         # Add other valid model names as needed
     ]
     if model_name in valid_models:
