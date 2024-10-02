@@ -100,6 +100,12 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
                     "methods": methods
                 })
 
+        # If no functions are found, explicitly note it
+        if not structure["functions"]:
+            logger.info("No functions found in the Python source code.")
+        if not structure["classes"]:
+            logger.info("No classes found in the Python source code.")
+
         logger.debug(f"Extracted structure: {structure}")
         return structure
     except SyntaxError as se:
@@ -118,7 +124,7 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
     Parameters:
         original_code (str): The original Python source code.
         documentation (Dict[str, Any]): A dictionary containing documentation details,
-                                        primarily the 'summary' for docstrings.
+                                        primarily the 'summary' and 'changes_made'.
 
     Returns:
         str: The modified Python source code with inserted docstrings.
@@ -217,6 +223,13 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
 
         structure = json.loads(stdout.decode())
         logger.debug(f"Extracted JS/TS structure: {structure}")
+
+        # If no functions are found, explicitly note it
+        if not structure.get("functions"):
+            logger.info(f"No functions found in the {language} source code of '{file_path}'.")
+        if not structure.get("classes"):
+            logger.info(f"No classes found in the {language} source code of '{file_path}'.")
+
         return structure
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON output from JS/TS extraction script: {e}")
@@ -307,7 +320,12 @@ def extract_html_structure(code: str) -> Dict[str, Any]:
                 "children": children
             })
             logger.debug(f"Extracted tag: {tag.name}")
-        logger.debug("Completed extracting HTML structure")
+
+        # If no tags are found, explicitly note it
+        if not structure["tags"]:
+            logger.info("No HTML tags found in the source code.")
+
+        logger.debug(f"Extracted structure: {structure}")
         return structure
     except Exception as e:
         logger.error(f"Error extracting HTML structure: {e}", exc_info=True)
@@ -406,7 +424,12 @@ def extract_css_structure(code: str) -> Dict[str, Any]:
                     "declarations": declarations
                 })
                 logger.debug(f"Extracted rule: {selectors}")
-        logger.debug("Completed extracting CSS structure")
+
+        # If no rules are found, explicitly note it
+        if not structure["rules"]:
+            logger.info("No CSS rules found in the source code.")
+
+        logger.debug(f"Extracted structure: {structure}")
         return structure
     except Exception as e:
         logger.error(f"Error extracting CSS structure: {e}", exc_info=True)
@@ -428,9 +451,7 @@ def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> 
     logger.debug(f"Original CSS code (first 100 chars): {original_code[:100]}...")
     logger.debug(f"Documentation: {documentation}")
     try:
-        soup = BeautifulSoup(original_code, 'html.parser')  # Using BeautifulSoup for CSS comments
-        existing_comments = soup.find_all(string=lambda text: isinstance(text, Comment))
-
+        # CSS doesn't have a standard comment syntax recognized by BeautifulSoup, so we'll manually insert comments
         summary = documentation.get("summary", "").strip()
         changes = documentation.get("changes_made", [])
 
@@ -445,22 +466,16 @@ def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> 
             changes_formatted = "; ".join(changes)
             new_comment_parts.append(f" Changes: {changes_formatted} ")
 
-        new_comment_text = " ".join(new_comment_parts)
+        new_comment_text = "/*" + " ".join(new_comment_parts) + "*/\n"
 
-        duplicate = False
-        for comment in existing_comments:
-            if new_comment_text.strip() in comment:
-                duplicate = True
-                break
-
-        if not duplicate:
-            comment = Comment(new_comment_text)
-            soup.insert(0, comment)
-            logger.debug("Inserted new CSS comment.")
-        else:
+        # Check if the first line is already a comment with the same text
+        if original_code.startswith(new_comment_text):
             logger.debug("CSS comment already exists. Skipping insertion.")
+            return original_code
 
-        modified_code = str(soup)
+        # Insert the new comment at the beginning of the CSS code
+        modified_code = new_comment_text + original_code
+        logger.debug("Inserted new CSS comment.")
         logger.debug("Completed inserting CSS docstrings")
         return modified_code
     except Exception as e:
