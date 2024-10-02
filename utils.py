@@ -65,41 +65,26 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-def load_config(config_path, excluded_dirs, excluded_files, skip_types):
+def load_config(config_path: str, excluded_dirs: set, excluded_files: set, skip_types: set) -> tuple:
     """
-    Loads configuration from a JSON file and updates exclusion sets.
-    
-    Args:
-        config_path (str): Path to the config.json file.
-        excluded_dirs (set): Set of directories to exclude.
-        excluded_files (set): Set of files to exclude.
-        skip_types (set): Set of file extensions to skip.
-    
+    Loads additional configurations from a config.json file.
+
     Returns:
-        dict: Dictionary containing project_info and style_guidelines.
+        Tuple[str, str]: Project information and style guidelines.
     """
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
-        
-        # Update exclusion sets if provided in config
+        project_info = config.get('project_info', '')
+        style_guidelines = config.get('style_guidelines', '')
         excluded_dirs.update(config.get('excluded_dirs', []))
         excluded_files.update(config.get('excluded_files', []))
         skip_types.update(config.get('skip_types', []))
-        
-        project_info = config.get('project_info', '')
-        style_guidelines = config.get('style_guidelines', '')
-        
         return project_info, style_guidelines
-    except FileNotFoundError:
-        logger.warning(f"Configuration file '{config_path}' not found. Using default settings.")
-        return '', ''
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from '{config_path}': {e}")
-        raise
     except Exception as e:
-        logger.error(f"Unexpected error loading config from '{config_path}': {e}")
-        raise
+        logger.error(f"Error loading config file '{config_path}': {e}")
+        return '', ''
+
 
 def get_all_file_paths(repo_path, excluded_dirs, excluded_files):
     """
