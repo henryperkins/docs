@@ -141,7 +141,7 @@ async def process_file(
         try:
             async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
-            logger.debug(f"Read content from '{file_path}'.")
+            logger.debug(f"File content for {file_path}:\n{content}")
         except Exception as e:
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return
@@ -197,24 +197,27 @@ async def extract_code_structure(content: str, file_path: str, language: str) ->
     """
     try:
         if language == "python":
+            logger.debug(f"Extracting Python structure for file '{file_path}'")
             return extract_python_structure(content)
         elif language in ["javascript", "typescript"]:
+            logger.debug(f"Extracting JS/TS structure for file '{file_path}'")
             structure_output = run_node_script('extract_structure.js', content)
             if not structure_output:
                 logger.warning(f"Could not extract code structure from '{file_path}'")
                 return None
             return structure_output
         elif language == "html":
+            logger.debug(f"Extracting HTML structure for file '{file_path}'")
             return extract_html_structure(content)
         elif language == "css":
+            logger.debug(f"Extracting CSS structure for file '{file_path}'")
             return extract_css_structure(content)
         else:
-            logger.warning(f"Language '{language}' not supported for structured extraction.")
+            logger.warning(f"Unsupported language for structure extraction: {language}")
             return None
     except Exception as e:
         logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
         return None
-
 
 async def process_code_documentation(content: str, documentation: dict, language: str, file_path: str) -> tuple[str, list, str]:
     """
