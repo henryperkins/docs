@@ -1,105 +1,129 @@
+// extract_structure.js
+
+const fs = require('fs');
 const babelParser = require('@babel/parser');
 const traverse = require('@babel/traverse').default;
-const fs = require('fs');
-const path = require('path');
-const ts = require('typescript');
 
-const function_schema = {
-    // Your function schema details here
-};
+/**
+ * Reads all data from stdin.
+ * @returns {Promise<string>} The input code as a string.
+ */
+function readStdin() {
+    return new Promise((resolve, reject) => {
+        let data = '';
+        process.stdin.setEncoding('utf-8');
 
-async function extractStructure(filePath) {
-    const code = fs.readFileSync(filePath, 'utf8');
-    let structure = { functions: [], classes: [] };
-
-    try {
-        const ast = babelParser.parse(code, {
-            sourceType: 'module',
-            plugins: [
-                'jsx',
-                'typescript',
-                'classProperties',
-                'decorators-legacy',
-                'objectRestSpread',
-                'dynamicImport',
-                'optionalChaining',
-                'nullishCoalescingOperator'
-            ]
+        process.stdin.on('data', chunk => {
+            data += chunk;
         });
-        traverseJS(ast, structure);
-    } catch (error) {
-        console.error(`Error parsing file ${filePath}: ${error.message}`);
-        process.exit(1);
-    }
+
+        process.stdin.on('end', () => {
+            resolve(data);
+        });
+
+        process.stdin.on('error', err => {
+            reject(err);
+        });
+    });
+}
+
+/**
+ * Extracts the structure of the code, including functions and classes.
+ * @param {object} ast - The Abstract Syntax Tree of the code.
+ * @returns {object} The extracted structure.
+ */
+function extractStructure(ast) {
+    const structure = {
+        functions: [],
+        classes: [],
+    };
+
+    traverse(ast, {
+        FunctionDeclaration(path) {
+            const func = {
+                name: path.node.id.name,
+                params: path.node.params.map(param => param.name || 'unknown'),
+                line: path.node.loc.start.line,
+            };
+            structure.functions.push(func);
+        },
+        VariableDeclaration(path) {
+            // Handle arrow functions assigned to variables
+            path.node.declarations.forEach(declaration => {
+                if (
+                    declaration.init &&
+                    (declaration.init.type === 'ArrowFunctionExpression' ||
+                        declaration.init.type === 'FunctionExpression')
+                ) {
+                    const func = {
+                        name: declaration.id.name,
+                        params: declaration.init.params.map(param => param.name || 'unknown'),
+                        line: declaration.loc.start.line,
+                    };
+                    structure.functions.push(func);
+                }
+            });
+        },
+        ClassDeclaration(path) {
+            const cls = {
+                name: path.node.id.name,
+                methods: [],
+                line: path.node.loc.start.line,
+            };
+
+            path.traverse({
+                ClassMethod(classPath) {
+                    const method = {
+                        name: classPath.node.key.name,
+                        params: classPath.node.params.map(param => param.name || 'unknown'),
+                        kind: classPath.node.kind, // constructor, method, getter, setter
+                        line: classPath.node.loc.start.line,
+                    };
+                    cls.methods.push(method);
+                },
+                ClassProperty(classPath) {
+                    // Handle class properties if needed
+                },
+            });
+
+            structure.classes.push(cls);
+        },
+    });
 
     return structure;
 }
 
-function traverseJS(ast, structure) {
-    traverse(ast, {
-        FunctionDeclaration(path) {
-            const funcName = path.node.id.name;
-            const params = path.node.params.map(param => param.name);
-            const jsDoc = getJSJSDoc(path);
-            structure.functions.push({
-                name: funcName,
-                params: params,
-                docstring: jsDoc
-            });
-        },
-        ClassDeclaration(path) {
-            const className = path.node.id.name;
-            const classDoc = getJSJSDoc(path);
-            const methods = [];
-            path.traverse({
-                ClassMethod(methodPath) {
-                    const methodName = methodPath.node.key.name;
-                    const methodParams = methodPath.node.params.map(param => param.name);
-                    const methodDoc = getJSJSDoc(methodPath);
-                    methods.push({
-                        name: methodName,
-                        params: methodParams,
-                        docstring: methodDoc
-                    });
-                }
-            });
-            structure.classes.push({
-                name: className,
-                docstring: classDoc,
-                methods: methods
-            });
+/**
+ * Main function to execute the script.
+ */
+async function main() {
+    try {
+        const inputCode = await readStdin();
+
+        if (!inputCode.trim()) {
+            console.error('No input provided.');
+            process.exit(1);
         }
-    });
-}
 
-function getJSJSDoc(path) {
-    const comments = path.node.leadingComments;
-    if (comments && comments.length > 0) {
-        const jsDoc = comments.find(comment => comment.type === 'CommentBlock' && comment.value.startsWith('*'));
-        if (jsDoc) {
-            return jsDoc.value.replace(/^\*/, '').trim();
-        }
-    }
-    return '';
-}
+        const ast = babelParser.parse(inputCode, {
+            sourceType: 'module',
+            plugins: [
+                'typescript',
+                'jsx',
+                'classProperties',
+                'decorators-legacy',
+                'dynamicImport',
+                // Add other plugins as needed
+            ],
+        });
 
-module.exports = { extractStructure };
+        const structure = extractStructure(ast);
 
-// Main Execution
-if (require.main === module) {
-    const filePath = process.argv[2];
-    if (!filePath) {
-        console.error('Usage: node extract_structure.js <path_to_js_or_ts_file>');
-        process.exit(1);
-    }
-
-    const absolutePath = path.resolve(filePath);
-    if (!fs.existsSync(absolutePath)) {
-        console.error(`File not found: ${absolutePath}`);
-        process.exit(1);
-    }
-
-    extractStructure(absolutePath).then(structure => {
         console.log(JSON.stringify(structure, null, 2));
-    });
+    } catch (error) {
+        console.error(`Error parsing JS/TS file: ${error.message}`);
+        process.exit(1);
+    }
 }
+
+main();
