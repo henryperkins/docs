@@ -483,22 +483,6 @@ async def process_all_files(
     safe_mode: bool = False,
     output_file: str = 'output.md'
 ) -> None:
-    """
-    Processes all files concurrently and writes the combined documentation to the output file.
-
-    Parameters:
-        session (aiohttp.ClientSession): The HTTP session for API calls.
-        file_paths (List[str]): List of file paths to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API calls.
-        model_name (str): OpenAI model to use.
-        function_schema (dict): JSON schema for OpenAI function calling.
-        repo_root (str): Root directory of the repository.
-        project_info (str): Information about the project.
-        style_guidelines (str): Style guidelines for documentation.
-        safe_mode (bool): If True, do not modify files.
-        output_file (str): Path to the output Markdown report.
-    """
     logger.info('Starting process of all files.')
     tasks = []
     for file_path in file_paths:
@@ -527,7 +511,7 @@ async def process_all_files(
     logger.info('Completed processing all files.')
 
     # After processing all files, combine the contents
-    final_content = '\n'.join(documentation_contents)
+    final_content = '\n\n'.join(documentation_contents)
 
     # Generate TOC
     toc = generate_table_of_contents(final_content)
