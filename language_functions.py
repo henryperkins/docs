@@ -197,8 +197,18 @@ def is_valid_python_code(code: str) -> bool:
         return False
 
 
-# JS/TS-specific functions
 async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
+    """
+    Extracts the structure of JavaScript/TypeScript code by running an external Node.js script.
+
+    Parameters:
+        file_path (str): The path to the JS/TS file.
+        code (str): The JS/TS source code.
+        language (str): The programming language ('javascript' or 'typescript').
+
+    Returns:
+        Optional[Dict[str, Any]]: The extracted structure as a dictionary, or None if extraction fails.
+    """
     logger.debug('Starting extract_js_ts_structure')
     try:
         script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract_structure.js')
@@ -306,36 +316,19 @@ def extract_html_structure(code: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: A dictionary containing the HTML structure.
     """
-    logger.debug("Starting extract_html_structure")
-    logger.debug(f"HTML code (first 100 chars): {code[:100]}...")
+    logger.debug('Starting extract_html_structure')
     try:
         soup = BeautifulSoup(code, 'html.parser')
-        structure = {
-            "tags": []
-        }
+        structure = {'tags': []}
         for tag in soup.find_all(True):
-            children = []
-            for child in tag.children:
-                if child.name:
-                    children.append({
-                        "name": child.name,
-                        "attributes": child.attrs
-                    })
-            structure["tags"].append({
-                "name": tag.name,
-                "attributes": tag.attrs,
-                "children": children
+            structure['tags'].append({
+                'name': tag.name,
+                'attributes': tag.attrs
             })
-            logger.debug(f"Extracted tag: {tag.name}")
-
-        # If no tags are found, explicitly note it
-        if not structure["tags"]:
-            logger.info("No HTML tags found in the source code.")
-
-        logger.debug(f"Extracted structure: {structure}")
+            logger.debug(f'Extracted tag: {tag.name}')
         return structure
     except Exception as e:
-        logger.error(f"Error extracting HTML structure: {e}", exc_info=True)
+        logger.error(f'Error extracting HTML structure: {e}', exc_info=True)
         return {}
 
 
@@ -399,6 +392,8 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
 
 
 # CSS-specific functions
+# language_functions.py
+
 def extract_css_structure(code: str) -> Dict[str, Any]:
     """
     Extracts the structure of CSS code, including selectors and declarations.
@@ -409,13 +404,10 @@ def extract_css_structure(code: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: A dictionary containing the CSS structure.
     """
-    logger.debug("Starting extract_css_structure")
-    logger.debug(f"CSS code (first 100 chars): {code[:100]}...")
+    logger.debug('Starting extract_css_structure')
     try:
         rules = tinycss2.parse_stylesheet(code, skip_whitespace=True, skip_comments=True)
-        structure = {
-            "rules": []
-        }
+        structure = {'rules': []}
         for rule in rules:
             if rule.type == 'qualified-rule':
                 selectors = ''.join([token.serialize() for token in rule.prelude]).strip()
@@ -423,25 +415,18 @@ def extract_css_structure(code: str) -> Dict[str, Any]:
                 for decl in tinycss2.parse_declaration_list(rule.content):
                     if decl.type == 'declaration':
                         declarations.append({
-                            "property": decl.name,
-                            "value": ''.join([token.serialize() for token in decl.value]).strip()
+                            'property': decl.lower_name,
+                            'value': ''.join([token.serialize() for token in decl.value]).strip()
                         })
-                structure["rules"].append({
-                    "selectors": selectors,
-                    "declarations": declarations
+                structure['rules'].append({
+                    'selectors': selectors,
+                    'declarations': declarations
                 })
-                logger.debug(f"Extracted rule: {selectors}")
-
-        # If no rules are found, explicitly note it
-        if not structure["rules"]:
-            logger.info("No CSS rules found in the source code.")
-
-        logger.debug(f"Extracted structure: {structure}")
+                logger.debug(f'Extracted rule: {selectors}')
         return structure
     except Exception as e:
-        logger.error(f"Error extracting CSS structure: {e}", exc_info=True)
+        logger.error(f'Error extracting CSS structure: {e}', exc_info=True)
         return {}
-
 
 def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
