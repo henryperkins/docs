@@ -358,71 +358,88 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
 async def write_documentation_report(
-    output_file: str, summary: str, changes: list, new_content: str, language: str,
-    output_lock: asyncio.Lock, file_path: str, repo_root: str
+    output_file: str,
+    summary: str,
+    changes: list,
+    new_content: str,
+    language: str,
+    output_lock: asyncio.Lock,
+    file_path: str,
+    repo_root: str
 ) -> None:
+    """
+    Writes the summary, changes, and new content to the output markdown report.
+
+    Parameters:
+        output_file (str): Path to the output Markdown file.
+        summary (str): Summary of the documentation.
+        changes (list): List of changes made.
+        new_content (str): Modified source code with inserted documentation.
+        language (str): Programming language.
+        output_lock (asyncio.Lock): Lock for synchronizing file writes.
+        file_path (str): Path to the source file.
+        repo_root (str): Root path of the repository.
+    """
     try:
+        # Determine the relative path of the file for documentation
         relative_path = os.path.relpath(file_path, repo_root)
+
         async with output_lock:
-            async with aiofiles.open(output_file, "a", encoding="utf-8") as f:
-                # Write file header
-                header = f"# File: {relative_path}\n\n"
-                summary_section = f"## Summary\n\n{summary}\n\n"
-                changes_section = "## Changes Made\n\n"
-                
+            async with aiofiles.open(output_file, 'a', encoding='utf-8') as f:
+                # Create the header and sections for the documentation
+                header = f'# File: {relative_path}\n\n'
+                summary_section = f'## Summary\n\n{summary}\n\n'
+
+                changes_section = '## Changes Made\n\n'
                 if changes:
-                    changes_section += "\n".join(f"- {change}" for change in changes) + "\n\n"
+                    changes_section += '\n'.join(f'- {change}' for change in changes) + '\n\n'
                 else:
-                    changes_section += "No changes were made to this file.\n\n"
+                    changes_section += 'No changes were made to this file.\n\n'
 
-                # Extract structure for functions and classes
+                # Extract code structure from the new content
                 structure = await extract_code_structure(new_content, file_path, language)
-                
-                # Function table header
-                function_table_header = "| Function | Arguments | Description |\n|----------|-----------|-------------|\n"
-                function_table_rows = ""
-                
-                # If no functions are present
-                if not structure.get("functions"):
-                    function_table_rows = "| No functions are defined in this file. | | |\n"
-                else:
-                    for func in structure["functions"]:
-                        func_name = func.get("name", "Unnamed Function")
-                        func_args = ", ".join(func.get("args", []))
-                        func_doc = func.get("docstring", "No description provided.")
-                        async_prefix = "async " if func.get("async", False) else ""
-                        function_table_rows += f"| `{async_prefix}{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
 
-                # Class table header
-                class_table_header = "## Classes\n\n"
-                class_table_rows = ""
-                
-                # If no classes are present
-                if not structure.get("classes"):
-                    class_table_rows = "No classes are defined in this file.\n\n"
+                # Build function table
+                function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
+                function_table_rows = ''
+                if not structure.get('functions'):
+                    function_table_rows = '| No functions are defined in this file. | | |\n'
                 else:
-                    for cls in structure["classes"]:
-                        cls_name = cls.get("name", "Unnamed Class")
-                        class_table_rows += f"### `{cls_name}`\n\n"
+                    for func in structure['functions']:
+                        func_name = func.get('name', 'Unnamed Function')
+                        func_args = ', '.join(func.get('args', []))
+                        func_doc = func.get('docstring', 'No description provided.')
+                        func_type = 'async ' if func.get('async', False) else ''
+                        function_table_rows += f"| `{func_type}{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
 
-                        if cls.get("methods"):
-                            class_table_rows += "#### Methods:\n\n"
-                            for method in cls["methods"]:
-                                method_name = method.get("name", "Unnamed Method")
-                                method_args = ", ".join(method.get("args", []))
-                                method_doc = method.get("docstring", "No description provided.")
-                                async_prefix = "async " if method.get("async", False) else ""
-                                class_table_rows += f"- **`{async_prefix}{method_name}({method_args})`**: {method_doc.splitlines()[0]}\n"
+                # Build class table
+                class_table_header = '## Classes\n\n'
+                class_table_rows = ''
+                if not structure.get('classes'):
+                    class_table_rows = 'No classes are defined in this file.\n\n'
+                else:
+                    for cls in structure['classes']:
+                        cls_name = cls.get('name', 'Unnamed Class')
+                        class_table_rows += f'### `{cls_name}`\n\n'
+                        if cls.get('methods'):
+                            class_table_rows += '#### Methods:\n\n'
+                            for method in cls['methods']:
+                                method_name = method.get('name', 'Unnamed Method')
+                                method_args = ', '.join(method.get('args', []))
+                                method_doc = method.get('docstring', 'No description provided.')
+                                method_type = 'async ' if method.get('async', False) else ''
+                                class_table_rows += f"- **`{method_type}{method_name}({method_args})`**: {method_doc.splitlines()[0]}\n"
                         else:
-                            class_table_rows += "No methods defined in this class.\n\n"
+                            class_table_rows += 'No methods defined in this class.\n\n'
 
-                code_block = f"```{language}\n{new_content}\n```\n\n---\n\n"
+                # Include the code block with syntax highlighting
+                code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
 
-                # Write to file
+                # Write all sections to the output file
                 await f.write(header)
                 await f.write(summary_section)
                 await f.write(changes_section)
-                await f.write("## Functions\n\n")
+                await f.write('## Functions\n\n')
                 await f.write(function_table_header)
                 await f.write(function_table_rows)
                 await f.write(class_table_header)
@@ -431,7 +448,6 @@ async def write_documentation_report(
 
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
-
 
 
 async def process_all_files(
