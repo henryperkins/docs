@@ -365,10 +365,10 @@ async def write_documentation_report(
         file_header = f'# File: {relative_path}\n\n'
 
         # Prepare the documentation sections
-        summary_section = f'## Summary\n\n{summary}\n\n'
+        summary_section = f'## Summary\n\n{summary.strip()}\n\n'
         changes_section = '## Changes Made\n\n'
         if changes:
-            changes_section += '\n'.join(f'- {change}' for change in changes) + '\n\n'
+            changes_section += '\n'.join(f'- {change.strip()}' for change in changes) + '\n\n'
         else:
             changes_section += 'No changes were made to this file.\n\n'
 
@@ -377,10 +377,10 @@ async def write_documentation_report(
 
         # Build the functions section
         function_section = ''
-        function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
-        function_table_rows = ''
         if structure.get('functions'):
             function_section += '## Functions\n\n'
+            function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
+            function_table_rows = ''
             for func in structure['functions']:
                 func_name = func.get('name', 'Unnamed Function')
                 func_args = ', '.join(func.get('args', []))
@@ -397,16 +397,21 @@ async def write_documentation_report(
             class_section += '## Classes\n\n'
             for cls in structure['classes']:
                 cls_name = cls.get('name', 'Unnamed Class')
-                class_section += f'### `{cls_name}`\n\n'
+                class_section += f'### Class: `{cls_name}`\n\n'
+                class_doc = cls.get('docstring', 'No description provided.')
+                class_section += f"{class_doc}\n\n"
+
                 if cls.get('methods'):
                     class_section += '#### Methods:\n\n'
+                    method_table_header = '| Method | Arguments | Description |\n|--------|-----------|-------------|\n'
+                    method_table_rows = ''
                     for method in cls['methods']:
                         method_name = method.get('name', 'Unnamed Method')
                         method_args = ', '.join(method.get('args', []))
                         method_doc = method.get('docstring', 'No description provided.')
                         method_type = 'async ' if method.get('async', False) else ''
-                        class_section += f"- **`{method_type}{method_name}({method_args})`**: {method_doc.splitlines()[0]}\n"
-                    class_section += '\n'
+                        method_table_rows += f"| `{method_type}{method_name}` | `{method_args}` | {method_doc.splitlines()[0]} |\n"
+                    class_section += method_table_header + method_table_rows + '\n'
                 else:
                     class_section += 'No methods defined in this class.\n\n'
         else:
@@ -431,32 +436,6 @@ async def write_documentation_report(
         logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
         return ''
 
-
-
-def generate_table_of_contents(markdown_content: str) -> str:
-    """
-    Generates a markdown table of contents from the given markdown content.
-
-    Parameters:
-        markdown_content (str): The markdown content to generate the TOC from.
-
-    Returns:
-        str: The generated table of contents in markdown format.
-    """
-    import re
-
-    toc = []
-    for line in markdown_content.split('\n'):
-        match = re.match(r'^(#{2,6})\s+(.*)', line)
-        if match:
-            level = len(match.group(1)) - 1  # Adjust level to start from 1
-            title = match.group(2).strip()
-            # Generate an anchor link
-            anchor = re.sub(r'[^\w\s-]', '', title).lower()
-            anchor = re.sub(r'\s+', '-', anchor)
-            toc.append(f'{"  " * (level - 1)}- [{title}](#{anchor})')
-    return '\n'.join(toc)
-
 def generate_table_of_contents(markdown_content: str) -> str:
     """
     Generates a markdown table of contents from the given markdown content.
@@ -472,9 +451,9 @@ def generate_table_of_contents(markdown_content: str) -> str:
     toc = []
     seen_anchors = set()
     for line in markdown_content.split('\n'):
-        match = re.match(r'^(#{2,6})\s+(.*)', line)
+        match = re.match(r'^(#{1,6})\s+(.*)', line)
         if match:
-            level = len(match.group(1)) - 1  # Adjust level to start from 1
+            level = len(match.group(1))  # Heading level (1 to 6)
             title = match.group(2).strip()
             # Generate an anchor link
             anchor = re.sub(r'[^\w\s\-]', '', title).lower()
@@ -486,7 +465,8 @@ def generate_table_of_contents(markdown_content: str) -> str:
                 anchor = f"{original_anchor}-{counter}"
                 counter += 1
             seen_anchors.add(anchor)
-            toc.append(f'{"  " * (level - 1)}- [{title}](#{anchor})')
+            indent = '  ' * (level - 1)
+            toc.append(f'{indent}- [{title}](#{anchor})')
     return '\n'.join(toc)
 
 
