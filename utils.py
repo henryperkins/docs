@@ -130,6 +130,68 @@ def format_with_black(code: str) -> str:
         logger.error(f"Error formatting code with Black: {e}")
         return code  # Return the original code if formatting fails
 
+def clean_unused_imports(code: str) -> str:
+    """
+    Removes unused imports from Python code using autoflake.
+    
+    Parameters:
+        code (str): The Python code to clean.
+    
+    Returns:
+        str: The cleaned Python code.
+    """
+    try:
+        cleaned_code = subprocess.check_output(
+            ['autoflake', '--remove-all-unused-imports', '--in-place', '--stdout'],
+            input=code.encode('utf-8'),
+            stderr=subprocess.STDOUT
+        )
+        logger.debug("Successfully removed unused imports with autoflake.")
+        return cleaned_code.decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Autoflake failed: {e.output.decode('utf-8')}")
+        return code  # Return original code if autoflake fails
+    except FileNotFoundError:
+        logger.error("Autoflake is not installed. Please install it using 'pip install autoflake'.")
+        return code
+    except Exception as e:
+        logger.error(f"Error cleaning imports with autoflake: {e}")
+        return code
+
+def check_with_flake8(file_path: str) -> bool:
+    """
+    Checks Python code compliance using flake8 and attempts to fix issues if found.
+    
+    Parameters:
+        file_path (str): Path to the Python file to check.
+    
+    Returns:
+        bool: True if the code passes flake8 checks after fixes, False otherwise.
+    """
+    logger.debug(f"Entering check_with_flake8 with file_path={file_path}")
+    result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
+    if result.returncode == 0:
+        logger.debug(f"No flake8 issues in {file_path}")
+        return True
+    else:
+        logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
+        # Attempt to auto-fix with autoflake and black
+        try:
+            logger.info(f"Attempting to auto-fix flake8 issues in {file_path}")
+            subprocess.run(['autoflake', '--remove-all-unused-imports', '--in-place', file_path], check=True)
+            subprocess.run(['black', '--quiet', file_path], check=True)
+            # Re-run flake8 to confirm
+            result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.debug(f"No flake8 issues after auto-fix in {file_path}")
+                return True
+            else:
+                logger.error(f"flake8 issues remain after auto-fix in {file_path}:\n{result.stdout}")
+                return False
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
+            return False
+
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """Checks if a file extension is valid (not in the skip list)."""
     return ext.lower() not in skip_types
