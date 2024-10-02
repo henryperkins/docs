@@ -442,6 +442,7 @@ async def write_documentation_report(
     except Exception as e:
         logger.error(f"Error writing documentation for '{file_path}': {e}", exc_info=True)
 
+
 async def process_all_files(
     session: aiohttp.ClientSession,
     file_paths: List[str],
