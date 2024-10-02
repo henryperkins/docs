@@ -218,7 +218,7 @@ def run_flake8(file_path: str) -> Optional[str]:
         logger.error(f"Error running flake8 on '{file_path}': {e}", exc_info=True)
         return None
 
-def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any]]:
+def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, any]]:
     """
     Runs a Node.js script that outputs JSON (e.g., extract_structure.js) and returns the parsed JSON.
 
