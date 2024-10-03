@@ -147,7 +147,7 @@ async def extract_code_structure(content: str, file_path: str, language: str) ->
         if language == 'python':
             return extract_python_structure(content)
         elif language in ['javascript', 'typescript']:
-            return await extract_js_ts_structure(content, language)
+            return await extract_js_ts_structure(content, file_path, language)
         elif language == 'html':
             return extract_html_structure(content)
         elif language == 'css':
