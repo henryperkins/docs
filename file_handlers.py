@@ -143,9 +143,6 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
     finally:
         logger.debug("Exiting insert_docstrings_for_file")
 
-
-# file_handlers.py
-
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -184,7 +181,7 @@ async def process_file(
             return ''
 
         code_structure = await extract_code_structure(content, file_path, language)
-        if not code_structure:
+        if not code_structure or (not code_structure.get('functions') and not code_structure.get('classes')):
             logger.warning(f"Could not extract code structure from '{file_path}'")
             return ''
 
@@ -234,7 +231,8 @@ async def process_file(
             classes=classes,
             language=language,
             file_path=file_path,
-            repo_root=repo_root
+            repo_root=repo_root,
+            new_content=new_content
         )
 
         logger.info(f"Successfully processed and documented '{file_path}'")
@@ -243,7 +241,6 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
         return ''
-
 
 async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
     try:
@@ -303,7 +300,6 @@ async def process_code_documentation(
     except Exception as e:
         logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
         return content
-        
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
     """
