@@ -1,0 +1,62 @@
+{
+  "$id": "https://example.com/js-ts-structure.schema.json",
+  "type": "object",
+  "properties": {
+    "functions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/function" }
+    },
+    "classes": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/class" }
+    }
+  },
+  "required": ["functions", "classes"],
+  "definitions": {
+    "function": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "async": { "type": "boolean" },
+        "docstring": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["name", "args", "async"]
+    },
+    "class": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "methods": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/method" }
+        },
+        "docstring": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["name", "methods"]
+    },
+    "method": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "async": { "type": "boolean" },
+        "kind": { "type": "string" },
+        "docstring": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["name", "args", "async", "kind"]
+    }
+  }
+}
