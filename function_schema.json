@@ -1,67 +1,70 @@
 {
-  "$id": "https://example.com/documentation.schema.json",
-  "type": "object",
-  "properties": {
-    "summary": {
-      "type": "string",
-      "description": "A detailed summary of the file."
+  "name": "generate_documentation",
+  "description": "Generates comprehensive documentation for the provided code structure.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "A detailed summary of the file."
+      },
+      "changes_made": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "List of changes made to the file."
+      },
+      "functions": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/function" },
+        "description": "List of documented functions."
+      },
+      "classes": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/class" },
+        "description": "List of documented classes."
+      }
     },
-    "changes_made": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "List of changes made to the file."
-    },
-    "functions": {
-      "type": "array",
-      "items": { "$ref": "#/definitions/function" },
-      "description": "List of documented functions."
-    },
-    "classes": {
-      "type": "array",
-      "items": { "$ref": "#/definitions/class" },
-      "description": "List of documented classes."
-    }
-  },
-  "required": ["summary"],
-  "definitions": {
-    "function": {
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "docstring": { "type": "string" },
-        "args": {
-          "type": "array",
-          "items": { "type": "string" }
+    "required": ["summary"],
+    "definitions": {
+      "function": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "docstring": { "type": "string" },
+          "args": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "async": { "type": "boolean" }
         },
-        "async": { "type": "boolean" }
+        "required": ["name", "docstring", "args", "async"]
       },
-      "required": ["name", "docstring", "args", "async"]
-    },
-    "class": {
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "docstring": { "type": "string" },
-        "methods": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/method" }
-        }
-      },
-      "required": ["name", "docstring", "methods"]
-    },
-    "method": {
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "docstring": { "type": "string" },
-        "args": {
-          "type": "array",
-          "items": { "type": "string" }
+      "class": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "docstring": { "type": "string" },
+          "methods": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/method" }
+          }
         },
-        "async": { "type": "boolean" },
-        "type": { "type": "string" }
+        "required": ["name", "docstring", "methods"]
       },
-      "required": ["name", "docstring", "args", "async", "type"]
+      "method": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "docstring": { "type": "string" },
+          "args": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "async": { "type": "boolean" },
+          "type": { "type": "string" }
+        },
+        "required": ["name", "docstring", "args", "async", "type"]
+      }
     }
   }
 }
