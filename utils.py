@@ -394,6 +394,8 @@ def extract_json_from_response(response: str) -> Optional[dict]:
     except json.JSONDecodeError:
         return None
 
+# utils.py
+
 def generate_documentation_prompt(
     code_structure: dict,
     project_info: Optional[str],
@@ -414,7 +416,7 @@ def generate_documentation_prompt(
     """
     prompt = (
         "You are a highly skilled software developer tasked with generating comprehensive documentation "
-        "for a codebase. Your output must strictly adhere to the specified JSON schema."
+        "for a codebase. Please produce the required fields as per the function specification."
     )
     if project_info:
         prompt += f"\n\nProject Information:\n{project_info}"
@@ -427,17 +429,13 @@ def generate_documentation_prompt(
     prompt += """
     
 Instructions:
-- Generate the documentation as a JSON object matching the following schema:
-  {
-    "summary": "string",
-    "changes_made": ["string", ...]
-  }
-- **Only** provide the JSON output. Do not include any additional text.
-- Do not include any notes, explanations, disclaimers, or external content.
-- Ensure the JSON is correctly formatted and parsable.
-"""
+- Generate the required fields for the 'generate_documentation' function based on the provided information.
+- **Only** provide the JSON object with the function arguments. Do not include any additional text.
+- Ensure the JSON is correctly formatted and matches the function's parameter schema.
+    """
     return prompt
 
+# utils.py
 
 async def fetch_documentation(
     session: aiohttp.ClientSession,
@@ -470,12 +468,16 @@ async def fetch_documentation(
         'model': model_name,
         'messages': [
             {
+                'role': 'system',
+                'content': 'You generate documentation based on code structure. Only output the function arguments in JSON format without any additional text.'
+            },
+            {
                 'role': 'user',
                 'content': prompt
             }
         ],
         'functions': [function_schema],
-        'function_call': {'name': 'generate_documentation'}  # Explicitly call the function
+        'function_call': {'name': 'generate_documentation'}
     }
 
     for attempt in range(1, retry + 1):
@@ -518,7 +520,6 @@ async def fetch_documentation(
                 logger.error('All retry attempts failed.')
                 return None
     return None
-
 
 async def fetch_summary(
     session: aiohttp.ClientSession,
