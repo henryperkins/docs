@@ -230,8 +230,8 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str, func
             'functionSchema': function_schema  # Include the schema in the data
         }
 
-        # Run acorn.js as a subprocess (remove extra .encode())
-        process = subprocess.run(['node', script_path], input=json.dumps(data_to_send).encode(), capture_output=True, text=True)
+        # Run acorn.js as a subprocess
+        process = subprocess.run(['node', script_path], input=json.dumps(data_to_send), capture_output=True, text=True)
 
         if process.returncode == 0:
             # Parse the JSON output from acorn.js
@@ -247,7 +247,7 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str, func
     except Exception as e:
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
-
+        
 def extract_structure_from_acorn_ast(ast_data: dict) -> Dict[str, Any]:
     """
     Extracts the desired structure (functions, classes, etc.) from the acorn.js AST.
