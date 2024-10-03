@@ -1,13 +1,11 @@
 # language_functions.py
 
 import os
-import fnmatch
 import json
 import ast
 import asyncio
 import subprocess
 import logging
-import traceback
 import tempfile
 import astor
 import esprima
