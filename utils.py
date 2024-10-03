@@ -65,7 +65,16 @@ LANGUAGE_MAPPING = {
 
 def get_language(ext: str) -> str:
     """Determines the programming language based on file extension."""
-    return LANGUAGE_MAPPING.get(ext.lower(), 'plaintext')
+    language = LANGUAGE_MAPPING.get(ext.lower(), "plaintext")
+    logger.debug(f"Detected language for extension '{ext}': {language}")
+    return language
+
+
+def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
+    """Checks if a file extension is valid (not in the skip list)."""
+    is_valid = ext.lower() not in skip_types
+    logger.debug(f"Extension '{ext}' is valid: {is_valid}")
+    return is_valid
 
 def is_binary(file_path: str) -> bool:
     """Checks if a file is binary."""
@@ -75,10 +84,6 @@ def is_binary(file_path: str) -> bool:
     except Exception as e:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
-
-def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
-    """Checks if a file extension is valid (not in the skip list)."""
-    return ext.lower() not in skip_types
 
 def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
     """Retrieves all file paths in the repository, excluding specified directories and files."""
