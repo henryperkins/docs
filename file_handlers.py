@@ -142,23 +142,40 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
     finally:
         logger.debug("Exiting insert_docstrings_for_file")
 
-async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
+async def extract_code_structure(
+    content: str, file_path: str, language: str
+) -> Optional[dict]:
+    """Extracts code structure based on language."""
+    logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
     try:
-        if language == 'python':
+        if language == "python":
             return extract_python_structure(content)
-        elif language in ['javascript', 'typescript']:
-            return await extract_js_ts_structure(content, file_path, language)
-        elif language == 'html':
+        elif language in ["javascript", "typescript"]:
+            return await extract_js_ts_structure(file_path, content, language)
+        elif language == "html":
             return extract_html_structure(content)
-        elif language == 'css':
+        elif language == "css":
             return extract_css_structure(content)
+        elif language == "json":
+            logger.debug(f"Processing JSON file: {file_path}")
+            try:
+                # Attempt to parse the JSON content
+                json.loads(content)
+                logger.debug(f"Successfully parsed JSON content from {file_path}")
+                # You might want to return a specific structure for JSON files here
+                return {"type": "json", "content": content}
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing JSON from {file_path}: {e}")
+                return None
         else:
-            logger.warning(f'Unsupported language for structure extraction: {language}')
+            logger.warning(f"Unsupported language for structure extraction: {language}")
             return None
     except Exception as e:
-        logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
+        logger.error(
+            f"Error extracting structure from '{file_path}': {e}", exc_info=True
+        )
         return None
-
+        
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
