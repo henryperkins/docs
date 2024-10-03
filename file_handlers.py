@@ -99,16 +99,7 @@ async def process_file(
     validates, and returns the documentation content to be added to the report.
 
     Parameters:
-        session (aiohttp.ClientSession): The HTTP session.
-        file_path (str): Path to the source file.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): The AI model to use.
-        function_schema (dict): The function schema for structured responses.
-        repo_root (str): Root directory of the repository.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Style guidelines for the documentation.
-        safe_mode (bool): If True, do not modify files.
+        ... (existing parameters)
 
     Returns:
         Optional[str]: The documentation content for the file or None if failed.
@@ -135,42 +126,50 @@ async def process_file(
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return None
 
-        code_structure = await extract_code_structure(content, file_path, language, function_schema)
-        if not code_structure:
-            logger.warning(f"Could not extract code structure from '{file_path}'")
-            return None
+        # Initialize documentation to None
+        documentation = None
 
-        logger.debug(f'Extracted code structure for {file_path}: {code_structure}')
-        prompt = generate_documentation_prompt(
-            file_name=os.path.basename(file_path),
-            code_structure=code_structure,
-            project_info=project_info,
-            style_guidelines=style_guidelines,
-            language=language
-        )
-        documentation = await fetch_documentation(
-            session=session,
-            prompt=prompt,
-            semaphore=semaphore,
-            model_name=model_name,
-            function_schema=function_schema
-        )
-        if not documentation:
-            logger.error(f"Failed to generate documentation for '{file_path}'.")
-            return None
-
-        logger.debug(f"Received documentation for '{file_path}': {documentation}")
+        try:
+            code_structure = await extract_code_structure(content, file_path, language, function_schema)
+            if not code_structure:
+                logger.warning(f"Could not extract code structure from '{file_path}'")
+            else:
+                logger.debug(f'Extracted code structure for {file_path}: {code_structure}')
+                prompt = generate_documentation_prompt(
+                    file_name=os.path.basename(file_path),
+                    code_structure=code_structure,
+                    project_info=project_info,
+                    style_guidelines=style_guidelines,
+                    language=language
+                )
+                documentation = await fetch_documentation(
+                    session=session,
+                    prompt=prompt,
+                    semaphore=semaphore,
+                    model_name=model_name,
+                    function_schema=function_schema
+                )
+                if not documentation:
+                    logger.error(f"Failed to generate documentation for '{file_path}'.")
+        except Exception as e:
+            logger.error(f"Error during code structure extraction or documentation generation for '{file_path}': {e}", exc_info=True)
 
         # Process code documentation (insert docstrings/comments)
-        new_content = await process_code_documentation(
-            content, documentation, language, file_path
-        )
-
-        if not safe_mode:
-            await backup_and_write_new_content(file_path, new_content)
-            logger.info(f"Documentation inserted into '{file_path}'")
+        if documentation:
+            try:
+                new_content = await process_code_documentation(
+                    content, documentation, language, file_path
+                )
+                if not safe_mode:
+                    await backup_and_write_new_content(file_path, new_content)
+                    logger.info(f"Documentation inserted into '{file_path}'")
+                else:
+                    logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
+            except Exception as e:
+                logger.error(f"Error processing code documentation for '{file_path}': {e}", exc_info=True)
+                new_content = content  # Use original content if processing fails
         else:
-            logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
+            new_content = content  # Use original content if documentation generation failed
 
         # Generate documentation report content
         file_content = await write_documentation_report(
@@ -181,7 +180,7 @@ async def process_file(
             new_content=new_content
         )
 
-        logger.info(f"Successfully processed and documented '{file_path}'")
+        logger.info(f"Finished processing '{file_path}'")
         return file_content
 
     except Exception as e:
