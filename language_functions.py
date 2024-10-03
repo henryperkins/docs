@@ -294,47 +294,23 @@ def extract_methods_from_class(node) -> List[Dict[str, Any]]:
 async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
     logger.debug("Starting extract_js_ts_structure")
     try:
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract_structure.js')
-        logger.debug(f"Script path: {script_path}")
+        parsed = esprima.parseScript(code, tolerant=True, comment=True, attachComment=True)
+        structure = {
+            'functions': extract_functions_from_js_ts(code),
+            'classes': []
+        }
 
-        if not os.path.isfile(script_path):
-            logger.error(f"JS/TS extraction script '{script_path}' not found.")
-            return None
+        for node in parsed.body:
+            if node.type == 'ClassDeclaration':
+                class_data = {
+                    'name': node.id.name,
+                    'methods': extract_methods_from_class(node),
+                    'docstring': extract_js_ts_docstring(node)
+                }
+                structure['classes'].append(class_data)
 
-        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.js' if language == 'javascript' else '.ts') as temp_file:
-            temp_file.write(code)
-            temp_file_path = temp_file.name
-            logger.debug(f"Temp file created: {temp_file_path}")
-
-        process = await asyncio.create_subprocess_exec(
-            'node',
-            script_path,
-            temp_file_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        logger.debug(f"Subprocess created: {process}")
-
-        stdout, stderr = await process.communicate()
-        logger.debug(f"Process stdout: {stdout.decode()}")
-        logger.debug(f"Process stderr: {stderr.decode()}")
-
-        os.remove(temp_file_path)
-        logger.debug(f"Temp file removed: {temp_file_path}")
-
-        if process.returncode != 0:
-            logger.error(f"JS/TS extraction script error for '{file_path}': {stderr.decode().strip()}")
-            return None
-
-        stdout_content = stdout.decode().strip()
-        try:
-            structure = json.loads(stdout_content)
-            logger.debug(f"Extracted JS/TS structure: {structure}")
-            return structure
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON output from JS/TS extraction script: {e}")
-            logger.error(f"Script output:\n{stdout_content}")
-            return None
+        logger.debug(f"Extracted JS/TS structure: {structure}")
+        return structure
 
     except Exception as e:
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
@@ -342,7 +318,7 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
 
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
-    Inserts docstrings into JavaScript/TypeScript code by running an external Node.js script.
+    Inserts docstrings into JavaScript/TypeScript code using esprima.
 
     Parameters:
         original_code (str): The original JS/TS source code.
@@ -356,38 +332,49 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
     logger.debug(f'Documentation: {documentation}')
 
     try:
-        # Define the path to the Node.js script
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'insert_docstrings.js')
-        if not os.path.isfile(script_path):
-            logger.error(f"JS/TS insertion script '{script_path}' not found.")
-            return original_code
+        parsed = esprima.parseScript(original_code, tolerant=True, comment=True, attachComment=True)
 
-        # Write the original code to a temporary file
-        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.js') as code_file:
-            code_file.write(original_code)
-            code_file_path = code_file.name
+        for node in parsed.body:
+            if node.type == 'FunctionDeclaration' or node.type == 'ClassDeclaration':
+                nodeName = node.id.name if node.id else 'anonymous'
+                doc = 'No description provided.'
 
-        # Write the documentation to a temporary JSON file
-        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.json') as doc_file:
-            json.dump(documentation, doc_file)
-            doc_file_path = doc_file.name
+                if node.type == 'FunctionDeclaration':
+                    funcDoc = documentation.get('functions', []).find(f => f.get('name') === nodeName)
+                    if funcDoc and funcDoc.get('docstring'):
+                        doc = funcDoc.get('docstring')
+                elif node.type == 'ClassDeclaration':
+                    classDoc = documentation.get('classes', []).find(c => c.get('name') === nodeName)
+                    if classDoc and classDoc.get('docstring'):
+                        doc = classDoc.get('docstring')
 
-        # Run the Node.js script to insert docstrings
-        process = subprocess.run(
-            ['node', script_path, code_file_path, doc_file_path],
-            capture_output=True,
-            text=True
-        )
+                if not getattr(node, 'leadingComments', None):
+                    node.leadingComments = []
+                node.leadingComments.append({
+                    'type': 'Block',
+                    'value': f'* {doc} '
+                })
+                logger.debug(f"Inserted docstring for {node.type}: {nodeName}")
 
-        # Clean up temporary files
-        os.remove(code_file_path)
-        os.remove(doc_file_path)
+            if node.type == 'ClassDeclaration':
+                for method in node.body.body:
+                    if method.type == 'MethodDefinition':
+                        methodName = method.key.name
+                        classDoc = documentation.get('classes', []).find(c => c.get('name') === nodeName)
+                        if classDoc:
+                            methodDoc = classDoc.get('methods', []).find(m => m.get('name') === methodName)
+                            if methodDoc and methodDoc.get('docstring'):
+                                doc = methodDoc.get('docstring')
 
-        if process.returncode != 0:
-            logger.error(f"Error inserting JS/TS docstrings: {process.stderr.strip()}")
-            return original_code
+                        if not getattr(method, 'leadingComments', None):
+                            method.leadingComments = []
+                        method.leadingComments.append({
+                            'type': 'Block',
+                            'value': f'* {doc} '
+                        })
+                        logger.debug(f"Inserted docstring for method: {methodName} in class: {nodeName}")
 
-        modified_code = process.stdout
+        modified_code = esprima.generate(parsed, { comment: True })
         logger.debug('Completed inserting JS/TS docstrings')
         return modified_code
 
