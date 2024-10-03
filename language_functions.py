@@ -196,18 +196,6 @@ def is_valid_python_code(code: str) -> bool:
 
 
 async def extract_js_ts_structure(file_path: str, code: str, language: str, function_schema: dict = None) -> Optional[Dict[str, Any]]:
-    """
-    Extracts the structure of JavaScript/TypeScript code using acorn.js.
-
-    Parameters:
-        file_path (str): The path to the JS/TS file.
-        code (str): The JS/TS source code.
-        language (str): The programming language ('javascript' or 'typescript').
-        function_schema (dict): The function schema for validation (optional).
-
-    Returns:
-        Optional[Dict[str, Any]]: The extracted structure as a dictionary, or None if extraction fails.
-    """
     logger.debug("Starting extract_js_ts_structure")
     try:
         # Handle React fragments
@@ -223,8 +211,14 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str, func
             'functionSchema': function_schema  # Include the schema in the data
         }
 
-        # Run acorn.js as a subprocess
-        process = subprocess.run(['node', script_path], input=json.dumps(data_to_send), capture_output=True, text=True)
+        # Run acorn.js as a subprocess asynchronously
+        process = await asyncio.to_thread(
+            subprocess.run,
+            ['node', script_path],
+            input=json.dumps(data_to_send),
+            capture_output=True,
+            text=True
+        )
 
         if process.returncode == 0:
             # Parse the JSON output from acorn.js
