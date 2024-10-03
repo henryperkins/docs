@@ -1,69 +1,121 @@
+// acorn_inserter.js
+
 const acorn = require('acorn');
-const { generate } = require('astring'); // Use astring for code generation
+const walk = require('acorn-walk');
+const astring = require('astring');
+const fs = require('fs');
 
 // Read data from stdin (code and documentation)
-const inputData = JSON.parse(require('fs').readFileSync(0).toString());
-const code = inputData.code;
-const documentation = inputData.documentation;
-
-// Parse the code using acorn
-const ast = acorn.parse(code, { 
-    ecmaVersion: 'latest', 
-    sourceType: 'module', 
-    onComment: (block, text, start, end, loc) => {
-        // You might need to adjust this logic based on how you want to handle existing comments
-        if (block && text.trim().startsWith('*')) {
-            // Preserve existing docstring-style comments
-            ast.comments.push({ type: 'Block', value: text, start, end, loc });
-        }
-    } 
+let inputChunks = [];
+process.stdin.on('data', chunk => {
+    inputChunks.push(chunk);
 });
 
-// Function to insert docstrings into the AST
-function insertDocstring(node, docstring) {
-    if (!ast.comments) {
-        ast.comments = [];
-    }
-    ast.comments.push({
-        type: 'Block',
-        value: `* ${docstring} `,
-        start: node.start,
-        end: node.start, // Place the comment right before the node
-        loc: {
-            start: { line: node.loc.start.line, column: node.loc.start.column },
-            end: { line: node.loc.start.line, column: node.loc.start.column }
-        }
-    });
-}
+process.stdin.on('end', () => {
+    const inputData = JSON.parse(inputChunks.join(''));
+    const { code, documentation } = inputData;
 
-// Traverse the AST and insert docstrings
-acorn.walk.simple(ast, {
-    FunctionDeclaration(node) {
-        const funcDoc = documentation.functions.find(f => f.name === node.id.name);
-        if (funcDoc && funcDoc.docstring) {
-            insertDocstring(node, funcDoc.docstring);
-        }
-    },
-    ClassDeclaration(node) {
-        const classDoc = documentation.classes.find(c => c.name === node.id.name);
-        if (classDoc && classDoc.docstring) {
-            insertDocstring(node, classDoc.docstring);
-        }
-        if (classDoc) {
-            node.body.body.forEach(methodNode => {
-                if (methodNode.type === 'MethodDefinition') {
-                    const methodDoc = classDoc.methods.find(m => m.name === methodNode.key.name);
-                    if (methodDoc && methodDoc.docstring) {
-                        insertDocstring(methodNode, methodDoc.docstring);
+    // Parse the code using acorn
+    let ast;
+    try {
+        ast = acorn.parse(code, {
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+            locations: true,
+            ranges: true,
+            onComment: []
+        });
+    } catch (e) {
+        console.error(`Acorn parsing error: ${e.message}`);
+        process.exit(1);
+    }
+
+    // Build a map of function and class names to their docstrings
+    const docstringsMapping = {};
+
+    // Process functions
+    if (documentation.functions) {
+        documentation.functions.forEach(funcDoc => {
+            if (funcDoc.name && funcDoc.docstring) {
+                docstringsMapping[funcDoc.name] = funcDoc.docstring;
+            }
+        });
+    }
+
+    // Process classes and their methods
+    if (documentation.classes) {
+        documentation.classes.forEach(classDoc => {
+            if (classDoc.name && classDoc.docstring) {
+                docstringsMapping[classDoc.name] = classDoc.docstring;
+            }
+            if (classDoc.methods) {
+                classDoc.methods.forEach(methodDoc => {
+                    if (methodDoc.name && methodDoc.docstring) {
+                        const fullName = `${classDoc.name}.${methodDoc.name}`;
+                        docstringsMapping[fullName] = methodDoc.docstring;
+                    }
+                });
+            }
+        });
+    }
+
+    // Function to insert docstrings as comments
+    function insertDocstring(node, docstring) {
+        const commentNode = {
+            type: 'Block',
+            value: `*\n * ${docstring.replace(/\n/g, '\n * ')}\n `,
+            start: node.start,
+            end: node.start,
+            loc: node.loc,
+            range: [node.start, node.start]
+        };
+        node.leadingComments = node.leadingComments || [];
+        node.leadingComments.push(commentNode);
+    }
+
+    // Traverse the AST and insert docstrings
+    walk.simple(ast, {
+        FunctionDeclaration(node) {
+            const name = node.id ? node.id.name : 'anonymous';
+            if (docstringsMapping[name]) {
+                insertDocstring(node, docstringsMapping[name]);
+            }
+        },
+        VariableDeclaration(node) {
+            node.declarations.forEach(declarator => {
+                if (
+                    declarator.init &&
+                    (declarator.init.type === 'FunctionExpression' || declarator.init.type === 'ArrowFunctionExpression')
+                ) {
+                    const name = declarator.id.name;
+                    if (docstringsMapping[name]) {
+                        insertDocstring(declarator.init, docstringsMapping[name]);
+                    }
+                }
+            });
+        },
+        ClassDeclaration(node) {
+            const className = node.id.name;
+            if (docstringsMapping[className]) {
+                insertDocstring(node, docstringsMapping[className]);
+            }
+            node.body.body.forEach(element => {
+                if (element.type === 'MethodDefinition') {
+                    const methodName = element.key.name;
+                    const fullName = `${className}.${methodName}`;
+                    if (docstringsMapping[fullName]) {
+                        insertDocstring(element, docstringsMapping[fullName]);
                     }
                 }
             });
         }
-    }
+    });
+
+    // Generate code from modified AST, including comments
+    const modifiedCode = astring.generate(ast, {
+        comments: true
+    });
+
+    // Output the modified code
+    console.log(modifiedCode);
 });
-
-// Generate the modified code from the AST
-const modifiedCode = generate(ast, { comments: true });
-
-// Output the modified code to stdout
-console.log(modifiedCode);
