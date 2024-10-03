@@ -1,131 +1,67 @@
 {
-  "name": "generate_documentation"
-  "description": "Generates comprehensive documentation for the provided code structure.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "summary": {
-        "type": "string",
-        "description": "A brief summary of the code structure, highlighting its purpose and functionality."
-      },
-      "changes_made": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        },
-        "description": "A detailed list of changes made to the codebase during the documentation insertion process."
-      },
-      "code_snippet": {
-        "type": "string",
-        "description": "The specific snippet of code (function, class, or method) that has been documented."
-      },
-      "documentation_format": {
-        "type": "string",
-        "enum": ["docstring", "comment"],
-        "description": "The format in which the documentation should be inserted into the code. Options are 'docstring' for Python docstrings or 'comment' for inline comments in other languages."
-      },
-      "language": {
-        "type": "string",
-        "enum": ["python", "javascript", "typescript", "html", "css"],
-        "description": "The programming language of the code snippet to ensure appropriate documentation syntax."
-      },
-      "style_guidelines": {
-        "type": "string",
-        "description": "Specific style guidelines to follow when generating documentation, such as adhering to PEP 8 for Python or Airbnb style guide for JavaScript."
-      },
-      "project_info": {
-        "type": "string",
-        "description": "Additional information about the project to provide context for the documentation generation."
-      },
-      "functions": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "description": "The name of the function."
-            },
-            "args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "List of arguments for the function."
-            },
-            "docstring": {
-              "type": "string",
-              "description": "The docstring or description of the function."
-            },
-            "async": {
-              "type": "boolean",
-              "description": "Indicates whether the function is asynchronous."
-            }
-          },
-          "required": ["name", "args", "docstring", "async"]
-        },
-        "description": "List of functions defined in the file with their details."
-      },
-      "classes": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "description": "The name of the class."
-            },
-            "methods": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "description": "The name of the method."
-                  },
-                  "args": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "description": "List of arguments for the method."
-                  },
-                  "docstring": {
-                    "type": "string",
-                    "description": "The docstring or description of the method."
-                  },
-                  "async": {
-                    "type": "boolean",
-                    "description": "Indicates whether the method is asynchronous."
-                  },
-                  "type": {
-                    "type": "string",
-                    "description": "The type of the method (e.g., constructor, getter, setter)."
-                  }
-                },
-                "required": ["name", "args", "docstring", "async", "type"]
-              },
-              "description": "List of methods defined in the class with their details."
-            },
-            "docstring": {
-              "type": "string",
-              "description": "The docstring or description of the class."
-            }
-          },
-          "required": ["name", "methods", "docstring"]
-        },
-        "description": "List of classes defined in the file with their details."
-      }
+  "$id": "https://example.com/documentation.schema.json",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "A detailed summary of the file."
     },
-    "required": [
-      "summary",
-      "changes_made",
-      "code_snippet",
-      "documentation_format",
-      "language",
-      "functions",
-      "classes"
-    ]
+    "changes_made": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of changes made to the file."
+    },
+    "functions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/function" },
+      "description": "List of documented functions."
+    },
+    "classes": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/class" },
+      "description": "List of documented classes."
+    }
+  },
+  "required": ["summary"],
+  "definitions": {
+    "function": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "docstring": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "async": { "type": "boolean" }
+      },
+      "required": ["name", "docstring", "args", "async"]
+    },
+    "class": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "docstring": { "type": "string" },
+        "methods": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/method" }
+        }
+      },
+      "required": ["name", "docstring", "methods"]
+    },
+    "method": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "docstring": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "async": { "type": "boolean" },
+        "type": { "type": "string" }
+      },
+      "required": ["name", "docstring", "args", "async", "type"]
+    }
   }
 }
