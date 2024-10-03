@@ -100,7 +100,7 @@ async def main():
     project_info_arg = args.project_info
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
-    schema_path = args.schema
+    schema_path = os.path.join('schemas', args.schema)
 
     logger.info(f"Repository Path: {repo_path}")
     logger.info(f"Configuration File: {config_path}")
