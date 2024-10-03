@@ -22,7 +22,7 @@
       "documentation_format": {
         "type": "string",
         "enum": ["docstring", "comment"],
-        "description": "The format in which the documentation should be inserted into the code."
+        "description": "The format in which the documentation should be inserted into the code. Options are 'docstring' for Python docstrings or 'comment' for inline comments in other languages."
       },
       "language": {
         "type": "string",
@@ -36,8 +36,96 @@
       "project_info": {
         "type": "string",
         "description": "Additional information about the project to provide context for the documentation generation."
+      },
+      "functions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The name of the function."
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of arguments for the function."
+            },
+            "docstring": {
+              "type": "string",
+              "description": "The docstring or description of the function."
+            },
+            "async": {
+              "type": "boolean",
+              "description": "Indicates whether the function is asynchronous."
+            }
+          },
+          "required": ["name", "args", "docstring", "async"]
+        },
+        "description": "List of functions defined in the file with their details."
+      },
+      "classes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The name of the class."
+            },
+            "methods": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The name of the method."
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "List of arguments for the method."
+                  },
+                  "docstring": {
+                    "type": "string",
+                    "description": "The docstring or description of the method."
+                  },
+                  "async": {
+                    "type": "boolean",
+                    "description": "Indicates whether the method is asynchronous."
+                  },
+                  "type": {
+                    "type": "string",
+                    "description": "The type of the method (e.g., constructor, getter, setter)."
+                  }
+                },
+                "required": ["name", "args", "docstring", "async", "type"]
+              },
+              "description": "List of methods defined in the class with their details."
+            },
+            "docstring": {
+              "type": "string",
+              "description": "The docstring or description of the class."
+            }
+          },
+          "required": ["name", "methods", "docstring"]
+        },
+        "description": "List of classes defined in the file with their details."
       }
     },
-    "required": ["summary", "changes_made", "code_snippet", "documentation_format", "language"]
+    "required": [
+      "summary",
+      "changes_made",
+      "code_snippet",
+      "documentation_format",
+      "language",
+      "functions",
+      "classes"
+    ]
   }
 }
