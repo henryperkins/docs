@@ -241,6 +241,8 @@ def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
         parsed = esprima.parseScript(content, tolerant=True, comment=True, attachComment=True)
 
         def traverse_for_functions(node):
+            print(f"Node type: {node.type}, _fields: {node._fields}")  # Debugging line
+
             if node.type == 'FunctionDeclaration':
                 func = {
                     'name': node.id.name if node.id else 'anonymous',
@@ -275,7 +277,7 @@ def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error parsing functions: {e}", exc_info=True)
         return []
-
+        
 def extract_methods_from_class(node) -> List[Dict[str, Any]]:
     """
     Extracts methods from a class node in JavaScript/TypeScript code along with their docstrings.
