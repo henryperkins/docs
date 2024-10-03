@@ -159,40 +159,22 @@ async def process_file(
     safe_mode: bool = False
 ) -> Optional[str]:
     """
-    Processes a single file: extracts structure, generates documentation, inserts documentation,
-    validates, and returns the documentation content to be added to the report.
-
-    Parameters:
-        session (aiohttp.ClientSession): The HTTP session for API calls.
-        file_path (str): Path to the file to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API calls.
-        model_name (str): OpenAI model to use.
-        function_schema (dict): JSON schema for OpenAI function calling.
-        repo_root (str): Root directory of the repository.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Style guidelines for documentation.
-        safe_mode (bool): If True, do not modify files.
-
-    Returns:
-        Optional[str]: The documentation content generated for this file.
+    Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content to be added to the report.
     """
     logger.debug(f'Processing file: {file_path}')
-    summary = ''
-    changes = []
-    new_content = ''
     try:
         _, ext = os.path.splitext(file_path)
         if not is_valid_extension(ext, skip_types) or is_binary(file_path):
             logger.debug(f"Skipping file '{file_path}' due to invalid extension or binary content.")
             return ''
+
         language = get_language(ext)
         logger.debug(f"Detected language for '{file_path}': {language}")
         if language == 'plaintext':
             logger.debug(f"Skipping unsupported language in '{file_path}'.")
             return ''
-        logger.info(f'Processing file: {file_path}')
 
+        logger.info(f'Processing file: {file_path}')
         try:
             async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                 content = await f.read()
@@ -205,16 +187,15 @@ async def process_file(
         if not code_structure:
             logger.warning(f"Could not extract code structure from '{file_path}'")
             return ''
-        logger.debug(f'Extracted code structure for {file_path}: {code_structure}')
 
+        logger.debug(f'Extracted code structure for {file_path}: {code_structure}')
         prompt = generate_documentation_prompt(
+            file_name=os.path.basename(file_path),
             code_structure=code_structure,
             project_info=project_info,
             style_guidelines=style_guidelines,
             language=language
         )
-        logger.debug(f"Generated prompt for '{file_path}'")
-
         documentation = await fetch_documentation(
             session=session,
             prompt=prompt,
@@ -225,23 +206,37 @@ async def process_file(
         if not documentation:
             logger.error(f"Failed to generate documentation for '{file_path}'.")
             return ''
+
         logger.debug(f"Received documentation for '{file_path}': {documentation}")
 
-        summary, changes, new_content = await process_code_documentation(
+        # Extracting documentation components
+        summary = documentation.get('summary', '')
+        changes = documentation.get('changes_made', [])
+        functions = documentation.get('functions', [])
+        classes = documentation.get('classes', [])
+
+        # Process code documentation (insert docstrings/comments)
+        new_content = await process_code_documentation(
             content, documentation, language, file_path
         )
-        logger.debug(f'Processed code documentation for {file_path}')
 
-        if safe_mode:
-            logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
-        else:
+        if not safe_mode:
             await backup_and_write_new_content(file_path, new_content)
             logger.info(f"Documentation inserted into '{file_path}'")
+        else:
+            logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
 
-        # Generate the documentation content for the report
+        # Generate documentation report content
         file_content = await write_documentation_report(
-            summary, changes, new_content, language, file_path, repo_root
+            summary=summary,
+            changes=changes,
+            functions=functions,
+            classes=classes,
+            language=language,
+            file_path=file_path,
+            repo_root=repo_root
         )
+
         logger.info(f"Successfully processed and documented '{file_path}'")
         return file_content
 
@@ -337,7 +332,8 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
 async def write_documentation_report(
     summary: str,
     changes: List[str],
-    new_content: str,
+    functions: List[dict],
+    classes: List[dict],
     language: str,
     file_path: str,
     repo_root: str
@@ -348,7 +344,8 @@ async def write_documentation_report(
     Parameters:
         summary (str): Summary of the documentation.
         changes (List[str]): List of changes made.
-        new_content (str): Modified source code with inserted documentation.
+        functions (List[dict]): List of functions documented.
+        classes (List[dict]): List of classes documented.
         language (str): Programming language.
         file_path (str): Path to the source file.
         repo_root (str): Root directory of the repository.
@@ -357,11 +354,8 @@ async def write_documentation_report(
         str: The documentation content for the file.
     """
     try:
-        # Determine the relative path of the file for documentation
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f'# File: {relative_path}\n\n'
-
-        # Prepare the documentation sections
         summary_section = f'## Summary\n\n{summary.strip()}\n\n'
         changes_section = '## Changes Made\n\n'
         if changes:
@@ -369,114 +363,63 @@ async def write_documentation_report(
         else:
             changes_section += 'No changes were made to this file.\n\n'
 
-        # Include the code block with syntax highlighting
+        functions_section = ''
+        if functions:
+            functions_section += '## Functions\n\n'
+            functions_section += '| Function | Arguments | Description | Async |\n'
+            functions_section += '|----------|-----------|-------------|-------|\n'
+            for func in functions:
+                func_name = func.get('name', 'N/A')
+                func_args = ', '.join(func.get('args', []))
+                func_doc = func.get('docstring', 'No description provided.')
+                func_async = 'Yes' if func.get('async', False) else 'No'
+                functions_section += f'| `{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} | {func_async} |\n'
+            functions_section += '\n'
+        else:
+            functions_section += '## Functions\n\nNo functions are defined in this file.\n\n'
+
+        classes_section = ''
+        if classes:
+            classes_section += '## Classes\n\n'
+            for cls in classes:
+                cls_name = cls.get('name', 'N/A')
+                cls_doc = cls.get('docstring', 'No description provided.')
+                classes_section += f'### Class: `{cls_name}`\n\n{cls_doc}\n\n'
+
+                methods = cls.get('methods', [])
+                if methods:
+                    classes_section += '| Method | Arguments | Description | Async | Type |\n'
+                    classes_section += '|--------|-----------|-------------|-------|------|\n'
+                    for method in methods:
+                        method_name = method.get('name', 'N/A')
+                        method_args = ', '.join(method.get('args', []))
+                        method_doc = method.get('docstring', 'No description provided.')
+                        method_async = 'Yes' if method.get('async', False) else 'No'
+                        method_type = method.get('type', 'N/A')
+                        classes_section += f'| `{method_name}` | `{method_args}` | {method_doc.splitlines()[0]} | {method_async} | {method_type} |\n'
+                    classes_section += '\n'
+                else:
+                    classes_section += 'No methods defined in this class.\n\n'
+        else:
+            classes_section += '## Classes\n\nNo classes are defined in this file.\n\n'
+
         code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
 
-        # Initialize the content
-        file_content = (
+        # Combine all sections
+        documentation_content = (
             file_header +
             summary_section +
-            changes_section
+            changes_section +
+            functions_section +
+            classes_section +
+            code_block
         )
 
-        # Extract code structure from the new content
-        structure = await extract_code_structure(new_content, file_path, language)
-
-        # Add functions and classes based on language
-        if language in ['python', 'javascript', 'typescript']:
-            # Handle functions
-            function_section = ''
-            if structure.get('functions'):
-                function_section += '## Functions\n\n'
-                function_table_header = '| Function | Arguments | Description |\n|----------|-----------|-------------|\n'
-                function_table_rows = ''
-                for func in structure['functions']:
-                    func_name = func.get('name', 'Unnamed Function')
-                    func_args = ', '.join(func.get('args', []))
-                    func_doc = func.get('docstring', 'No description provided.')
-                    func_type = 'async ' if func.get('async', False) else ''
-                    function_table_rows += f"| `{func_type}{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} |\n"
-                function_section += function_table_header + function_table_rows + '\n'
-            else:
-                function_section += '## Functions\n\nNo functions are defined in this file.\n\n'
-
-            # Handle classes
-            class_section = ''
-            if structure.get('classes'):
-                class_section += '## Classes\n\n'
-                for cls in structure['classes']:
-                    cls_name = cls.get('name', 'Unnamed Class')
-                    class_doc = cls.get('docstring', 'No description provided.')
-                    class_section += f'### Class: `{cls_name}`\n\n{class_doc}\n\n'
-
-                    if cls.get('methods'):
-                        class_section += '#### Methods:\n\n'
-                        method_table_header = '| Method | Arguments | Description |\n|--------|-----------|-------------|\n'
-                        method_table_rows = ''
-                        for method in cls['methods']:
-                            method_name = method.get('name', 'Unnamed Method')
-                            method_args = ', '.join(method.get('args', []))
-                            method_doc = method.get('docstring', 'No description provided.')
-                            method_type = 'async ' if method.get('async', False) else ''
-                            method_table_rows += f"| `{method_type}{method_name}` | `{method_args}` | {method_doc.splitlines()[0]} |\n"
-                        class_section += method_table_header + method_table_rows + '\n'
-                    else:
-                        class_section += 'No methods defined in this class.\n\n'
-            else:
-                class_section += '## Classes\n\nNo classes are defined in this file.\n\n'
-
-            # Append to the content
-            file_content += function_section + class_section
-
-        elif language == 'html':
-            # Handle HTML tags
-            tag_section = ''
-            if structure.get('tags'):
-                tag_section += '## Tags\n\n'
-                for tag in structure['tags']:
-                    tag_name = tag.get('name', 'Unnamed Tag')
-                    tag_attrs = ', '.join(f'{k}="{v}"' for k, v in tag.get('attributes', {}).items())
-                    tag_section += f'- `<{tag_name} {tag_attrs}>`\n'
-                tag_section += '\n'
-            else:
-                tag_section += '## Tags\n\nNo tags are defined in this file.\n\n'
-            file_content += tag_section
-
-        elif language == 'css':
-            # Handle CSS rules
-            rules_section = ''
-            if structure.get('rules'):
-                rules_section += '## CSS Rules\n\n'
-                for rule in structure['rules']:
-                    selectors = rule.get('selectors', 'Unnamed Selector')
-                    rules_section += f'### Selector: `{selectors}`\n\n'
-                    declarations = rule.get('declarations', [])
-                    if declarations:
-                        rules_section += '#### Declarations:\n\n'
-                        for decl in declarations:
-                            property_name = decl.get('property')
-                            value = decl.get('value')
-                            rules_section += f'- **{property_name}**: {value}\n'
-                        rules_section += '\n'
-                    else:
-                        rules_section += 'No declarations in this rule.\n\n'
-                rules_section += '\n'
-            else:
-                rules_section += '## CSS Rules\n\nNo CSS rules are defined in this file.\n\n'
-            file_content += rules_section
-
-        else:
-            logger.warning(f"No specific handling for language '{language}' in 'write_documentation_report'")
-
-        # Add the code block at the end
-        file_content += code_block
-
-        return file_content
+        return documentation_content
 
     except Exception as e:
         logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
         return ''
-
 
 def generate_table_of_contents(markdown_content: str) -> str:
     """
