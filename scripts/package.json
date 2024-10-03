@@ -8,10 +8,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "acorn": "^8.12.1",
     "acorn-walk": "^8.3.4",
     "recast": "^0.23.9"
-  }
+  },
+  "devDependencies": {},
+  "description": ""
 }
