@@ -296,31 +296,21 @@ async def extract_js_ts_structure(
         return None
 
 
-def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
+def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any], language: str) -> str:
     """
     Inserts docstrings into JavaScript/TypeScript code using acorn_inserter.js.
-
-    Parameters:
-        original_code (str): The original JS/TS source code.
-        documentation (Dict[str, Any]): Documentation details to insert.
-
-    Returns:
-        str: The modified JS/TS code with inserted docstrings.
     """
     logger.debug('Starting insert_js_ts_docstrings')
     try:
         # Prepare data to send to Node.js script
         data_to_send = {
             'code': original_code,
-            'documentation': documentation
+            'documentation': documentation,
+            'language': language
         }
 
         # Path to the acorn_inserter.js script
         script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_inserter.js')
-        # Check if the script exists
-        if not os.path.exists(script_path):
-            logger.error(f"acorn_inserter.js script not found at {script_path}")
-            return original_code
 
         # Run the Node.js script as a subprocess
         process = subprocess.run(
@@ -341,7 +331,6 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
     except Exception as e:
         logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
-
 
 # HTML-specific functions
 def extract_html_structure(code: str) -> Dict[str, Any]:
