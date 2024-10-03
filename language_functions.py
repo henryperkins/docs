@@ -10,6 +10,7 @@ import logging
 import traceback
 import tempfile
 import astor
+import esprima
 from typing import Optional, Dict, Any
 from bs4 import BeautifulSoup, Comment
 import tinycss2
@@ -197,56 +198,62 @@ def is_valid_python_code(code: str) -> bool:
         return False
 
 
-async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
+async def extract_js_ts_structure(file_path: str, content: str, language: str) -> Dict[str, Any]:
     """
-    Extracts the structure of JavaScript/TypeScript code by running an external Node.js script.
-
-    Parameters:
-        file_path (str): The path to the JS/TS file.
-        code (str): The JS/TS source code.
-        language (str): The programming language ('javascript' or 'typescript').
-
-    Returns:
-        Optional[Dict[str, Any]]: The extracted structure as a dictionary, or None if extraction fails.
+    Extracts the structure of JavaScript or TypeScript code, including functions and classes.
     """
-    logger.debug('Starting extract_js_ts_structure')
     try:
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract_structure.js')
-        if not os.path.isfile(script_path):
-            logger.error(f"JS/TS extraction script '{script_path}' not found.")
-            return None
-
-        # Use a temporary file to pass code to the script
-        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.js' if language == 'javascript' else '.ts') as temp_file:
-            temp_file.write(code)
-            temp_file_path = temp_file.name
-
-        # Run the Node.js script
-        process = await asyncio.create_subprocess_exec(
-            'node', script_path, temp_file_path,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await process.communicate()
-        os.remove(temp_file_path)  # Clean up the temp file
-
-        if process.returncode != 0:
-            logger.error(f"JS/TS extraction script error for '{file_path}': {stderr.decode().strip()}")
-            return None
-
-        stdout_content = stdout.decode().strip()
-        try:
-            structure = json.loads(stdout_content)
-            logger.debug(f'Extracted JS/TS structure: {structure}')
-            return structure
-        except json.JSONDecodeError as e:
-            logger.error(f'Invalid JSON output from JS/TS extraction script: {e}')
-            logger.error(f'Script output:\n{stdout_content}')
-            return None
-
+        parsed = esprima.parseScript(content, tolerant=True)
+        functions = []
+        classes = []
+        for node in parsed.body:
+            if node.type == 'FunctionDeclaration':
+                func = {
+                    'name': node.id.name,
+                    'args': [param.name for param in node.params],
+                    'docstring': extract_js_ts_docstring(node),
+                    'async': node.async
+                }
+                functions.append(func)
+            elif node.type == 'VariableDeclaration':
+                for decl in node.declarations:
+                    if decl.init and decl.init.type in ['FunctionExpression', 'ArrowFunctionExpression']:
+                        func = {
+                            'name': decl.id.name,
+                            'args': [param.name for param in decl.init.params],
+                            'docstring': extract_js_ts_docstring(node),
+                            'async': decl.init.async
+                        }
+                        functions.append(func)
+            elif node.type == 'ClassDeclaration':
+                cls = {
+                    'name': node.id.name,
+                    'methods': extract_methods_from_class(node),
+                    'docstring': extract_js_ts_docstring(node)
+                }
+                classes.append(cls)
+        logger.debug(f"Extracted {len(functions)} functions and {len(classes)} classes from '{file_path}'")
+        return {
+            'functions': functions,
+            'classes': classes
+        }
     except Exception as e:
-        logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
-        return None
+        logger.error(f"Error extracting JS/TS structure from '{file_path}': {e}", exc_info=True)
+        return {'functions': [], 'classes': []}
+
+def extract_methods_from_class(node) -> List[dict]:
+    methods = []
+    for body_element in node.body.body:
+        if body_element.type in ['MethodDefinition', 'Property']:
+            method = {
+                'name': body_element.key.name,
+                'args': [param.name for param in body_element.value.params],
+                'docstring': extract_js_ts_docstring(body_element),
+                'async': body_element.value.async,
+                'type': body_element.kind  # e.g., 'constructor', 'method', 'get', 'set'
+            }
+            methods.append(method)
+    return methods
 
 
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
