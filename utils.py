@@ -1,10 +1,6 @@
-# utils.py
-
 import os
 import sys
 import json
-import fnmatch
-import black
 import logging
 import aiohttp
 import asyncio
@@ -13,12 +9,11 @@ import subprocess
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
 import tempfile  # For JS/TS extraction
-import astor  # For Python docstring insertion
 from bs4 import BeautifulSoup, Comment  # For HTML and CSS functions
 import tinycss2  # For CSS functions
 import openai
 from jsonschema import validate, ValidationError
-from openai import OpenAIError  # For OpenAI exception handling
+from openai.error import OpenAIError  # For OpenAI exception handling
 
 # ----------------------------
 # Configuration and Setup
@@ -90,8 +85,7 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
     file_paths = []
     normalized_excluded_dirs = {os.path.normpath(os.path.join(repo_path, d)) for d in excluded_dirs}
 
-    for root, dirs, files in os.walk(repo_path):
-        normalized_root = os.path.normpath(root)
+    for root, dirs, files in os.walk(repo_path, topdown=True):
         # Exclude directories
         dirs[:] = [d for d in dirs if os.path.normpath(os.path.join(root, d)) not in normalized_excluded_dirs]
 
@@ -114,10 +108,10 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
 def load_json_schema(schema_path: str) -> Optional[dict]:
     """
     Loads a JSON schema from the specified path.
-    
+
     Args:
         schema_path (str): Path to the JSON schema file.
-    
+
     Returns:
         Optional[dict]: Loaded JSON schema or None if failed.
     """
@@ -139,7 +133,7 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
 def load_function_schema() -> dict:
     """
     Loads the function schema from 'function_schema.json'.
-    
+
     Returns:
         dict: Function schema.
     """
@@ -147,22 +141,20 @@ def load_function_schema() -> dict:
     schema = load_json_schema(schema_path)
     if not schema:
         logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
-        sys.exit(1)
+        # Instead of exiting, raise an exception
+        raise FileNotFoundError(f"Function schema file '{schema_path}' not found or invalid.")
     return schema
-
-# Initialize function_schema at module load
-function_schema = load_function_schema()
 
 def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
     """
     Loads additional configurations from a config.json file.
-    
+
     Args:
         config_path (str): Path to the config.json file.
         excluded_dirs (Set[str]): Set to update with excluded directories.
         excluded_files (Set[str]): Set to update with excluded files.
         skip_types (Set[str]): Set to update with file types to skip.
-    
+
     Returns:
         Tuple[str, str]: Project information and style guidelines.
     """
@@ -221,7 +213,7 @@ def extract_json_from_response(response: str) -> Optional[dict]:
         return json.loads(response)
     except json.JSONDecodeError:
         return None
-    
+
 # ----------------------------
 # OpenAI API Interaction
 # ----------------------------
@@ -229,21 +221,21 @@ def extract_json_from_response(response: str) -> Optional[dict]:
 def call_openai_api(prompt: str, model: str, functions: List[dict], function_call: Optional[dict] = None) -> Optional[dict]:
     """
     Centralized function to call the OpenAI API.
-    
+
     Args:
         prompt (str): The prompt to send.
         model (str): The OpenAI model to use.
         functions (List[dict]): List of function schemas.
         function_call (Optional[dict]): Function call parameters.
-    
+
     Returns:
         Optional[dict]: The API response or None if failed.
     """
     openai.api_key = OPENAI_API_KEY
     if not OPENAI_API_KEY:
         logger.critical("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
-        sys.exit(1)
-    
+        return None
+
     try:
         response = openai.ChatCompletion.create(
             model=model,
@@ -262,7 +254,7 @@ def call_openai_api(prompt: str, model: str, functions: List[dict], function_cal
     except Exception as e:
         logger.error(f"Unexpected error calling OpenAI API: {e}")
         return None
-    
+
 # ----------------------------
 # Code Formatting and Cleanup
 # ----------------------------
@@ -270,15 +262,15 @@ def call_openai_api(prompt: str, model: str, functions: List[dict], function_cal
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
-    
+
     Args:
         code (str): The Python code to format.
-    
+
     Returns:
         str: The formatted Python code.
     """
     try:
-        formatted_code = black.format_str(code, mode=black.FileMode())
+        formatted_code = black.format_str(code, mode=black.Mode())
         logger.debug("Successfully formatted code with Black.")
         return formatted_code
     except black.NothingChanged:
@@ -291,16 +283,16 @@ def format_with_black(code: str) -> str:
 def clean_unused_imports(code: str) -> str:
     """
     Removes unused imports from Python code using autoflake.
-    
+
     Args:
         code (str): The Python code to clean.
-    
+
     Returns:
         str: The cleaned Python code.
     """
     try:
         cleaned_code = subprocess.check_output(
-            ['autoflake', '--remove-all-unused-imports', '--stdout'],
+            ['autoflake', '--remove-all-unused-imports', '--stdout', '-'],
             input=code.encode('utf-8'),
             stderr=subprocess.STDOUT
         )
@@ -319,10 +311,10 @@ def clean_unused_imports(code: str) -> str:
 def check_with_flake8(file_path: str) -> bool:
     """
     Checks Python code compliance using flake8 and attempts to fix issues if found.
-    
+
     Args:
         file_path (str): Path to the Python file to check.
-    
+
     Returns:
         bool: True if the code passes flake8 checks after fixes, False otherwise.
     """
@@ -349,6 +341,9 @@ def check_with_flake8(file_path: str) -> bool:
         except subprocess.CalledProcessError as e:
             logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
             return False
+        except FileNotFoundError as e:
+            logger.error(f"Required tool not found: {e}")
+            return False
 
 def run_flake8(file_path: str) -> Optional[str]:
     """
@@ -374,7 +369,7 @@ def run_flake8(file_path: str) -> Optional[str]:
         logger.error(f"Error running flake8 on '{file_path}': {e}", exc_info=True)
         return None
 
-def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, any]]:
+def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any]]:
     """
     Runs a Node.js script that outputs JSON (e.g., extract_structure.js) and returns the parsed JSON.
 
@@ -388,7 +383,7 @@ def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, any
     try:
         logger.debug(f"Running Node.js script: {script_path}")
         result = subprocess.run(
-            ['node', 'scripts/extract_structure.js'],
+            ['node', script_path],
             input=input_code,
             capture_output=True,
             text=True,
@@ -412,11 +407,11 @@ def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, any
 
 def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[str]:
     """
-    Runs the insert_docstrings.js script and returns the modified code.
+    Runs a Node.js script to insert docstrings and returns the modified code.
 
     Parameters:
-        script_path (str): Path to the insert_docstrings.js script.
-        input_code (str): The code to process.
+        script_path (str): Path to the Node.js script.
+        input_code (str): JSON string containing the code and documentation.
 
     Returns:
         Optional[str]: The modified code if successful, None otherwise.
@@ -424,7 +419,7 @@ def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[st
     try:
         logger.debug(f"Running Node.js script: {script_path}")
         result = subprocess.run(
-            ['node', 'scripts/insert_docstrings.js'],
+            ['node', script_path],
             input=input_code,
             capture_output=True,
             text=True,
@@ -441,7 +436,7 @@ def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[st
     except Exception as e:
         logger.error(f"Unexpected error running {script_path}: {e}")
         return None
-    
+
 async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -468,7 +463,7 @@ async def fetch_documentation(
         async with semaphore:
             try:
                 headers = {
-                    'Authorization': f'Bearer {os.getenv("OPENAI_API_KEY")}',
+                    'Authorization': f'Bearer {OPENAI_API_KEY}',
                     'Content-Type': 'application/json'
                 }
                 payload = {
@@ -480,8 +475,8 @@ async def fetch_documentation(
                     'functions': [function_schema],
                     'function_call': 'auto'
                 }
-                # Log the payload for debugging
-                logger.debug(f"API Payload: {json.dumps(payload, indent=2)}")
+                # Log the payload for debugging (avoid logging sensitive data)
+                logger.debug(f"API Payload (without API key): {json.dumps({k:v for k,v in payload.items() if k != 'api_key'}, indent=2)}")
                 async with session.post('https://api.openai.com/v1/chat/completions', headers=headers, json=payload) as resp:
                     response_text = await resp.text()
                     if resp.status != 200:
@@ -513,7 +508,6 @@ async def fetch_documentation(
                     logger.error('All retry attempts failed.')
                     return None
     return None
-
 
 def generate_documentation_prompt(
     file_name: str,
@@ -558,3 +552,11 @@ def generate_documentation_prompt(
     
     **Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"""
     return prompt
+
+# Initialize function_schema at the end after defining load_function_schema
+try:
+    function_schema = load_function_schema()
+except FileNotFoundError as e:
+    logger.critical(str(e))
+    # Decide how to handle this error in your application (e.g., exit or continue)
+    function_schema = None  # Or handle appropriately
