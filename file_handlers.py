@@ -143,7 +143,7 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
         logger.debug("Exiting insert_docstrings_for_file")
 
 async def extract_code_structure(
-    content: str, file_path: str, language: str
+    content: str, file_path: str, language: str, function_schema: dict = None
 ) -> Optional[dict]:
     """Extracts code structure based on language."""
     logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
@@ -151,7 +151,7 @@ async def extract_code_structure(
         if language == "python":
             return extract_python_structure(content)
         elif language in ["javascript", "typescript"]:
-            return await extract_js_ts_structure(file_path, content, language)
+            return await extract_js_ts_structure(file_path, content, language, function_schema)
         elif language == "html":
             return extract_html_structure(content)
         elif language == "css":
@@ -175,7 +175,7 @@ async def extract_code_structure(
             f"Error extracting structure from '{file_path}': {e}", exc_info=True
         )
         return None
-        
+
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -228,7 +228,7 @@ async def process_file(
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return ''
 
-        code_structure = await extract_code_structure(content, file_path, language)
+        code_structure = await extract_code_structure(content, file_path, language, function_schema)
         if not code_structure or (not code_structure.get('functions') and not code_structure.get('classes')):
             logger.warning(f"Could not extract code structure from '{file_path}'")
             return ''
