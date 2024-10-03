@@ -7,7 +7,7 @@ import logging
 import ast
 import astor
 import shutil
-from typing import Set, List, Optional, Dict, Tuple
+from typing import Any, Set, List, Optional, Dict, Tuple
 import aiofiles
 import aiohttp
 import asyncio
@@ -19,7 +19,6 @@ import tempfile
 from language_functions import (
     extract_python_structure,
     insert_python_docstrings,
-    is_valid_python_code,
     extract_js_ts_structure,
     insert_js_ts_docstrings,
     extract_html_structure,
@@ -47,7 +46,7 @@ from utils import (
     run_flake8,
     run_node_script,
     run_node_insert_docstrings,
-    call_openai_function,
+    call_openai_api,
     load_json_schema,
 )
 
@@ -142,6 +141,23 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
         logger.error(f"Exception while inserting docstrings into {js_ts_file}: {e}", exc_info=True)
     finally:
         logger.debug("Exiting insert_docstrings_for_file")
+
+async def extract_code_structure(content: str, language: str) -> Dict[str, Any]:
+    try:
+        if language == 'python':
+            return extract_python_structure(content)
+        elif language in ['javascript', 'typescript']:
+            return await extract_js_ts_structure(file_path, content, language)
+        elif language == 'html':
+            return extract_html_structure(content)
+        elif language == 'css':
+            return extract_css_structure(content)
+        else:
+            logger.warning(f'Unsupported language for structure extraction: {language}')
+            return None
+    except Exception as e:
+        logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
+        return None
 
 async def process_file(
     session: aiohttp.ClientSession,
@@ -256,23 +272,6 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
         return ''
-
-async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
-    try:
-        if language == 'python':
-            return extract_python_structure(content)
-        elif language in ['javascript', 'typescript']:
-            return await extract_js_ts_structure(file_path, content, language)
-        elif language == 'html':
-            return extract_html_structure(content)
-        elif language == 'css':
-            return extract_css_structure(content)
-        else:
-            logger.warning(f'Unsupported language for structure extraction: {language}')
-            return None
-    except Exception as e:
-        logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
-        return None
 
 async def process_code_documentation(
     content: str,

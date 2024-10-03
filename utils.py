@@ -11,7 +11,7 @@ import asyncio
 import re
 import subprocess
 from dotenv import load_dotenv
-from typing import Set, List, Optional, Dict, Tuple
+from typing import Any, Set, List, Optional, Dict, Tuple
 import tempfile  # For JS/TS extraction
 import astor  # For Python docstring insertion
 from bs4 import BeautifulSoup, Comment  # For HTML and CSS functions
@@ -83,12 +83,19 @@ def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
 def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
     """Retrieves all file paths in the repository, excluding specified directories and files."""
     file_paths = []
+    normalized_excluded_dirs = {os.path.normpath(os.path.join(repo_path, d)) for d in excluded_dirs}
+
     for root, dirs, files in os.walk(repo_path):
-        dirs[:] = [d for d in dirs if d not in excluded_dirs]
+        normalized_root = os.path.normpath(root)
+        # Exclude directories
+        dirs[:] = [d for d in dirs if os.path.normpath(os.path.join(root, d)) not in normalized_excluded_dirs]
+
         for file in files:
+            # Exclude files
             if file in excluded_files:
                 continue
             file_ext = os.path.splitext(file)[1]
+            # Skip specified file types
             if file_ext in skip_types:
                 continue
             full_path = os.path.join(root, file)

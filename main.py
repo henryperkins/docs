@@ -18,7 +18,7 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     function_schema,
-    call_openai_function,  # Newly added for function calling
+    call_openai_api,  # Newly added for function calling
     load_json_schema,     # Newly added for loading JSON schemas
 )
 
@@ -133,6 +133,15 @@ async def main():
         skip_types.update(ext.strip() for ext in args.skip_types.split(','))
         logger.debug(f"Updated skip_types: {skip_types}")
 
+    # Load configuration from a JSON file
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        logger.info(f"Configuration loaded from '{config_path}'")
+    except Exception as e:
+        logger.critical(f"Failed to load configuration from '{config_path}': {e}")
+        sys.exit(1)
+
     # Initialize these variables with default values to avoid UnboundLocalError
     project_info_config = ''
     style_guidelines_config = ''
@@ -166,7 +175,12 @@ async def main():
 
     # Get all file paths
     try:
-        file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files)
+        file_paths = get_all_file_paths(
+            repo_path=repo_path,
+            excluded_dirs=excluded_dirs,
+            excluded_files=excluded_files,
+            skip_types=skip_types
+        )
         logger.info(f"Total files to process: {len(file_paths)}")
     except Exception as e:
         logger.error(f"Error retrieving file paths from '{repo_path}': {e}")
