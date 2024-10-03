@@ -299,7 +299,10 @@ def extract_structure_from_acorn_ast(ast_data: dict) -> Dict[str, Any]:
                     docstring += comment['value'].lstrip('*').strip() + '\n'
         return docstring.strip()
 
-    traverse_ast(ast_data)
+    # Traverse the body of the program (the 'body' property contains the top-level nodes)
+    for node in ast_data['body']:
+        traverse_ast(node)
+
     return structure
         
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
