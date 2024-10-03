@@ -142,7 +142,7 @@ async def insert_docstrings_for_file(js_ts_file: str, documentation_file: str) -
     finally:
         logger.debug("Exiting insert_docstrings_for_file")
 
-async def extract_code_structure(content: str, file_path: str, language: str) -> Dict[str, Any]:
+async def extract_code_structure(content: str, file_path: str, language: str) -> Optional[dict]:
     try:
         if language == 'python':
             return extract_python_structure(content)
