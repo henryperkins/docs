@@ -1,0 +1,21 @@
+{
+  "$id": "https://example.com/html-structure.schema.json",
+  "type": "object",
+  "properties": {
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        },
+        "required": ["name", "attributes"]
+      }
+    }
+  },
+  "required": ["tags"]
+}
