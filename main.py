@@ -152,7 +152,7 @@ async def main():
     if style_guidelines:
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
-    function_schema_loaded = load_function_schema(schema_path)
+    function_schema_loaded = load_json_schema(schema_path)
     if not function_schema_loaded:
         logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
         sys.exit(1)
