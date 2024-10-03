@@ -327,6 +327,7 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
 
+
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
     Inserts docstrings into JavaScript/TypeScript code using esprima.
@@ -351,11 +352,13 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
                 doc = 'No description provided.'
 
                 if node.type == 'FunctionDeclaration':
-                    funcDoc = documentation.get('functions', []).find(f => f.get('name') === nodeName)
+                    # Use list comprehension to find the function documentation
+                    funcDoc = next((f for f in documentation.get('functions', []) if f.get('name') == nodeName), None)
                     if funcDoc and funcDoc.get('docstring'):
                         doc = funcDoc.get('docstring')
                 elif node.type == 'ClassDeclaration':
-                    classDoc = documentation.get('classes', []).find(c => c.get('name') === nodeName)
+                    # Use list comprehension to find the class documentation
+                    classDoc = next((c for c in documentation.get('classes', []) if c.get('name') == nodeName), None)
                     if classDoc and classDoc.get('docstring'):
                         doc = classDoc.get('docstring')
 
@@ -371,9 +374,11 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
                 for method in node.body.body:
                     if method.type == 'MethodDefinition':
                         methodName = method.key.name
-                        classDoc = documentation.get('classes', []).find(c => c.get('name') === nodeName)
+                        # Use list comprehension to find the class documentation
+                        classDoc = next((c for c in documentation.get('classes', []) if c.get('name') == nodeName), None)
                         if classDoc:
-                            methodDoc = classDoc.get('methods', []).find(m => m.get('name') === methodName)
+                            # Use list comprehension to find the method documentation
+                            methodDoc = next((m for m in classDoc.get('methods', []) if m.get('name') == methodName), None)
                             if methodDoc and methodDoc.get('docstring'):
                                 doc = methodDoc.get('docstring')
 
@@ -392,7 +397,6 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
     except Exception as e:
         logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
-
 
 # HTML-specific functions
 def extract_html_structure(code: str) -> Dict[str, Any]:
