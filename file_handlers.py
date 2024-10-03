@@ -262,7 +262,12 @@ async def extract_code_structure(content: str, file_path: str, language: str) ->
         logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
         return None
 
-async def process_code_documentation(content: str, documentation: dict, language: str, file_path: str) -> tuple[str, list, str]:
+async def process_code_documentation(
+    content: str,
+    documentation: dict,
+    language: str,
+    file_path: str
+) -> str:
     """
     Inserts the docstrings or comments into the code based on the documentation.
 
@@ -273,32 +278,32 @@ async def process_code_documentation(content: str, documentation: dict, language
         file_path (str): Path to the source file.
 
     Returns:
-        tuple[str, list, str]: Summary, list of changes, and modified code.
+        str: The modified source code with inserted documentation.
     """
-    summary = documentation.get("summary", "")
-    changes = documentation.get("changes_made", [])
-    new_content = content
-
     try:
-        if language == "python":
+        documentation_format = documentation.get('documentation_format', 'docstring')
+        code_snippet = documentation.get('code_snippet', '')
+        if language == 'python' and documentation_format == 'docstring':
             new_content = insert_python_docstrings(content, documentation)
             if not is_valid_python_code(new_content):
                 logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
-        elif language in ["javascript", "typescript"]:
-            new_content = insert_js_ts_docstrings(content, documentation)
-        elif language == "html":
-            new_content = insert_html_comments(content, documentation)
-        elif language == "css":
-            new_content = insert_css_docstrings(content, documentation)
+                return content
         else:
-            logger.warning(f"Unsupported language '{language}' for documentation insertion.")
-        
-        logger.debug(f"Processed {language} file '{file_path}'.")
-        return summary, changes, new_content
-
+            # Handle other languages or comment insertion
+            if language in ['javascript', 'typescript']:
+                new_content = insert_js_ts_docstrings(content, documentation)
+            elif language == 'html':
+                new_content = insert_html_comments(content, documentation)
+            elif language == 'css':
+                new_content = insert_css_docstrings(content, documentation)
+            else:
+                logger.warning(f"Unsupported language '{language}' for documentation insertion.")
+                new_content = content
+        return new_content
     except Exception as e:
         logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
-        return summary, changes, content
+        return content
+        
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
     """
