@@ -12,13 +12,17 @@ import re
 import subprocess
 from dotenv import load_dotenv
 from typing import Set, List, Optional, Dict, Tuple
-import tempfile  # Added for JS/TS extraction
-import astor  # Added for Python docstring insertion
-from bs4 import BeautifulSoup, Comment  # Added for HTML and CSS functions
-import tinycss2  # Added for CSS functions
+import tempfile  # For JS/TS extraction
+import astor  # For Python docstring insertion
+from bs4 import BeautifulSoup, Comment  # For HTML and CSS functions
+import tinycss2  # For CSS functions
 import openai
 from jsonschema import validate, ValidationError
 from openai import OpenAIError  # For OpenAI exception handling
+
+# ----------------------------
+# Configuration and Setup
+# ----------------------------
 
 # Load environment variables
 load_dotenv()
@@ -34,12 +38,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ----------------------------
 # Constants
+# ----------------------------
+
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea'}  # Added .venv and .idea
+DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea'}
 DEFAULT_EXCLUDED_FILES = {'.DS_Store'}
-DEFAULT_SKIP_TYPES = {'.json', '.md', '.txt', '.csv', '.lock'}  # Remove '.js', '.html', '.css'
+DEFAULT_SKIP_TYPES = {'.json', '.md', '.txt', '.csv', '.lock'}
 
 LANGUAGE_MAPPING = {
     '.py': 'python',
@@ -51,6 +58,10 @@ LANGUAGE_MAPPING = {
     '.htm': 'html',
     '.css': 'css',
 }
+
+# ----------------------------
+# Language and File Utilities
+# ----------------------------
 
 def get_language(ext: str) -> str:
     """Determines the programming language based on file extension."""
@@ -65,28 +76,12 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-def load_config(config_path: str, excluded_dirs: set, excluded_files: set, skip_types: set) -> tuple:
-    """
-    Loads additional configurations from a config.json file.
+def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
+    """Checks if a file extension is valid (not in the skip list)."""
+    return ext.lower() not in skip_types
 
-    Returns:
-        Tuple[str, str]: Project information and style guidelines.
-    """
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        project_info = config.get('project_info', '')
-        style_guidelines = config.get('style_guidelines', '')
-        excluded_dirs.update(config.get('excluded_dirs', []))
-        excluded_files.update(config.get('excluded_files', []))
-        skip_types.update(config.get('skip_types', []))
-        return project_info, style_guidelines
-    except Exception as e:
-        logger.error(f"Error loading config file '{config_path}': {e}")
-        return '', ''
-
-
-def get_all_file_paths(repo_path, excluded_dirs, excluded_files):
+def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
+    """Retrieves all file paths in the repository, excluding specified directories and files."""
     file_paths = []
     for root, dirs, files in os.walk(repo_path):
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
@@ -94,13 +89,17 @@ def get_all_file_paths(repo_path, excluded_dirs, excluded_files):
             if file in excluded_files:
                 continue
             file_ext = os.path.splitext(file)[1]
-            if file_ext in DEFAULT_SKIP_TYPES:
+            if file_ext in skip_types:
                 continue
             full_path = os.path.join(root, file)
             file_paths.append(full_path)
     return file_paths
 
-def load_json_schema(schema_path):
+# ----------------------------
+# Configuration Management
+# ----------------------------
+
+def load_json_schema(schema_path: str) -> Optional[dict]:
     """
     Loads a JSON schema from the specified path.
     
@@ -108,7 +107,7 @@ def load_json_schema(schema_path):
         schema_path (str): Path to the JSON schema file.
     
     Returns:
-        dict: Loaded JSON schema.
+        Optional[dict]: Loaded JSON schema or None if failed.
     """
     try:
         with open(schema_path, 'r', encoding='utf-8') as f:
@@ -125,8 +124,7 @@ def load_json_schema(schema_path):
         logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
         return None
 
-# Load function_schema from function_schema.json
-def load_function_schema():
+def load_function_schema() -> dict:
     """
     Loads the function schema from 'function_schema.json'.
     
@@ -137,55 +135,133 @@ def load_function_schema():
     schema = load_json_schema(schema_path)
     if not schema:
         logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
-        exit(1)
+        sys.exit(1)
     return schema
 
 # Initialize function_schema at module load
 function_schema = load_function_schema()
 
-def call_openai_function(prompt, model_name, function_schema):
+def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
     """
-    Calls the OpenAI API with the specified prompt and function schema.
+    Loads additional configurations from a config.json file.
     
     Args:
-        prompt (str): The prompt to send to OpenAI.
-        model_name (str): The OpenAI model to use.
-        function_schema (dict): The function schema for OpenAI's function calling.
+        config_path (str): Path to the config.json file.
+        excluded_dirs (Set[str]): Set to update with excluded directories.
+        excluded_files (Set[str]): Set to update with excluded files.
+        skip_types (Set[str]): Set to update with file types to skip.
     
     Returns:
-        dict: The response from OpenAI.
+        Tuple[str, str]: Project information and style guidelines.
     """
-    import openai
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        project_info = config.get('project_info', '')
+        style_guidelines = config.get('style_guidelines', '')
+        excluded_dirs.update(config.get('excluded_dirs', []))
+        excluded_files.update(config.get('excluded_files', []))
+        skip_types.update(config.get('skip_types', []))
+        logger.debug(f"Loaded configuration from '{config_path}'")
+        return project_info, style_guidelines
+    except FileNotFoundError:
+        logger.error(f"Config file '{config_path}' not found.")
+        return '', ''
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON from '{config_path}': {e}")
+        return '', ''
+    except Exception as e:
+        logger.error(f"Unexpected error loading config file '{config_path}': {e}")
+        return '', ''
+
+def extract_json_from_response(response: str) -> Optional[dict]:
+    """Extracts JSON content from the model's response.
+
+    Attempts multiple methods to extract JSON:
+    1. Function calling format.
+    2. JSON enclosed in triple backticks.
+    3. Entire response as JSON.
+
+    Args:
+        response (str): The raw response string from the model.
+
+    Returns:
+        Optional[dict]: The extracted JSON as a dictionary, or None if extraction fails.
+    """
+    # First, try to extract JSON using the function calling format
+    try:
+        response_json = json.loads(response)
+        if "function_call" in response_json and "arguments" in response_json["function_call"]:
+            return json.loads(response_json["function_call"]["arguments"])
+    except json.JSONDecodeError:
+        pass  # Fallback to other extraction methods
+
+    # Try to find JSON enclosed in triple backticks
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # As a last resort, attempt to use the entire response if it's valid JSON
+    try:
+        return json.loads(response)
+    except json.JSONDecodeError:
+        return None
     
+# ----------------------------
+# OpenAI API Interaction
+# ----------------------------
+
+def call_openai_api(prompt: str, model: str, functions: List[dict], function_call: Optional[dict] = None) -> Optional[dict]:
+    """
+    Centralized function to call the OpenAI API.
+    
+    Args:
+        prompt (str): The prompt to send.
+        model (str): The OpenAI model to use.
+        functions (List[dict]): List of function schemas.
+        function_call (Optional[dict]): Function call parameters.
+    
+    Returns:
+        Optional[dict]: The API response or None if failed.
+    """
     openai.api_key = OPENAI_API_KEY
     if not OPENAI_API_KEY:
         logger.critical("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
-        exit(1)
+        sys.exit(1)
     
     try:
         response = openai.ChatCompletion.create(
-            model=model_name,
+            model=model,
             messages=[
                 {"role": "system", "content": "You are an assistant that generates documentation."},
                 {"role": "user", "content": prompt}
             ],
-            functions=[function_schema],
-            function_call={"name": function_schema["name"]}
+            functions=functions,
+            function_call=function_call
         )
         logger.debug("OpenAI API call successful.")
         return response
-    except Exception as e:
-        logger.error(f"Error calling OpenAI API: {e}")
+    except OpenAIError as e:
+        logger.error(f"OpenAI API Error: {e}")
         return None
-        
+    except Exception as e:
+        logger.error(f"Unexpected error calling OpenAI API: {e}")
+        return None
+    
+# ----------------------------
+# Code Formatting and Cleanup
+# ----------------------------
 
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
-
-    Parameters:
+    
+    Args:
         code (str): The Python code to format.
-
+    
     Returns:
         str: The formatted Python code.
     """
@@ -203,10 +279,10 @@ def format_with_black(code: str) -> str:
 def clean_unused_imports(code: str) -> str:
     """
     Removes unused imports from Python code using autoflake.
-
-    Parameters:
+    
+    Args:
         code (str): The Python code to clean.
-
+    
     Returns:
         str: The cleaned Python code.
     """
@@ -231,10 +307,10 @@ def clean_unused_imports(code: str) -> str:
 def check_with_flake8(file_path: str) -> bool:
     """
     Checks Python code compliance using flake8 and attempts to fix issues if found.
-
-    Parameters:
+    
+    Args:
         file_path (str): Path to the Python file to check.
-
+    
     Returns:
         bool: True if the code passes flake8 checks after fixes, False otherwise.
     """
@@ -353,145 +429,7 @@ def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[st
     except Exception as e:
         logger.error(f"Unexpected error running {script_path}: {e}")
         return None
-
-def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
-    """Checks if a file extension is valid (not in the skip list)."""
-    return ext.lower() not in skip_types
-
-def extract_json_from_response(response: str) -> Optional[dict]:
-    """Extracts JSON content from the model's response.
-
-    Attempts multiple methods to extract JSON:
-    1. Function calling format.
-    2. JSON enclosed in triple backticks.
-    3. Entire response as JSON.
-
-    Args:
-        response (str): The raw response string from the model.
-
-    Returns:
-        Optional[dict]: The extracted JSON as a dictionary, or None if extraction fails.
-    """
-    # First, try to extract JSON using the function calling format
-    try:
-        response_json = json.loads(response)
-        if "function_call" in response_json and "arguments" in response_json["function_call"]:
-            return json.loads(response_json["function_call"]["arguments"])
-    except json.JSONDecodeError:
-        pass  # Fallback to other extraction methods
-
-    # Try to find JSON enclosed in triple backticks
-    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group(1))
-        except json.JSONDecodeError:
-            pass
-
-    # As a last resort, attempt to use the entire response if it's valid JSON
-    try:
-        return json.loads(response)
-    except json.JSONDecodeError:
-        return None
-
-async def write_documentation_report(
-    summary: str,
-    changes: List[str],
-    functions: List[dict],
-    classes: List[dict],
-    language: str,
-    file_path: str,
-    repo_root: str,
-    new_content: str
-) -> str:
-    """
-    Generates the documentation report content for a single file.
-
-    Parameters:
-        summary (str): Summary of the documentation.
-        changes (List[str]): List of changes made.
-        functions (List[dict]): List of functions documented.
-        classes (List[dict]): List of classes documented.
-        language (str): Programming language.
-        file_path (str): Path to the source file.
-        repo_root (str): Root directory of the repository.
-        new_content (str): Modified source code with inserted documentation.
-
-    Returns:
-        str: The documentation content for the file.
-    """
-    try:
-        relative_path = os.path.relpath(file_path, repo_root)
-        file_header = f'# File: {relative_path}\n\n'
-        summary_section = f'## Summary\n\n{summary.strip()}\n\n'
-        changes_section = '## Changes Made\n\n'
-        if changes:
-            changes_section += '\n'.join(f'- {change.strip()}' for change in changes) + '\n\n'
-        else:
-            changes_section += 'No changes were made to this file.\n\n'
-
-        functions_section = ''
-        if functions:
-            functions_section += '## Functions\n\n'
-            functions_section += '| Function | Arguments | Description | Async |\n'
-            functions_section += '|----------|-----------|-------------|-------|\n'
-            for func in functions:
-                func_name = func.get('name', 'N/A')
-                func_args = ', '.join(func.get('args', []))
-                func_doc = func.get('docstring') or 'No description provided.'
-                # Ensure func_doc is a string before calling splitlines()
-                first_line_doc = func_doc.splitlines()[0] if isinstance(func_doc, str) else 'No description provided.'
-                func_async = 'Yes' if func.get('async', False) else 'No'
-                functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n'
-            functions_section += '\n'
-        else:
-            functions_section += '## Functions\n\nNo functions are defined in this file.\n\n'
-
-        classes_section = ''
-        if classes:
-            classes_section += '## Classes\n\n'
-            for cls in classes:
-                cls_name = cls.get('name', 'N/A')
-                cls_doc = cls.get('docstring') or 'No description provided.'
-                classes_section += f'### Class: `{cls_name}`\n\n{cls_doc}\n\n'
-
-                methods = cls.get('methods', [])
-                if methods:
-                    classes_section += '| Method | Arguments | Description | Async | Type |\n'
-                    classes_section += '|--------|-----------|-------------|-------|------|\n'
-                    for method in methods:
-                        method_name = method.get('name', 'N/A')
-                        method_args = ', '.join(method.get('args', []))
-                        method_doc = method.get('docstring') or 'No description provided.'
-                        first_line_method_doc = method_doc.splitlines()[0] if isinstance(method_doc, str) else 'No description provided.'
-                        method_async = 'Yes' if method.get('async', False) else 'No'
-                        method_type = method.get('type', 'N/A')
-                        classes_section += f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n'
-                    classes_section += '\n'
-                else:
-                    classes_section += 'No methods defined in this class.\n\n'
-        else:
-            classes_section += '## Classes\n\nNo classes are defined in this file.\n\n'
-
-        code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
-
-        # Combine all sections
-        documentation_content = (
-            file_header +
-            summary_section +
-            changes_section +
-            functions_section +
-            classes_section +
-            code_block
-        )
-
-        return documentation_content
-
-    except Exception as e:
-        logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
-        return ''
-        
-        
+    
 async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -502,12 +440,23 @@ async def fetch_documentation(
 ) -> Optional[dict]:
     """
     Fetches documentation from OpenAI's API with optional retries.
+
+    Parameters:
+        session (aiohttp.ClientSession): The HTTP session.
+        prompt (str): The prompt to send to the AI.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
+        model_name (str): The AI model to use.
+        function_schema (dict): The function schema for structured responses.
+        retry (int): Number of retry attempts.
+
+    Returns:
+        Optional[dict]: The structured documentation or None if failed.
     """
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
                 headers = {
-                    'Authorization': f'Bearer {OPENAI_API_KEY}',
+                    'Authorization': f'Bearer {os.getenv("OPENAI_API_KEY")}',
                     'Content-Type': 'application/json'
                 }
                 payload = {
@@ -554,93 +503,46 @@ async def fetch_documentation(
     return None
 
 
-async def fetch_summary(
-    session: aiohttp.ClientSession,
-    prompt: str,
-    semaphore: asyncio.Semaphore,
-    model_name: str,
-    retry: int = 3,
-) -> Optional[str]:
+def generate_documentation_prompt(
+    file_name: str,
+    code_structure: Dict[str, Any],
+    project_info: Optional[str],
+    style_guidelines: Optional[str],
+    language: str
+) -> str:
     """
-    Fetches a summary from the OpenAI API.
+    Generates a documentation prompt based on the code structure and other details.
 
-    Args:
-        session (aiohttp.ClientSession): The session to use for making the API request.
-        prompt (str): The prompt to send to the API.
-        semaphore (asyncio.Semaphore): A semaphore to limit the number of concurrent API requests.
-        model_name (str): The model to use for the OpenAI request (e.g., 'gpt-4').
-        retry (int, optional): Number of retry attempts for failed requests. Defaults to 3.
+    Parameters:
+        file_name (str): The name of the file.
+        code_structure (Dict[str, Any]]): The structure of the code.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Style guidelines for the documentation.
+        language (str): Programming language.
 
     Returns:
-        Optional[str]: The summary text if successful, otherwise None.
+        str: The generated prompt.
     """
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
-        sys.exit(1)
+    prompt = (
+        'You are an experienced software developer tasked with generating comprehensive documentation for a specific file in a codebase.'
+    )
+    if project_info:
+        prompt += f'\n\n**Project Information:**\n{project_info}'
+    if style_guidelines:
+        prompt += f'\n\n**Style Guidelines:**\n{style_guidelines}'
 
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    messages = [
-        {"role": "system", "content": "You are an AI assistant that summarizes code."},
-        {"role": "user", "content": prompt},
-    ]
-
-    payload = {
-        "model": model_name,
-        "messages": messages,
-        "temperature": 0.2,
-    }
-
-    for attempt in range(1, retry + 1):
-        try:
-            async with semaphore:
-                async with session.post(
-                    OPENAI_API_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=120,
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-
-                        # Ensure the response contains 'choices' and it's well-formed
-                        choices = data.get('choices', [])
-                        if choices and 'message' in choices[0]:
-                            summary = choices[0]['message']['content'].strip()
-                            return summary
-                        else:
-                            logger.error(f"Unexpected API response structure: {data}")
-                            return None
-
-                    elif response.status in {429, 500, 502, 503, 504}:
-                        error_text = await response.text()
-                        logger.warning(
-                            f"API rate limit or server error (status {response.status}). "
-                            f"Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds. "
-                            f"Response: {error_text}"
-                        )
-                        await asyncio.sleep(2 ** attempt)
-                    else:
-                        error_text = await response.text()
-                        logger.error(
-                            f"Unhandled API request failure with status {response.status}: {error_text}"
-                        )
-                        return None
-
-        except asyncio.TimeoutError:
-            logger.error(
-                f"Request timed out during attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds."
-            )
-            await asyncio.sleep(2 ** attempt)
-
-        except aiohttp.ClientError as e:
-            logger.error(
-                f"Client error during API request: {e}. Attempt {attempt}/{retry}. Retrying in {2 ** attempt} seconds."
-            )
-            await asyncio.sleep(2 ** attempt)
-
-    logger.error("Failed to generate summary after multiple attempts.")
-    return None
+    prompt += f'\n\n**File Name:** {file_name}'
+    prompt += f'\n\n**Language:** {language}'
+    prompt += (
+        f'\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```'
+    )
+    prompt += """
+    
+    **Instructions:** Based on the above code structure, generate the following documentation sections specifically for this file:
+    1. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
+    2. **Changes Made:** A comprehensive list of changes or updates made to this file.
+    3. **Functions:** Detailed documentation for each function, including its purpose, arguments, return values, and whether it is asynchronous.
+    4. **Classes:** Detailed documentation for each class, including its purpose, methods, and any inheritance details.
+    
+    **Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"""
+    return prompt

@@ -157,6 +157,21 @@ async def process_file(
 ) -> Optional[str]:
     """
     Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content to be added to the report.
+
+    Parameters:
+        session (aiohttp.ClientSession): The HTTP session.
+        file_path (str): Path to the source file.
+        skip_types (Set[str]): Set of file extensions to skip.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
+        model_name (str): The AI model to use.
+        function_schema (dict): The function schema for structured responses.
+        repo_root (str): Root directory of the repository.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Style guidelines for the documentation.
+        safe_mode (bool): If True, do not modify files.
+
+    Returns:
+        Optional[str]: The documentation content for the file or None if failed.
     """
     logger.debug(f'Processing file: {file_path}')
     try:
@@ -180,7 +195,7 @@ async def process_file(
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return ''
 
-        code_structure = await extract_code_structure(content, file_path, language)
+        code_structure = await extract_code_structure(content, language)
         if not code_structure or (not code_structure.get('functions') and not code_structure.get('classes')):
             logger.warning(f"Could not extract code structure from '{file_path}'")
             return ''
@@ -261,44 +276,45 @@ async def extract_code_structure(content: str, file_path: str, language: str) ->
 
 async def process_code_documentation(
     content: str,
-    documentation: dict,
+    documentation: Dict[str, Any],
     language: str,
     file_path: str
 ) -> str:
     """
-    Inserts the docstrings or comments into the code based on the documentation.
-
+    Processes the code documentation by inserting docstrings/comments based on the language.
+    
     Parameters:
         content (str): The original source code.
-        documentation (dict): Documentation details from AI.
+        documentation (Dict[str, Any]]: Documentation details from AI.
         language (str): Programming language.
         file_path (str): Path to the source file.
-
+    
     Returns:
         str: The modified source code with inserted documentation.
     """
+    logger.debug(f"Processing documentation for '{file_path}' in language '{language}'")
     try:
-        documentation_format = documentation.get('documentation_format', 'docstring')
-        code_snippet = documentation.get('code_snippet', '')
-        if language == 'python' and documentation_format == 'docstring':
-            new_content = insert_python_docstrings(content, documentation)
-            if not is_valid_python_code(new_content):
-                logger.error(f"Modified Python code is invalid. Aborting insertion for '{file_path}'")
-                return content
+        if language == 'python':
+            modified_code = insert_python_docstrings(content, documentation)
+            # Optionally format and clean the code
+            modified_code = format_with_black(modified_code)
+            modified_code = clean_unused_imports(modified_code)
+            if not check_with_flake8(file_path):
+                logger.warning(f"Flake8 issues remain after formatting and cleaning in '{file_path}'")
+        elif language in ['javascript', 'typescript']:
+            modified_code = insert_js_ts_docstrings(content, documentation)
+            # Optionally, format the JS/TS code using Prettier or similar tools
+            # This can be integrated as needed
+        elif language == 'html':
+            modified_code = insert_html_comments(content, documentation)
+        elif language == 'css':
+            modified_code = insert_css_docstrings(content, documentation)
         else:
-            # Handle other languages or comment insertion
-            if language in ['javascript', 'typescript']:
-                new_content = insert_js_ts_docstrings(content, documentation)
-            elif language == 'html':
-                new_content = insert_html_comments(content, documentation)
-            elif language == 'css':
-                new_content = insert_css_docstrings(content, documentation)
-            else:
-                logger.warning(f"Unsupported language '{language}' for documentation insertion.")
-                new_content = content
-        return new_content
+            logger.warning(f"Unsupported language '{language}'. Skipping documentation insertion.")
+            modified_code = content
+        return modified_code
     except Exception as e:
-        logger.error(f"Error processing {language} file '{file_path}': {e}", exc_info=True)
+        logger.error(f"Error processing documentation for '{file_path}': {e}", exc_info=True)
         return content
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
@@ -340,6 +356,22 @@ async def write_documentation_report(
     repo_root: str,
     new_content: str
 ) -> str:
+    """
+    Generates the documentation report content for a single file.
+
+    Parameters:
+        summary (str): Summary of the documentation.
+        changes (List[str]): List of changes made.
+        functions (List[dict]): List of functions documented.
+        classes (List[dict]): List of classes documented.
+        language (str): Programming language.
+        file_path (str): Path to the source file.
+        repo_root (str): Root directory of the repository.
+        new_content (str): Modified source code with inserted documentation.
+
+    Returns:
+        str: The documentation content for the file.
+    """
     try:
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f'# File: {relative_path}\n\n'
@@ -410,6 +442,8 @@ async def write_documentation_report(
     except Exception as e:
         logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
         return ''
+
+
         
 def generate_table_of_contents(markdown_content: str) -> str:
     """

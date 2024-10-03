@@ -11,7 +11,7 @@ import traceback
 import tempfile
 import astor
 import esprima
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from bs4 import BeautifulSoup, Comment
 import tinycss2
 
@@ -198,62 +198,123 @@ def is_valid_python_code(code: str) -> bool:
         return False
 
 
-async def extract_js_ts_structure(file_path: str, content: str, language: str) -> Dict[str, Any]:
+# JavaScript/TypeScript-specific functions
+def extract_js_ts_docstring(node) -> str:
     """
-    Extracts the structure of JavaScript or TypeScript code, including functions and classes.
+    Extracts documentation comments preceding a given node in JavaScript/TypeScript code.
+
+    Parameters:
+        node (esprima.nodes.Node): The AST node representing a function or class.
+
+    Returns:
+        str: The extracted docstring or a default message if none is found.
     """
     try:
-        parsed = esprima.parseScript(content, tolerant=True)
-        functions = []
-        classes = []
+        comments = getattr(node, 'leadingComments', [])
+        if comments:
+            # Assume the last leading comment block is the docstring
+            doc_comment = comments[-1].value.strip()
+            # Remove leading '*' in block comments (/** */)
+            doc_comment = '\n'.join(line.lstrip('*').strip() for line in doc_comment.split('\n'))
+            return doc_comment
+        else:
+            return "No description provided."
+    except AttributeError:
+        # If the node does not have leadingComments attribute
+        return "No description provided."
+
+
+def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
+    """
+    Extracts functions from JavaScript/TypeScript code along with their docstrings.
+
+    Parameters:
+        content (str): The source code content.
+
+    Returns:
+        List[Dict[str, Any]]: A list of functions with their details.
+    """
+    functions = []
+    try:
+        parsed = esprima.parseScript(content, tolerant=True, comment=True, attachComment=True)
         for node in parsed.body:
             if node.type == 'FunctionDeclaration':
                 func = {
-                    'name': node.id.name,
+                    'name': node.id.name if node.id else 'anonymous',
                     'args': [param.name for param in node.params],
                     'docstring': extract_js_ts_docstring(node),
-                    'is_async': node.async
+                    'is_async': getattr(node, 'async', False)
                 }
                 functions.append(func)
             elif node.type == 'VariableDeclaration':
                 for decl in node.declarations:
-                    if decl.init and decl.init.type in ['FunctionExpression', 'ArrowFunctionExpression']:
+                    init = decl.init
+                    if init and init.type in ['FunctionExpression', 'ArrowFunctionExpression']:
                         func = {
-                            'name': decl.id.name,
-                            'args': [param.name for param in decl.init.params],
+                            'name': decl.id.name if decl.id else 'anonymous',
+                            'args': [param.name for param in init.params],
                             'docstring': extract_js_ts_docstring(node),
-                            'async': decl.init.async
+                            'is_async': getattr(init, 'async', False)
                         }
                         functions.append(func)
-            elif node.type == 'ClassDeclaration':
-                cls = {
-                    'name': node.id.name,
-                    'methods': extract_methods_from_class(node),
-                    'docstring': extract_js_ts_docstring(node)
-                }
-                classes.append(cls)
-        logger.debug(f"Extracted {len(functions)} functions and {len(classes)} classes from '{file_path}'")
-        return {
-            'functions': functions,
-            'classes': classes
-        }
+        logger.debug(f"Extracted {len(functions)} functions.")
+        return functions
     except Exception as e:
-        logger.error(f"Error extracting JS/TS structure from '{file_path}': {e}", exc_info=True)
+        logger.error(f"Error parsing functions: {e}", exc_info=True)
+        return []
+
+
+def extract_methods_from_class(node) -> List[Dict[str, Any]]:
+    """
+    Extracts methods from a class node in JavaScript/TypeScript code along with their docstrings.
+
+    Parameters:
+        node (esprima.nodes.ClassDeclaration): The class AST node.
+
+    Returns:
+        List[Dict[str, Any]]: A list of methods with their details.
+    """
+    methods = []
+    try:
+        for element in node.body.body:
+            if element.type == 'MethodDefinition':
+                method = {
+                    'name': element.key.name if element.key else 'anonymous',
+                    'args': [param.name for param in element.value.params],
+                    'docstring': extract_js_ts_docstring(element),
+                    'is_async': getattr(element.value, 'async', False),
+                    'type': element.kind  # e.g., 'constructor', 'method', 'get', 'set'
+                }
+                methods.append(method)
+        logger.debug(f"Extracted {len(methods)} methods from class '{node.id.name}'.")
+        return methods
+    except Exception as e:
+        logger.error(f"Error extracting methods from class '{node.id.name}': {e}", exc_info=True)
+        return []
+
+
+def extract_js_ts_structure(content: str, language: str) -> Dict[str, Any]:
+    """
+    Extracts the structure of JavaScript or TypeScript code, including functions and classes.
+
+    Parameters:
+        content (str): The source code content.
+        language (str): The programming language ('javascript' or 'typescript').
+
+    Returns:
+        Dict[str, Any]: A dictionary containing lists of functions and classes.
+    """
+    if language.lower() not in ['javascript', 'typescript']:
+        logger.error(f"Unsupported language '{language}' for JS/TS structure extraction.")
         return {'functions': [], 'classes': []}
 
-def extract_methods_from_class(node) -> List[dict]:
-    methods = []
-    for body_element in node.body.body:
-        if body_element.type in ['MethodDefinition', 'Property']:
-            method = {
-                'name': body_element.key.name,
-                'args': [param.name for param in body_element.value.params],
-                'docstring': extract_js_ts_docstring(body_element),
-                'async': body_element.value.async,
-                'type': body_element.kind  # e.g., 'constructor', 'method', 'get', 'set'
-            }
-            methods.append(method)
-    return methods
+    functions = extract_functions_from_js_ts(content)
+    classes = extract_classes_from_js_ts(content)
+
+    return {
+        'functions': functions,
+        'classes': classes
+    }
 
 
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
@@ -345,7 +406,7 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
 
     Parameters:
         original_code (str): The original HTML source code.
-        documentation (Dict[str, Any]): A dictionary containing documentation details.
+        documentation (Dict[str, Any]]): A dictionary containing documentation details.
 
     Returns:
         str: The modified HTML source code with inserted comments.
@@ -399,8 +460,6 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
 
 
 # CSS-specific functions
-# language_functions.py
-
 def extract_css_structure(code: str) -> Dict[str, Any]:
     """
     Extracts the structure of CSS code, including selectors and declarations.
@@ -435,13 +494,14 @@ def extract_css_structure(code: str) -> Dict[str, Any]:
         logger.error(f'Error extracting CSS structure: {e}', exc_info=True)
         return {}
 
+
 def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
     Inserts comments into CSS code based on provided documentation.
 
     Parameters:
         original_code (str): The original CSS source code.
-        documentation (Dict[str, Any]): A dictionary containing documentation details.
+        documentation (Dict[str, Any]]): A dictionary containing documentation details.
 
     Returns:
         str: The modified CSS source code with inserted comments.
@@ -480,3 +540,35 @@ def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> 
     except Exception as e:
         logger.error(f"Error inserting CSS docstrings: {e}", exc_info=True)
         return original_code
+
+
+# JavaScript/TypeScript-specific extraction functions
+def extract_classes_from_js_ts(content: str) -> List[Dict[str, Any]]:
+    """
+    Extracts classes from JavaScript/TypeScript code along with their methods and docstrings.
+
+    Parameters:
+        content (str): The source code content.
+
+    Returns:
+        List[Dict[str, Any]]: A list of classes with their details.
+    """
+    classes = []
+    try:
+        parsed = esprima.parseScript(content, tolerant=True, comment=True, attachComment=True)
+        for node in parsed.body:
+            if node.type == 'ClassDeclaration':
+                cls = {
+                    'name': node.id.name if node.id else 'anonymous',
+                    'methods': extract_methods_from_class(node),
+                    'docstring': extract_js_ts_docstring(node)
+                }
+                classes.append(cls)
+        logger.debug(f"Extracted {len(classes)} classes.")
+        return classes
+    except Exception as e:
+        logger.error(f"Error parsing classes: {e}", exc_info=True)
+        return []
+
+
+# Additional language-specific extraction functions can be implemented similarly
