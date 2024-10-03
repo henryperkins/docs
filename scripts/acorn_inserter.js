@@ -1,11 +1,12 @@
 // acorn_inserter.js
 
 const acorn = require('acorn');
-const walk = require('acorn-walk');
+const acornWalk = require('acorn-walk');
+const acornTS = require('acorn-typescript');
 const astring = require('astring');
 const fs = require('fs');
 
-// Read data from stdin (code and documentation)
+// Read data from stdin
 let inputChunks = [];
 process.stdin.on('data', chunk => {
     inputChunks.push(chunk);
@@ -13,22 +14,39 @@ process.stdin.on('data', chunk => {
 
 process.stdin.on('end', () => {
     const inputData = JSON.parse(inputChunks.join(''));
-    const { code, documentation } = inputData;
+    const { code, documentation, language } = inputData;
 
-    // Parse the code using acorn
+    let parserOptions = {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        locations: true,
+        ranges: true,
+        onComment: []
+    };
+
+    // Use Acorn extended with TypeScript if language is TypeScript
+    let Parser;
+    if (language === 'typescript') {
+        Parser = acorn.Parser.extend(acornTS());
+    } else {
+        Parser = acorn.Parser;
+    }
+
+    // Parse the code
+    let comments = [];
     let ast;
     try {
-        ast = acorn.parse(code, {
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-            locations: true,
-            ranges: true,
-            onComment: []
+        ast = Parser.parse(code, {
+            ...parserOptions,
+            onComment: comments
         });
     } catch (e) {
         console.error(`Acorn parsing error: ${e.message}`);
         process.exit(1);
     }
+
+    // Attach comments to nodes
+    acorn.addComments(ast, comments);
 
     // Build a map of function and class names to their docstrings
     const docstringsMapping = {};
@@ -74,7 +92,7 @@ process.stdin.on('end', () => {
     }
 
     // Traverse the AST and insert docstrings
-    walk.simple(ast, {
+    acornWalk.simple(ast, {
         FunctionDeclaration(node) {
             const name = node.id ? node.id.name : 'anonymous';
             if (docstringsMapping[name]) {
@@ -89,7 +107,7 @@ process.stdin.on('end', () => {
                 ) {
                     const name = declarator.id.name;
                     if (docstringsMapping[name]) {
-                        insertDocstring(declarator.init, docstringsMapping[name]);
+                        insertDocstring(declarator, docstringsMapping[name]);
                     }
                 }
             });
