@@ -543,15 +543,17 @@ def generate_documentation_prompt(
         f'\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```'
     )
     prompt += """
-    
+
     **Instructions:** Based on the above code structure, generate the following documentation sections specifically for this file:
     1. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
     2. **Changes Made:** A comprehensive list of changes or updates made to this file.
-    3. **Functions:** Detailed documentation for each function, including its purpose, arguments, return values, and whether it is asynchronous.
-    4. **Classes:** Detailed documentation for each class, including its purpose, methods, and any inheritance details.
-    
-    **Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"""
+    3. **Functions:** Provide a docstring for each function, including its purpose, arguments, return values, and whether it is asynchronous.
+    4. **Classes:** Provide a docstring for each class, including its purpose, methods, and any inheritance details. Also, provide docstrings for each method.
+
+    **Please ensure that the documentation adheres to the provided style guidelines and is structured according to the function schema.**
+    """
     return prompt
+
 
 # Initialize function_schema at the end after defining load_function_schema
 try:
