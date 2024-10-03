@@ -257,8 +257,11 @@ def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
                     'is_async': getattr(node.init, 'async', False)
                 }
                 functions.append(func)
-            for child in node.childNodes:
-                traverse_for_functions(child)
+
+            # Check if the node has childNodes before iterating
+            if hasattr(node, 'childNodes'):
+                for child in node.childNodes:
+                    traverse_for_functions(child)
 
         for node in parsed.body:
             traverse_for_functions(node)
@@ -268,7 +271,6 @@ def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error parsing functions: {e}", exc_info=True)
         return []
-
 
 def extract_methods_from_class(node) -> List[Dict[str, Any]]:
     """
