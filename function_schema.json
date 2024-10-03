@@ -1,5 +1,4 @@
 {
-  "name": "generate_documentation",
   "description": "Generates comprehensive documentation for the provided code structure.",
   "parameters": {
     "type": "object",
