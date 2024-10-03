@@ -312,8 +312,7 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
         }
 
         # Path to the acorn_inserter.js script
-        script_path = os.path.join(os.path.dirname(__file__), 'acorn_inserter.js')
-
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_inserter.js')
         # Check if the script exists
         if not os.path.exists(script_path):
             logger.error(f"acorn_inserter.js script not found at {script_path}")
