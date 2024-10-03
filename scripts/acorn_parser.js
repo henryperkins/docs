@@ -1,177 +1,127 @@
+// acorn_parser.js
+
 const acorn = require('acorn');
 const walk = require('acorn-walk');
-const Ajv = require('ajv');
 const fs = require('fs');
+const Ajv = require('ajv');
 
-// Read data from stdin (code and schema)
-const inputData = JSON.parse(fs.readFileSync(0).toString());
-const code = inputData.code;
-
-// Read schemas
-const functionSchema = JSON.parse(fs.readFileSync('function_schema.json').toString());
-const classSchema = JSON.parse(fs.readFileSync('class_schema.json').toString());
-const methodSchema = JSON.parse(fs.readFileSync('method.schema.json').toString());
-
-// Create an Ajv validator instance
+// Set up Ajv validator
 const ajv = new Ajv({ allErrors: true });
 
-// Add method schema to ajv
-ajv.addSchema(methodSchema, 'https://example.com/method.schema.json');
-
-// Compile the schemas
-const validateFunction = ajv.compile(functionSchema);
-const validateClass = ajv.compile(classSchema);
-
-// Initialize an array to collect comments
-const comments = [];
-
-// Parse the code using acorn
-const ast = acorn.parse(code, { 
-    ecmaVersion: 'latest', 
-    sourceType: 'module',
-    locations: true,
-    ranges: true,
-    onComment: comments
+// Read data from stdin (code, language, functionSchema)
+let inputChunks = [];
+process.stdin.on('data', chunk => {
+    inputChunks.push(chunk);
 });
 
-// Function to associate comments with nodes
-function attachComments(ast, comments) {
-  let commentIndex = 0;
-  let lastComment = null;
+process.stdin.on('end', () => {
+    const inputData = JSON.parse(inputChunks.join(''));
+    const { code, language, functionSchema } = inputData;
 
-  walk.simple(ast, {
-    Program(node) {
-      node.body.forEach(child => {
-        attachCommentToNode(child);
-      });
-    },
-    FunctionDeclaration(node) {
-      attachCommentToNode(node);
-    },
-    VariableDeclaration(node) {
-      attachCommentToNode(node);
-    },
-    ClassDeclaration(node) {
-      attachCommentToNode(node);
+    // Initialize comments array
+    let comments = [];
+
+    // Parse the code using acorn
+    let ast;
+    try {
+        ast = acorn.parse(code, {
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+            locations: true,
+            ranges: true,
+            onComment: comments
+        });
+    } catch (e) {
+        console.error(`Acorn parsing error: ${e.message}`);
+        process.exit(1);
     }
-  });
 
-  function attachCommentToNode(node) {
-    while (commentIndex < comments.length && comments[commentIndex].end <= node.start) {
-      lastComment = comments[commentIndex];
-      commentIndex++;
+    // Attach comments to nodes
+    acorn.addComments(ast, comments);
+
+    // Function to extract docstrings from leading comments
+    function extractDocstring(node) {
+        if (node.leadingComments && node.leadingComments.length > 0) {
+            const lastComment = node.leadingComments[node.leadingComments.length - 1];
+            return lastComment.value.trim();
+        }
+        return null;
     }
-    if (lastComment && lastComment.end <= node.start) {
-      node.leadingComments = node.leadingComments || [];
-      node.leadingComments.push(lastComment);
-    }
-  }
-}
 
-attachComments(ast, comments);
-
-// Extract functions and classes from the AST
-const structure = {
-  functions: [],
-  classes: []
-};
-
-// Function to extract docstrings from leading comments
-function extractDocstring(node) {
-  let docstring = '';
-  const leadingComments = node.leadingComments || [];
-  for (const comment of leadingComments) {
-    if (comment.type === 'Block' && comment.value.trim().startsWith('*')) {
-      docstring += comment.value.replace(/^\s*\*\s?/gm, '').trim() + '\n';
-    }
-  }
-  return docstring.trim();
-}
-
-// Walk the AST to extract functions and classes
-walk.simple(ast, {
-  FunctionDeclaration(node) {
-    const func = {
-      name: node.id ? node.id.name : 'anonymous',
-      args: node.params.map(param => param.name || 'param'),
-      async: node.async || false,
-      docstring: extractDocstring(node)
+    // Extract functions and classes from the AST
+    const structure = {
+        functions: [],
+        classes: []
     };
 
-    // Schema Validation
-    const valid = validateFunction(func);
-    if (!valid) {
-      console.error("Function data validation failed:", validateFunction.errors);
-      // Handle the error appropriately (e.g., throw an exception)
-      throw new Error("Function data validation failed");
-    }
+    walk.simple(ast, {
+        FunctionDeclaration(node) {
+            const func = {
+                name: node.id ? node.id.name : 'anonymous',
+                args: node.params.map(param => param.name || 'param'),
+                async: node.async || false,
+                docstring: extractDocstring(node)
+            };
+            structure.functions.push(func);
+        },
+        VariableDeclaration(node) {
+            node.declarations.forEach(declarator => {
+                if (
+                    declarator.init &&
+                    (declarator.init.type === 'FunctionExpression' || declarator.init.type === 'ArrowFunctionExpression')
+                ) {
+                    const func = {
+                        name: declarator.id.name,
+                        args: declarator.init.params.map(param => param.name || 'param'),
+                        async: declarator.init.async || false,
+                        docstring: extractDocstring(declarator)
+                    };
+                    structure.functions.push(func);
+                }
+            });
+        },
+        ClassDeclaration(node) {
+            const cls = {
+                name: node.id.name,
+                docstring: extractDocstring(node),
+                methods: []
+            };
 
-    structure.functions.push(func);
-  },
-  VariableDeclaration(node) {
-    node.declarations.forEach(declarator => {
-      if (
-        declarator.init &&
-        (declarator.init.type === 'FunctionExpression' || declarator.init.type === 'ArrowFunctionExpression')
-      ) {
-        const func = {
-          name: declarator.id.name,
-          args: declarator.init.params.map(param => param.name || 'param'),
-          async: declarator.init.async || false,
-          docstring: extractDocstring(declarator)
-        };
-
-        // Schema Validation
-        const valid = validateFunction(func);
-        if (!valid) {
-          console.error("Function data validation failed:", validateFunction.errors);
-          throw new Error("Function data validation failed");
+            node.body.body.forEach(element => {
+                if (element.type === 'MethodDefinition') {
+                    const method = {
+                        name: element.key.name,
+                        args: element.value.params.map(param => param.name || 'param'),
+                        async: element.value.async || false,
+                        kind: element.kind,
+                        docstring: extractDocstring(element)
+                    };
+                    cls.methods.push(method);
+                }
+            });
+            structure.classes.push(cls);
         }
-
-        structure.functions.push(func);
-      }
-    });
-  },
-  ClassDeclaration(node) {
-    const methods = [];
-    node.body.body.forEach(element => {
-      if (element.type === 'MethodDefinition') {
-        const method = {
-          name: element.key.name,
-          args: element.value.params.map(param => param.name || 'param'),
-          async: element.value.async || false,
-          kind: element.kind,
-          docstring: extractDocstring(element)
-        };
-
-        // Schema Validation for method
-        const validMethod = ajv.validate('https://example.com/method.schema.json', method);
-        if (!validMethod) {
-          console.error("Method data validation failed:", ajv.errors);
-          throw new Error("Method data validation failed");
-        }
-
-        methods.push(method);
-      }
     });
 
-    const cls = {
-      name: node.id.name,
-      methods: methods,
-      docstring: extractDocstring(node)
-    };
+    // If functionSchema is provided, perform validation
+    if (functionSchema) {
+        try {
+            // Compile the schema
+            const validate = ajv.compile(functionSchema);
 
-    // Schema Validation for class
-    const validClass = validateClass(cls);
-    if (!validClass) {
-      console.error("Class data validation failed:", validateClass.errors);
-      throw new Error("Class data validation failed");
+            // Validate the structure
+            const valid = validate(structure);
+
+            if (!valid) {
+                console.error('Validation errors:', JSON.stringify(validate.errors, null, 2));
+                process.exit(1);
+            }
+        } catch (e) {
+            console.error(`Schema validation error: ${e.message}`);
+            process.exit(1);
+        }
     }
 
-    structure.classes.push(cls);
-  }
+    // Output the extracted structure as JSON
+    console.log(JSON.stringify(structure, null, 2));
 });
-
-// Output the extracted structure as JSON to stdout
-console.log(JSON.stringify(structure, null, 2));
-
