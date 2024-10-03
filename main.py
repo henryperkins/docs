@@ -1,5 +1,3 @@
-# main.py
-
 import os
 import sys
 import argparse
@@ -18,10 +16,9 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     function_schema,
-    call_openai_api,  # Newly added for function calling
-    load_json_schema,     # Newly added for loading JSON schemas
+    call_openai_api,
+    load_json_schema,
 )
-
 import aiofiles
 
 # Configure logging
@@ -57,8 +54,7 @@ def validate_model_name(model_name: str) -> bool:
         "gpt-4-32k",
         "gpt-4-32k-0314",
         "gpt-4o-mini-2024-07-18",
-        "gpt-4o-2024-08-06",  # Ensure this model supports function calling
-        # Add other valid model names as needed
+        "gpt-4o-2024-08-06",
     ]
     if model_name in valid_models:
         return True
@@ -142,15 +138,12 @@ async def main():
         logger.critical(f"Failed to load configuration from '{config_path}': {e}")
         sys.exit(1)
 
-    # Initialize these variables with default values to avoid UnboundLocalError
     project_info_config = ''
     style_guidelines_config = ''
 
-    # Check if the config file exists
     if not os.path.isfile(config_path):
         logger.warning(f"Configuration file '{config_path}' not found. Proceeding with default and command-line settings.")
     else:
-        # Load additional configurations
         try:
             project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
             logger.debug(f"Loaded configurations from '{config_path}': Project Info='{project_info_config}', Style Guidelines='{style_guidelines_config}'")
@@ -158,7 +151,6 @@ async def main():
             logger.error(f"Failed to load configuration from '{config_path}': {e}")
             sys.exit(1)
 
-    # Determine final project_info and style_guidelines
     project_info = project_info_arg or project_info_config
     style_guidelines = style_guidelines_arg or style_guidelines_config
 
@@ -167,13 +159,11 @@ async def main():
     if style_guidelines:
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
-    # Load JSON schema for function calling
     function_schema_loaded = load_json_schema(schema_path)
     if not function_schema_loaded:
         logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
         sys.exit(1)
 
-    # Get all file paths
     try:
         file_paths = get_all_file_paths(
             repo_path=repo_path,
@@ -191,7 +181,6 @@ async def main():
         sys.exit(0)
 
     logger.info("Initializing output Markdown file.")
-    # Clear and initialize the output file with a header asynchronously
     try:
         async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
             await f.write("# Documentation Generation Report\n\n")
@@ -200,11 +189,9 @@ async def main():
         logger.critical(f"Failed to initialize output file '{output_file}': {e}")
         sys.exit(1)
 
-    # Initialize semaphore and locks
     semaphore = asyncio.Semaphore(concurrency)
     output_lock = asyncio.Lock()
 
-    # Start the asynchronous processing
     logger.info("Starting asynchronous file processing.")
     try:
         async with aiohttp.ClientSession() as session:
