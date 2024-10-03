@@ -341,23 +341,9 @@ async def write_documentation_report(
     classes: List[dict],
     language: str,
     file_path: str,
-    repo_root: str
+    repo_root: str,
+    new_content: str
 ) -> str:
-    """
-    Generates the documentation report content for a single file.
-
-    Parameters:
-        summary (str): Summary of the documentation.
-        changes (List[str]): List of changes made.
-        functions (List[dict]): List of functions documented.
-        classes (List[dict]): List of classes documented.
-        language (str): Programming language.
-        file_path (str): Path to the source file.
-        repo_root (str): Root directory of the repository.
-
-    Returns:
-        str: The documentation content for the file.
-    """
     try:
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f'# File: {relative_path}\n\n'
@@ -376,9 +362,11 @@ async def write_documentation_report(
             for func in functions:
                 func_name = func.get('name', 'N/A')
                 func_args = ', '.join(func.get('args', []))
-                func_doc = func.get('docstring', 'No description provided.')
+                func_doc = func.get('docstring') or 'No description provided.'
+                # Ensure func_doc is a string before calling splitlines()
+                first_line_doc = func_doc.splitlines()[0] if isinstance(func_doc, str) else 'No description provided.'
                 func_async = 'Yes' if func.get('async', False) else 'No'
-                functions_section += f'| `{func_name}` | `{func_args}` | {func_doc.splitlines()[0]} | {func_async} |\n'
+                functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n'
             functions_section += '\n'
         else:
             functions_section += '## Functions\n\nNo functions are defined in this file.\n\n'
@@ -388,7 +376,7 @@ async def write_documentation_report(
             classes_section += '## Classes\n\n'
             for cls in classes:
                 cls_name = cls.get('name', 'N/A')
-                cls_doc = cls.get('docstring', 'No description provided.')
+                cls_doc = cls.get('docstring') or 'No description provided.'
                 classes_section += f'### Class: `{cls_name}`\n\n{cls_doc}\n\n'
 
                 methods = cls.get('methods', [])
@@ -398,10 +386,11 @@ async def write_documentation_report(
                     for method in methods:
                         method_name = method.get('name', 'N/A')
                         method_args = ', '.join(method.get('args', []))
-                        method_doc = method.get('docstring', 'No description provided.')
+                        method_doc = method.get('docstring') or 'No description provided.'
+                        first_line_method_doc = method_doc.splitlines()[0] if isinstance(method_doc, str) else 'No description provided.'
                         method_async = 'Yes' if method.get('async', False) else 'No'
                         method_type = method.get('type', 'N/A')
-                        classes_section += f'| `{method_name}` | `{method_args}` | {method_doc.splitlines()[0]} | {method_async} | {method_type} |\n'
+                        classes_section += f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n'
                     classes_section += '\n'
                 else:
                     classes_section += 'No methods defined in this class.\n\n'
@@ -425,7 +414,7 @@ async def write_documentation_report(
     except Exception as e:
         logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
         return ''
-
+        
 def generate_table_of_contents(markdown_content: str) -> str:
     """
     Generates a markdown table of contents from the given markdown content.
