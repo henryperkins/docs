@@ -230,7 +230,7 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str, func
             'functionSchema': function_schema  # Include the schema in the data
         }
 
-        # Run acorn.js as a subprocess
+        # Run acorn.js as a subprocess (remove extra .encode())
         process = subprocess.run(['node', script_path], input=json.dumps(data_to_send).encode(), capture_output=True, text=True)
 
         if process.returncode == 0:
