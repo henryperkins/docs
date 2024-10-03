@@ -212,7 +212,7 @@ async def extract_js_ts_structure(file_path: str, content: str, language: str) -
                     'name': node.id.name,
                     'args': [param.name for param in node.params],
                     'docstring': extract_js_ts_docstring(node),
-                    'async': node.async
+                    'is_async': node.async
                 }
                 functions.append(func)
             elif node.type == 'VariableDeclaration':
