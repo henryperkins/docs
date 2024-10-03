@@ -258,10 +258,9 @@ def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
                 }
                 functions.append(func)
 
-            # Check if the node has childNodes before iterating
-            if hasattr(node, 'childNodes'):
-                for child in node.childNodes:
-                    traverse_for_functions(child)
+            # Correctly traverse the esprima AST
+            for child_node in ast.iter_child_nodes(node):
+                traverse_for_functions(child_node)
 
         for node in parsed.body:
             traverse_for_functions(node)
