@@ -197,6 +197,7 @@ def is_valid_python_code(code: str) -> bool:
 
 
 # JavaScript/TypeScript-specific functions
+
 def extract_js_ts_docstring(node) -> str:
     """
     Extracts documentation comments preceding a given node in JavaScript/TypeScript code.
@@ -290,8 +291,18 @@ def extract_methods_from_class(node) -> List[Dict[str, Any]]:
         logger.error(f"Error extracting methods from class '{node.id.name}': {e}", exc_info=True)
         return []
 
-
 async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
+    """
+    Extracts the structure of JavaScript/TypeScript code using esprima.
+
+    Parameters:
+        file_path (str): The path to the JS/TS file.
+        code (str): The JS/TS source code.
+        language (str): The programming language ('javascript' or 'typescript').
+
+    Returns:
+        Optional[Dict[str, Any]]: The extracted structure as a dictionary, or None if extraction fails.
+    """
     logger.debug("Starting extract_js_ts_structure")
     try:
         parsed = esprima.parseScript(code, tolerant=True, comment=True, attachComment=True)
