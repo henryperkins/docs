@@ -263,7 +263,7 @@ async def extract_js_ts_structure(
         }
 
         # Path to the acorn_parser.js script
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts/acorn_parser.js')
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_parser.js')
 
         # Check if the script exists
         if not os.path.exists(script_path):
