@@ -14,7 +14,7 @@ from utils import (
     DEFAULT_EXCLUDED_DIRS,
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
-    load_json_schema,
+    load_function_schema,
 )
 import aiofiles
 
