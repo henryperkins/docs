@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup, Comment  # For HTML and CSS functions
 import tinycss2  # For CSS functions
 import openai
 from jsonschema import validate, ValidationError
-from openai.error import OpenAIError  # For OpenAI exception handling
+from openai import OpenAIError  # Correct
 
 # ----------------------------
 # Configuration and Setup
