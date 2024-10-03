@@ -1,14 +1,14 @@
 // acorn_parser.js
 
 const acorn = require('acorn');
-const walk = require('acorn-walk');
+const acornWalk = require('acorn-walk');
+const acornTS = require('acorn-typescript');
 const fs = require('fs');
 const Ajv = require('ajv');
 
-// Set up Ajv validator
 const ajv = new Ajv({ allErrors: true });
 
-// Read data from stdin (code, language, functionSchema)
+// Read data from stdin
 let inputChunks = [];
 process.stdin.on('data', chunk => {
     inputChunks.push(chunk);
@@ -18,17 +18,28 @@ process.stdin.on('end', () => {
     const inputData = JSON.parse(inputChunks.join(''));
     const { code, language, functionSchema } = inputData;
 
-    // Initialize comments array
-    let comments = [];
+    let parserOptions = {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        locations: true,
+        ranges: true,
+        onComment: []
+    };
 
-    // Parse the code using acorn
+    // Use Acorn extended with TypeScript if language is TypeScript
+    let Parser;
+    if (language === 'typescript') {
+        Parser = acorn.Parser.extend(acornTS());
+    } else {
+        Parser = acorn.Parser;
+    }
+
+    // Parse the code
+    let comments = [];
     let ast;
     try {
-        ast = acorn.parse(code, {
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-            locations: true,
-            ranges: true,
+        ast = Parser.parse(code, {
+            ...parserOptions,
             onComment: comments
         });
     } catch (e) {
@@ -54,7 +65,7 @@ process.stdin.on('end', () => {
         classes: []
     };
 
-    walk.simple(ast, {
+    acornWalk.simple(ast, {
         FunctionDeclaration(node) {
             const func = {
                 name: node.id ? node.id.name : 'anonymous',
