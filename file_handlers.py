@@ -195,7 +195,7 @@ async def process_file(
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return ''
 
-        code_structure = await extract_code_structure(content, language)
+        code_structure = await extract_code_structure(content, file_path, language)
         if not code_structure or (not code_structure.get('functions') and not code_structure.get('classes')):
             logger.warning(f"Could not extract code structure from '{file_path}'")
             return ''
