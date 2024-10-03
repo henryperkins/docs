@@ -131,7 +131,7 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
         logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
         return None
 
-def load_function_schema(schema_path: str = 'function_schema.json') -> dict:
+def load_function_schema(schema_path: str = None) -> dict:
     """
     Loads the function schema.
 
@@ -141,12 +141,14 @@ def load_function_schema(schema_path: str = 'function_schema.json') -> dict:
     Returns:
         dict: Function schema.
     """
+    if not schema_path:
+        schema_path = os.path.join(os.path.dirname(__file__), 'schemas', 'function_schema.json')
     schema = load_json_schema(schema_path)
     if not schema:
         logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
         sys.exit(1)
     return schema
-
+    
 def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
     """
     Loads additional configurations from a config.json file.
