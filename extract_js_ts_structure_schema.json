@@ -1,0 +1,28 @@
+{
+  "functions": [
+    {
+      "name": "...",
+      "args": ["..."],
+      "async": false,
+      "docstring": "..."
+    },
+    ...
+  ],
+  "classes": [
+    {
+      "name": "...",
+      "docstring": "...",
+      "methods": [
+        {
+          "name": "...",
+          "args": ["..."],
+          "async": false,
+          "kind": "...",
+          "docstring": "..."
+        },
+        ...
+      ]
+    },
+    ...
+  ]
+}
