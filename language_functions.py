@@ -306,7 +306,7 @@ def extract_structure_from_acorn_ast(ast_data: dict) -> Dict[str, Any]:
         
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
-    Inserts docstrings into JavaScript/TypeScript code using esprima.
+    Inserts docstrings into JavaScript/TypeScript code using acorn.js.
 
     Parameters:
         original_code (str): The original JS/TS source code.
@@ -320,59 +320,39 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
     logger.debug(f'Documentation: {documentation}')
 
     try:
-        parsed = esprima.parseScript(original_code, tolerant=True, comment=True, attachComment=True)
+        # Handle React fragments
+        original_code = original_code.replace("<>", "<React.Fragment>")
+        original_code = original_code.replace("</>", "</React.Fragment>")
 
-        for node in parsed.body:
-            if node.type == 'FunctionDeclaration' or node.type == 'ClassDeclaration':
-                nodeName = node.id.name if node.id else 'anonymous'
-                doc = 'No description provided.'
+        # Path to the acorn_parser.js script (modified to handle insertion)
+        script_path = os.path.join(os.path.dirname(__file__), 'acorn_inserter.js') 
 
-                if node.type == 'FunctionDeclaration':
-                    # Use list comprehension to find the function documentation
-                    funcDoc = next((f for f in documentation.get('functions', []) if f.get('name') == nodeName), None)
-                    if funcDoc and funcDoc.get('docstring'):
-                        doc = funcDoc.get('docstring')
-                elif node.type == 'ClassDeclaration':
-                    # Use list comprehension to find the class documentation
-                    classDoc = next((c for c in documentation.get('classes', []) if c.get('name') == nodeName), None)
-                    if classDoc and classDoc.get('docstring'):
-                        doc = classDoc.get('docstring')
+        # Prepare data to send to Node.js script
+        data_to_send = {
+            'code': original_code,
+            'documentation': documentation
+        }
 
-                if not getattr(node, 'leadingComments', None):
-                    node.leadingComments = []
-                node.leadingComments.append({
-                    'type': 'Block',
-                    'value': f'* {doc} '
-                })
-                logger.debug(f"Inserted docstring for {node.type}: {nodeName}")
+        # Run the Node.js script as a subprocess
+        process = subprocess.run(
+            ['node', script_path], 
+            input=json.dumps(data_to_send).encode(), 
+            capture_output=True, 
+            text=True
+        )
 
-            if node.type == 'ClassDeclaration':
-                for method in node.body.body:
-                    if method.type == 'MethodDefinition':
-                        methodName = method.key.name
-                        # Use list comprehension to find the class documentation
-                        classDoc = next((c for c in documentation.get('classes', []) if c.get('name') == nodeName), None)
-                        if classDoc:
-                            # Use list comprehension to find the method documentation
-                            methodDoc = next((m for m in classDoc.get('methods', []) if m.get('name') == methodName), None)
-                            if methodDoc and methodDoc.get('docstring'):
-                                doc = methodDoc.get('docstring')
-
-                        if not getattr(method, 'leadingComments', None):
-                            method.leadingComments = []
-                        method.leadingComments.append({
-                            'type': 'Block',
-                            'value': f'* {doc} '
-                        })
-                        logger.debug(f"Inserted docstring for method: {methodName} in class: {nodeName}")
-
-        modified_code = esprima.generate(parsed, { comment: True })
-        logger.debug('Completed inserting JS/TS docstrings')
-        return modified_code
+        if process.returncode == 0:
+            modified_code = process.stdout
+            logger.debug('Completed inserting JS/TS docstrings')
+            return modified_code
+        else:
+            logger.error(f"Error running acorn_inserter.js: {process.stderr}")
+            return original_code
 
     except Exception as e:
         logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
+    
 
 # HTML-specific functions
 def extract_html_structure(code: str) -> Dict[str, Any]:
