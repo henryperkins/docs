@@ -36,6 +36,10 @@ console_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
+# language_functions.py
+script_path_parser = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_parser.js')
+script_path_inserter = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_inserter.js')
+
 
 def is_syntax_valid(code: str) -> bool:
     """Check for syntax validity using flake8."""
