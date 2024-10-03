@@ -1,5 +1,5 @@
 {
   "excluded_dirs": ["modules", "vids", "node_modules", "__pycache__", "pipmodules"],
   "excluded_files": ["config.json", ".env", ".gitignore", "package.json", "package-lock.json", "README.md", "output.md", "docs_generation.log", "tsconfig.json"],
-  "skip_types": [".json"]
+  "skip_types": [".bak"]
 }

@@ -10,4 +10,10 @@ temp_code.js
 __pycache__
 pipmodules
 pip
-
+files.md
+output2.md
+.vscode
+.github
+file_handlers.log
+language_functions.log
+documentation_generation.log
