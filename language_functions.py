@@ -291,29 +291,54 @@ def extract_methods_from_class(node) -> List[Dict[str, Any]]:
         return []
 
 
-async def extract_js_ts_structure(content: str, file_path: str, language: str) -> Dict[str, Any]:
-    """
-    Extracts the structure of JavaScript or TypeScript code, including functions and classes.
+async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
+    logger.debug("Starting extract_js_ts_structure")
+    try:
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract_structure.js')
+        logger.debug(f"Script path: {script_path}")
 
-    Parameters:
-        content (str): The source code content.
-        language (str): The programming language ('javascript' or 'typescript').
+        if not os.path.isfile(script_path):
+            logger.error(f"JS/TS extraction script '{script_path}' not found.")
+            return None
 
-    Returns:
-        Dict[str, Any]: A dictionary containing lists of functions and classes.
-    """
-    if language.lower() not in ['javascript', 'typescript']:
-        logger.error(f"Unsupported language '{language}' for JS/TS structure extraction.")
-        return {'functions': [], 'classes': []}
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.js' if language == 'javascript' else '.ts') as temp_file:
+            temp_file.write(code)
+            temp_file_path = temp_file.name
+            logger.debug(f"Temp file created: {temp_file_path}")
 
-    functions = extract_functions_from_js_ts(content)
-    classes = extract_classes_from_js_ts(content)
+        process = await asyncio.create_subprocess_exec(
+            'node',
+            script_path,
+            temp_file_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        logger.debug(f"Subprocess created: {process}")
 
-    return {
-        'functions': functions,
-        'classes': classes
-    }
+        stdout, stderr = await process.communicate()
+        logger.debug(f"Process stdout: {stdout.decode()}")
+        logger.debug(f"Process stderr: {stderr.decode()}")
 
+        os.remove(temp_file_path)
+        logger.debug(f"Temp file removed: {temp_file_path}")
+
+        if process.returncode != 0:
+            logger.error(f"JS/TS extraction script error for '{file_path}': {stderr.decode().strip()}")
+            return None
+
+        stdout_content = stdout.decode().strip()
+        try:
+            structure = json.loads(stdout_content)
+            logger.debug(f"Extracted JS/TS structure: {structure}")
+            return structure
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON output from JS/TS extraction script: {e}")
+            logger.error(f"Script output:\n{stdout_content}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
+        return None
 
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
