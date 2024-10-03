@@ -293,7 +293,7 @@ def extract_methods_from_class(node) -> List[Dict[str, Any]]:
         return []
 
 
-def extract_js_ts_structure(content: str, file_path: str, language: str) -> Dict[str, Any]:
+async def extract_js_ts_structure(content: str, file_path: str, language: str) -> Dict[str, Any]:
     """
     Extracts the structure of JavaScript or TypeScript code, including functions and classes.
 
