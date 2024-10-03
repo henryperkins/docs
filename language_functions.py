@@ -1,16 +1,21 @@
 # language_functions.py
 
 import os
+import sys
 import json
 import ast
 import asyncio
 import subprocess
 import logging
 import tempfile
-import astor
 from typing import Optional, Dict, Any, List
 from bs4 import BeautifulSoup, Comment
 import tinycss2
+import esprima  # Added import
+
+# Set minimum Python version requirements
+if sys.version_info < (3, 9):
+    raise Exception("This script requires Python 3.9 or higher")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set logging level to DEBUG
@@ -29,9 +34,8 @@ file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(formatter)
 
 # Add handlers to the logger
-if not logger.hasHandlers():
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
 
 
 def is_syntax_valid(code: str) -> bool:
@@ -47,6 +51,9 @@ def is_syntax_valid(code: str) -> bool:
         else:
             logger.error(f"flake8 found issues in '{temp_file_path}':\n{result.stdout}")
             return False
+    except FileNotFoundError:
+        logger.error("flake8 is not installed or not found in PATH.")
+        return False
     except Exception as e:
         logger.error(f"Error running flake8 on '{temp_file_path}': {e}", exc_info=True)
         return False
@@ -160,13 +167,14 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 docstring = ast.get_docstring(node)
                 if not docstring:
-                    docstring_node = ast.Expr(value=ast.Constant(value=summary, kind=None))
+                    docstring_node = ast.Expr(value=ast.Constant(value=summary))
                     node.body.insert(0, docstring_node)
                     node_lineno = getattr(node, 'lineno', 'unknown')
                     node_type = 'function' if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else 'class'
                     logger.debug(f"Inserted docstring in {node_type}: {node.name} at line {node_lineno}")
 
-        modified_code = astor.to_source(tree)
+        # Use ast.unparse() available in Python 3.9+
+        modified_code = ast.unparse(tree)
         logger.debug("Completed inserting Python docstrings")
         return modified_code
     except Exception as e:
@@ -196,6 +204,18 @@ def is_valid_python_code(code: str) -> bool:
 
 
 async def extract_js_ts_structure(file_path: str, code: str, language: str, function_schema: dict = None) -> Optional[Dict[str, Any]]:
+    """
+    Extracts the structure of JavaScript/TypeScript code using acorn.js.
+
+    Parameters:
+        file_path (str): The path to the JS/TS file.
+        code (str): The JS/TS source code.
+        language (str): The programming language ('javascript' or 'typescript').
+        function_schema (dict): The function schema for validation (optional).
+
+    Returns:
+        Optional[Dict[str, Any]]: The extracted structure as a dictionary, or None if extraction fails.
+    """
     logger.debug("Starting extract_js_ts_structure")
     try:
         # Handle React fragments
@@ -205,20 +225,19 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str, func
         # Path to the acorn_parser.js script
         script_path = os.path.join(os.path.dirname(__file__), 'acorn_parser.js')
 
+        # Check if the script exists
+        if not os.path.exists(script_path):
+            logger.error(f"acorn_parser.js script not found at {script_path}")
+            return None
+
         # Prepare data to send to Node.js script
         data_to_send = {
             'code': code,
             'functionSchema': function_schema  # Include the schema in the data
         }
 
-        # Run acorn.js as a subprocess asynchronously
-        process = await asyncio.to_thread(
-            subprocess.run,
-            ['node', script_path],
-            input=json.dumps(data_to_send),
-            capture_output=True,
-            text=True
-        )
+        # Run acorn.js as a subprocess
+        process = subprocess.run(['node', script_path], input=json.dumps(data_to_send), capture_output=True, text=True)
 
         if process.returncode == 0:
             # Parse the JSON output from acorn.js
@@ -234,7 +253,8 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str, func
     except Exception as e:
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
-        
+
+
 def extract_structure_from_acorn_ast(ast_data: dict) -> Dict[str, Any]:
     """
     Extracts the desired structure (functions, classes, etc.) from the acorn.js AST.
@@ -294,11 +314,12 @@ def extract_structure_from_acorn_ast(ast_data: dict) -> Dict[str, Any]:
         return docstring.strip()
 
     # Traverse the body of the program (the 'body' property contains the top-level nodes)
-    for node in ast_data['body']:
+    for node in ast_data.get('body', []):
         traverse_ast(node)
 
     return structure
-        
+
+
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
     Inserts docstrings into JavaScript/TypeScript code using acorn.js.
@@ -320,7 +341,12 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
         original_code = original_code.replace("</>", "</React.Fragment>")
 
         # Path to the acorn_parser.js script (modified to handle insertion)
-        script_path = os.path.join(os.path.dirname(__file__), 'acorn_inserter.js') 
+        script_path = os.path.join(os.path.dirname(__file__), 'acorn_inserter.js')
+
+        # Check if the script exists
+        if not os.path.exists(script_path):
+            logger.error(f"acorn_inserter.js script not found at {script_path}")
+            return original_code
 
         # Prepare data to send to Node.js script
         data_to_send = {
@@ -330,9 +356,9 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
 
         # Run the Node.js script as a subprocess
         process = subprocess.run(
-            ['node', script_path], 
-            input=json.dumps(data_to_send).encode(), 
-            capture_output=True, 
+            ['node', script_path],
+            input=json.dumps(data_to_send),
+            capture_output=True,
             text=True
         )
 
@@ -347,7 +373,7 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -
     except Exception as e:
         logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
-    
+
 
 # HTML-specific functions
 def extract_html_structure(code: str) -> Dict[str, Any]:
@@ -362,7 +388,7 @@ def extract_html_structure(code: str) -> Dict[str, Any]:
     """
     logger.debug('Starting extract_html_structure')
     try:
-        soup = BeautifulSoup(code, 'html.parser')
+        soup = BeautifulSoup(code, 'lxml')
         structure = {'tags': []}
         for tag in soup.find_all(True):
             structure['tags'].append({
@@ -382,7 +408,7 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
 
     Parameters:
         original_code (str): The original HTML source code.
-        documentation (Dict[str, Any]]): A dictionary containing documentation details.
+        documentation (Dict[str, Any]): A dictionary containing documentation details.
 
     Returns:
         str: The modified HTML source code with inserted comments.
@@ -391,7 +417,7 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
     logger.debug(f"Original HTML code (first 100 chars): {original_code[:100]}...")
     logger.debug(f"Documentation: {documentation}")
     try:
-        soup = BeautifulSoup(original_code, 'html.parser')
+        soup = BeautifulSoup(original_code, 'lxml')  # Use 'lxml' parser
         existing_comments = soup.find_all(string=lambda text: isinstance(text, Comment))
 
         summary = documentation.get("summary", "").strip()
@@ -408,7 +434,7 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
             changes_formatted = "; ".join(changes)
             new_comment_parts.append(f" Changes: {changes_formatted} ")
 
-        new_comment_text = " ".join(new_comment_parts)
+        new_comment_text = "<!--" + " ".join(new_comment_parts) + "-->\n"
 
         duplicate = False
         for comment in existing_comments:
@@ -417,7 +443,7 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
                 break
 
         if not duplicate:
-            comment = Comment(new_comment_text)
+            comment = Comment(" ".join(new_comment_parts))
             if soup.body:
                 soup.body.insert(0, comment)
             else:
@@ -448,7 +474,7 @@ def extract_css_structure(code: str) -> Dict[str, Any]:
     """
     logger.debug('Starting extract_css_structure')
     try:
-        rules = tinycss2.parse_stylesheet(code, skip_whitespace=True, skip_comments=True)
+        rules = tinycss2.parse_rule_list(code, skip_whitespace=True, skip_comments=True)
         structure = {'rules': []}
         for rule in rules:
             if rule.type == 'qualified-rule':
@@ -465,6 +491,8 @@ def extract_css_structure(code: str) -> Dict[str, Any]:
                     'declarations': declarations
                 })
                 logger.debug(f'Extracted rule: {selectors}')
+            else:
+                logger.debug(f'Ignored rule of type: {rule.type}')
         return structure
     except Exception as e:
         logger.error(f'Error extracting CSS structure: {e}', exc_info=True)
@@ -477,7 +505,7 @@ def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> 
 
     Parameters:
         original_code (str): The original CSS source code.
-        documentation (Dict[str, Any]]): A dictionary containing documentation details.
+        documentation (Dict[str, Any]): A dictionary containing documentation details.
 
     Returns:
         str: The modified CSS source code with inserted comments.
@@ -503,13 +531,22 @@ def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> 
 
         new_comment_text = "/*" + " ".join(new_comment_parts) + "*/\n"
 
-        # Check if the first line is already a comment with the same text
-        if original_code.startswith(new_comment_text):
-            logger.debug("CSS comment already exists. Skipping insertion.")
-            return original_code
+        # Find the position after any @charset or @import statements
+        insert_position = 0
+        tokens = tinycss2.tokenize(original_code, skip_whitespace=False)
+        for token in tokens:
+            insert_position += len(token.serialize())
+            if token.type == 'at-keyword' and token.value in ('charset', 'import'):
+                # Move the position to after the semicolon
+                for t in tokens:
+                    insert_position += len(t.serialize())
+                    if t.type == 'semicolon':
+                        break
+            else:
+                break  # No @charset or @import at the beginning
 
-        # Insert the new comment at the beginning of the CSS code
-        modified_code = new_comment_text + original_code
+        # Insert the comment at the calculated position
+        modified_code = original_code[:insert_position] + new_comment_text + original_code[insert_position:]
         logger.debug("Inserted new CSS comment.")
         logger.debug("Completed inserting CSS docstrings")
         return modified_code
@@ -518,7 +555,7 @@ def insert_css_docstrings(original_code: str, documentation: Dict[str, Any]) -> 
         return original_code
 
 
-# JavaScript/TypeScript-specific extraction functions
+# JavaScript/TypeScript-specific functions
 def extract_classes_from_js_ts(content: str) -> List[Dict[str, Any]]:
     """
     Extracts classes from JavaScript/TypeScript code along with their methods and docstrings.
@@ -531,7 +568,7 @@ def extract_classes_from_js_ts(content: str) -> List[Dict[str, Any]]:
     """
     classes = []
     try:
-        parsed = esprima.parseScript(content, tolerant=True, comment=True, attachComment=True)
+        parsed = esprima.parseScript(content, comment=True, attachComment=True)
         for node in parsed.body:
             if node.type == 'ClassDeclaration':
                 cls = {
@@ -547,4 +584,27 @@ def extract_classes_from_js_ts(content: str) -> List[Dict[str, Any]]:
         return []
 
 
-# Additional language-specific extraction functions can be implemented similarly
+def extract_methods_from_class(class_node) -> List[Dict[str, Any]]:
+    """Extracts methods from a class node."""
+    methods = []
+    for method in class_node.body.body:
+        if method.type == 'MethodDefinition':
+            method_data = {
+                'name': method.key.name,
+                'args': [param.name for param in method.value.params],
+                'async': method.value.async,
+                'kind': method.kind,
+                'docstring': extract_js_ts_docstring(method)
+            }
+            methods.append(method_data)
+    return methods
+
+
+def extract_js_ts_docstring(node) -> str:
+    """Extracts the docstring (comments) associated with a node."""
+    comments = node.leadingComments if hasattr(node, 'leadingComments') else []
+    docstring = ''
+    for comment in comments:
+        if comment.type == 'BlockComment':
+            docstring += comment.value.strip() + '\n'
+    return docstring.strip()
