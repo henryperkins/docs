@@ -259,7 +259,7 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
 async def write_documentation_report(
-    documentation: Dict[str, Any],
+    documentation: Optional[Dict[str, Any]],
     language: str,
     file_path: str,
     repo_root: str,
@@ -269,73 +269,78 @@ async def write_documentation_report(
     Generates the documentation report content for a single file.
 
     Parameters:
-        documentation (Dict[str, Any]): The documentation details.
-        language (str): Programming language.
-        file_path (str): Path to the source file.
-        repo_root (str): Root directory of the repository.
-        new_content (str): Modified source code with inserted documentation.
+        documentation (Optional[Dict[str, Any]]): The documentation details or None if unavailable.
+        ... (other parameters)
 
     Returns:
         str: The documentation content for the file.
     """
     try:
-        summary = documentation.get('summary', '')
-        changes = documentation.get('changes_made', [])
-        functions = documentation.get('functions', [])
-        classes = documentation.get('classes', [])
-
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f'# File: {relative_path}\n\n'
-        summary_section = f'## Summary\n\n{summary.strip()}\n\n'
-        changes_section = '## Changes Made\n\n'
-        if changes:
-            changes_section += '\n'.join(f'- {change.strip()}' for change in changes) + '\n\n'
-        else:
-            changes_section += 'No changes were made to this file.\n\n'
 
+        # Initialize sections
+        summary_section = ''
+        changes_section = ''
         functions_section = ''
-        if functions:
-            functions_section += '## Functions\n\n'
-            functions_section += '| Function | Arguments | Description | Async |\n'
-            functions_section += '|----------|-----------|-------------|-------|\n'
-            for func in functions:
-                func_name = func.get('name', 'N/A')
-                func_args = ', '.join(func.get('args', []))
-                func_doc = func.get('docstring') or 'No description provided.'
-                # Ensure func_doc is a string before calling splitlines()
-                first_line_doc = func_doc.splitlines()[0] if isinstance(func_doc, str) else 'No description provided.'
-                func_async = 'Yes' if func.get('async', False) else 'No'
-                functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n'
-            functions_section += '\n'
-        else:
-            functions_section += '## Functions\n\nNo functions are defined in this file.\n\n'
-
         classes_section = ''
-        if classes:
-            classes_section += '## Classes\n\n'
-            for cls in classes:
-                cls_name = cls.get('name', 'N/A')
-                cls_doc = cls.get('docstring') or 'No description provided.'
-                classes_section += f'### Class: `{cls_name}`\n\n{cls_doc}\n\n'
 
-                methods = cls.get('methods', [])
-                if methods:
-                    classes_section += '| Method | Arguments | Description | Async | Type |\n'
-                    classes_section += '|--------|-----------|-------------|-------|------|\n'
-                    for method in methods:
-                        method_name = method.get('name', 'N/A')
-                        method_args = ', '.join(method.get('args', []))
-                        method_doc = method.get('docstring') or 'No description provided.'
-                        first_line_method_doc = method_doc.splitlines()[0] if isinstance(method_doc, str) else 'No description provided.'
-                        method_async = 'Yes' if method.get('async', False) else 'No'
-                        method_type = method.get('type', 'N/A')
-                        classes_section += f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n'
-                    classes_section += '\n'
-                else:
-                    classes_section += 'No methods defined in this class.\n\n'
-        else:
-            classes_section += '## Classes\n\nNo classes are defined in this file.\n\n'
+        if documentation:
+            summary = documentation.get('summary', '')
+            changes = documentation.get('changes_made', [])
+            functions = documentation.get('functions', [])
+            classes = documentation.get('classes', [])
 
+            if summary:
+                summary_section = f'## Summary\n\n{summary.strip()}\n\n'
+
+            changes_section = '## Changes Made\n\n'
+            if changes:
+                changes_section += '\n'.join(f'- {change.strip()}' for change in changes) + '\n\n'
+            else:
+                changes_section += 'No changes were made to this file.\n\n'
+
+            if functions:
+                functions_section += '## Functions\n\n'
+                functions_section += '| Function | Arguments | Description | Async |\n'
+                functions_section += '|----------|-----------|-------------|-------|\n'
+                for func in functions:
+                    func_name = func.get('name', 'N/A')
+                    func_args = ', '.join(func.get('args', []))
+                    func_doc = func.get('docstring') or 'No description provided.'
+                    first_line_doc = func_doc.splitlines()[0] if isinstance(func_doc, str) else 'No description provided.'
+                    func_async = 'Yes' if func.get('async', False) else 'No'
+                    functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n'
+                functions_section += '\n'
+            else:
+                functions_section += '## Functions\n\nNo functions are defined in this file.\n\n'
+
+            if classes:
+                classes_section += '## Classes\n\n'
+                for cls in classes:
+                    cls_name = cls.get('name', 'N/A')
+                    cls_doc = cls.get('docstring') or 'No description provided.'
+                    classes_section += f'### Class: `{cls_name}`\n\n{cls_doc}\n\n'
+
+                    methods = cls.get('methods', [])
+                    if methods:
+                        classes_section += '| Method | Arguments | Description | Async | Type |\n'
+                        classes_section += '|--------|-----------|-------------|-------|------|\n'
+                        for method in methods:
+                            method_name = method.get('name', 'N/A')
+                            method_args = ', '.join(method.get('args', []))
+                            method_doc = method.get('docstring') or 'No description provided.'
+                            first_line_method_doc = method_doc.splitlines()[0] if isinstance(method_doc, str) else 'No description provided.'
+                            method_async = 'Yes' if method.get('async', False) else 'No'
+                            method_type = method.get('type', 'N/A')
+                            classes_section += f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n'
+                        classes_section += '\n'
+                    else:
+                        classes_section += 'No methods defined in this class.\n\n'
+            else:
+                classes_section += '## Classes\n\nNo classes are defined in this file.\n\n'
+
+        # Include code block regardless of documentation availability
         code_block = f'```{language}\n{new_content}\n```\n\n---\n\n'
 
         # Combine all sections
