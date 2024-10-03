@@ -196,7 +196,10 @@ def is_valid_python_code(code: str) -> bool:
         return False
 
 
-# JavaScript/TypeScript-specific functions
+import esprima
+import logging
+
+logger = logging.getLogger(__name__)
 
 def extract_js_ts_docstring(node) -> str:
     """
@@ -236,7 +239,8 @@ def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
     functions = []
     try:
         parsed = esprima.parseScript(content, tolerant=True, comment=True, attachComment=True)
-        for node in parsed.body:
+
+        def traverse_for_functions(node):
             if node.type == 'FunctionDeclaration':
                 func = {
                     'name': node.id.name if node.id else 'anonymous',
@@ -245,17 +249,20 @@ def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
                     'is_async': getattr(node, 'async', False)
                 }
                 functions.append(func)
-            elif node.type == 'VariableDeclaration':
-                for decl in node.declarations:
-                    init = decl.init
-                    if init and init.type in ['FunctionExpression', 'ArrowFunctionExpression']:
-                        func = {
-                            'name': decl.id.name if decl.id else 'anonymous',
-                            'args': [param.name for param in init.params],
-                            'docstring': extract_js_ts_docstring(node),
-                            'is_async': getattr(init, 'async', False)
-                        }
-                        functions.append(func)
+            elif node.type == 'VariableDeclarator' and node.init and node.init.type in ['FunctionExpression', 'ArrowFunctionExpression']:
+                func = {
+                    'name': node.id.name if node.id else 'anonymous',
+                    'args': [param.name for param in node.init.params],
+                    'docstring': extract_js_ts_docstring(node),
+                    'is_async': getattr(node.init, 'async', False)
+                }
+                functions.append(func)
+            for child in node.childNodes:
+                traverse_for_functions(child)
+
+        for node in parsed.body:
+            traverse_for_functions(node)
+
         logger.debug(f"Extracted {len(functions)} functions.")
         return functions
     except Exception as e:
@@ -326,8 +333,7 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
     except Exception as e:
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
-
-
+        
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
     Inserts docstrings into JavaScript/TypeScript code using esprima.
