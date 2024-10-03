@@ -6,6 +6,7 @@ import aiohttp
 import asyncio
 import re
 import subprocess
+import black  # Add this import
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
 import tempfile  # For JS/TS extraction
