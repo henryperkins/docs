@@ -421,7 +421,14 @@ def generate_documentation_prompt(file_name: str, code_structure: dict, project_
 **Please ensure that the documentation is clear, detailed, and adheres to the provided style guidelines.**"""
     return prompt
 
-async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semaphore: asyncio.Semaphore, model_name: str, function_schema: dict, retry: int=3) -> Optional[dict]:
+async def fetch_documentation(
+    session: aiohttp.ClientSession,
+    prompt: str,
+    semaphore: asyncio.Semaphore,
+    model_name: str,
+    function_schema: dict,
+    retry: int = 3
+) -> Optional[dict]:
     """
     Fetches documentation from OpenAI's API with optional retries.
     """
@@ -441,6 +448,7 @@ async def fetch_documentation(session: aiohttp.ClientSession, prompt: str, semap
                     'functions': [function_schema],
                     'function_call': 'auto'
                 }
+                # Log the payload for debugging
                 logger.debug(f"API Payload: {json.dumps(payload, indent=2)}")
                 async with session.post('https://api.openai.com/v1/chat/completions', headers=headers, json=payload) as resp:
                     response_text = await resp.text()
