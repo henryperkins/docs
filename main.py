@@ -5,7 +5,6 @@ import asyncio
 import logging
 import json
 import aiohttp
-import shutil
 from logging.handlers import RotatingFileHandler
 from file_handlers import process_all_files
 from utils import (
@@ -15,8 +14,6 @@ from utils import (
     DEFAULT_EXCLUDED_DIRS,
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
-    function_schema,
-    call_openai_api,
     load_json_schema,
 )
 import aiofiles
@@ -29,10 +26,12 @@ def configure_logging(log_level):
     logger.setLevel(log_level)
 
     # Create formatter with module, function, and line number
-    formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s')
+    formatter = logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s:%(module)s:%(funcName)s:%(lineno)d: %(message)s'
+    )
 
     # Create rotating file handler which logs debug and higher level messages
-    file_handler = RotatingFileHandler('docs_generation.log', maxBytes=5*1024*1024, backupCount=5)
+    file_handler = RotatingFileHandler('docs_generation.log', maxBytes=5 * 1024 * 1024, backupCount=5)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
@@ -42,9 +41,8 @@ def configure_logging(log_level):
     console_handler.setFormatter(formatter)
 
     # Add handlers to the logger
-    if not logger.hasHandlers():
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
 def validate_model_name(model_name: str) -> bool:
     """Validates the OpenAI model name format."""
@@ -59,8 +57,8 @@ def validate_model_name(model_name: str) -> bool:
     if model_name in valid_models:
         return True
     else:
-        logger.error(f"Invalid model name '{model_name}'. Please choose a valid OpenAI model.")
-        return False
+        logger.warning(f"Unrecognized model name '{model_name}'. Proceeding with caution.")
+        return True  # Allow unrecognized models but log a warning
 
 async def main():
     """Main function to orchestrate documentation generation."""
@@ -114,7 +112,8 @@ async def main():
 
     # Validate model name
     if not validate_model_name(model_name):
-        sys.exit(1)
+        # Proceed but warn
+        logger.debug(f"Proceeding with model '{model_name}'")
 
     if not os.path.isdir(repo_path):
         logger.critical(f"Invalid repository path: '{repo_path}' is not a directory.")
@@ -126,18 +125,10 @@ async def main():
     excluded_files = set(DEFAULT_EXCLUDED_FILES)
     skip_types = set(DEFAULT_SKIP_TYPES)
     if args.skip_types:
-        skip_types.update(ext.strip() for ext in args.skip_types.split(','))
+        skip_types.update(ext.strip() for ext in args.skip_types.split(',') if ext.strip())
         logger.debug(f"Updated skip_types: {skip_types}")
 
-    # Load configuration from a JSON file
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-        logger.info(f"Configuration loaded from '{config_path}'")
-    except Exception as e:
-        logger.critical(f"Failed to load configuration from '{config_path}': {e}")
-        sys.exit(1)
-
+    # Load configuration
     project_info_config = ''
     style_guidelines_config = ''
 
@@ -145,7 +136,9 @@ async def main():
         logger.warning(f"Configuration file '{config_path}' not found. Proceeding with default and command-line settings.")
     else:
         try:
-            project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types)
+            project_info_config, style_guidelines_config = load_config(
+                config_path, excluded_dirs, excluded_files, skip_types
+            )
             logger.debug(f"Loaded configurations from '{config_path}': Project Info='{project_info_config}', Style Guidelines='{style_guidelines_config}'")
         except Exception as e:
             logger.error(f"Failed to load configuration from '{config_path}': {e}")
@@ -190,7 +183,6 @@ async def main():
         sys.exit(1)
 
     semaphore = asyncio.Semaphore(concurrency)
-    output_lock = asyncio.Lock()
 
     logger.info("Starting asynchronous file processing.")
     try:
@@ -199,14 +191,14 @@ async def main():
                 session=session,
                 file_paths=file_paths,
                 skip_types=skip_types,
-                output_file=output_file,
                 semaphore=semaphore,
                 model_name=model_name,
                 function_schema=function_schema_loaded,
                 repo_root=repo_path,
                 project_info=project_info,
                 style_guidelines=style_guidelines,
-                safe_mode=safe_mode
+                safe_mode=safe_mode,
+                output_file=output_file
             )
     except Exception as e:
         logger.critical(f"Error during processing: {e}", exc_info=True)
