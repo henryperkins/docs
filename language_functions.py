@@ -201,114 +201,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def extract_js_ts_docstring(node) -> str:
-    """
-    Extracts documentation comments preceding a given node in JavaScript/TypeScript code.
 
-    Parameters:
-        node (esprima.nodes.Node): The AST node representing a function or class.
-
-    Returns:
-        str: The extracted docstring or a default message if none is found.
-    """
-    try:
-        comments = getattr(node, 'leadingComments', [])
-        if comments:
-            # Assume the last leading comment block is the docstring
-            doc_comment = comments[-1].value.strip()
-            # Remove leading '*' in block comments (/** */)
-            doc_comment = '\n'.join(line.lstrip('*').strip() for line in doc_comment.split('\n'))
-            return doc_comment
-        else:
-            return "No description provided."
-    except AttributeError:
-        # If the node does not have leadingComments attribute
-        return "No description provided."
-
-
-def extract_functions_from_js_ts(content: str) -> List[Dict[str, Any]]:
-    """
-    Extracts functions from JavaScript/TypeScript code along with their docstrings.
-
-    Parameters:
-        content (str): The source code content.
-
-    Returns:
-        List[Dict[str, Any]]: A list of functions with their details.
-    """
-    functions = []
-    try:
-        parsed = esprima.parseScript(content, tolerant=True, comment=True, attachComment=True)
-
-        def traverse_for_functions(node):
-            print(f"Node type: {node.type}, _fields: {node._fields}")  # Debugging line
-
-            if node.type == 'FunctionDeclaration':
-                func = {
-                    'name': node.id.name if node.id else 'anonymous',
-                    'args': [param.name for param in node.params],
-                    'docstring': extract_js_ts_docstring(node),
-                    'is_async': getattr(node, 'async', False)
-                }
-                functions.append(func)
-            elif node.type == 'VariableDeclarator' and node.init and node.init.type in ['FunctionExpression', 'ArrowFunctionExpression']:
-                func = {
-                    'name': node.id.name if node.id else 'anonymous',
-                    'args': [param.name for param in node.init.params],
-                    'docstring': extract_js_ts_docstring(node),
-                    'is_async': getattr(node.init, 'async', False)
-                }
-                functions.append(func)
-
-            # Correctly traverse the esprima AST
-            for key, value in node.items():
-                if isinstance(value, esprima.nodes.Node):
-                    traverse_for_functions(value)
-                elif isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, esprima.nodes.Node):
-                            traverse_for_functions(item)
-
-        for node in parsed.body:
-            traverse_for_functions(node)
-
-        logger.debug(f"Extracted {len(functions)} functions.")
-        return functions
-    except Exception as e:
-        logger.error(f"Error parsing functions: {e}", exc_info=True)
-        return []
-        
-def extract_methods_from_class(node) -> List[Dict[str, Any]]:
-    """
-    Extracts methods from a class node in JavaScript/TypeScript code along with their docstrings.
-
-    Parameters:
-        node (esprima.nodes.ClassDeclaration): The class AST node.
-
-    Returns:
-        List[Dict[str, Any]]: A list of methods with their details.
-    """
-    methods = []
-    try:
-        for element in node.body.body:
-            if element.type == 'MethodDefinition':
-                method = {
-                    'name': element.key.name if element.key else 'anonymous',
-                    'args': [param.name for param in element.value.params],
-                    'docstring': extract_js_ts_docstring(element),
-                    'is_async': getattr(element.value, 'async', False),
-                    'type': element.kind  # e.g., 'constructor', 'method', 'get', 'set'
-                }
-                methods.append(method)
-        logger.debug(f"Extracted {len(methods)} methods from class '{node.id.name}'.")
-        return methods
-    except Exception as e:
-        logger.error(f"Error extracting methods from class '{node.id.name}': {e}", exc_info=True)
-        return []
 
 async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
     """
-    Extracts the structure of JavaScript/TypeScript code using esprima.
+    Extracts the structure of JavaScript/TypeScript code using acorn.js.
 
     Parameters:
         file_path (str): The path to the JS/TS file.
@@ -324,32 +221,88 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
         code = code.replace("<>", "<React.Fragment>")
         code = code.replace("</>", "</React.Fragment>")
 
-        # Use parseModule for modules, parseScript for scripts
-        if language == 'javascript' or language == 'typescript':
-            parsed = esprima.parseModule(code, {"jsx": True})
+        # Path to the acorn_parser.js script
+        script_path = os.path.join(os.path.dirname(__file__), 'acorn_parser.js')
+
+        # Run acorn.js as a subprocess
+        process = subprocess.run(['node', script_path], input=code.encode(), capture_output=True, text=True)
+
+        if process.returncode == 0:
+            # Parse the JSON output from acorn.js
+            ast_data = json.loads(process.stdout)
+            logger.debug(f"Successfully parsed JS/TS structure: {ast_data}")
+
+            structure = extract_structure_from_acorn_ast(ast_data)
+            return structure
         else:
-            parsed = esprima.parseScript(code, tolerant=True, comment=True, attachComment=True)
-
-        structure = {
-            'functions': extract_functions_from_js_ts(code),
-            'classes': []
-        }
-
-        for node in parsed.body:
-            if node.type == 'ClassDeclaration':
-                class_data = {
-                    'name': node.id.name,
-                    'methods': extract_methods_from_class(node),
-                    'docstring': extract_js_ts_docstring(node)
-                }
-                structure['classes'].append(class_data)
-
-        logger.debug(f"Extracted JS/TS structure: {structure}")
-        return structure
+            logger.error(f"Error running acorn.js: {process.stderr}")
+            return None
 
     except Exception as e:
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
+
+
+def extract_structure_from_acorn_ast(ast_data: dict) -> Dict[str, Any]:
+    """
+    Extracts the desired structure (functions, classes, etc.) from the acorn.js AST.
+
+    Parameters:
+        ast_data (dict): The AST data parsed from acorn.js output.
+
+    Returns:
+        Dict[str, Any]: The extracted structure.
+    """
+    structure = {'functions': [], 'classes': []}
+
+    def traverse_ast(node):
+        if node['type'] == 'FunctionDeclaration':
+            function_data = {
+                'name': node['id']['name'] if node['id'] else 'anonymous',
+                'args': [param['name'] for param in node['params']],
+                'async': node.get('async', False),
+                'docstring': extract_docstring(node)
+            }
+            structure['functions'].append(function_data)
+        elif node['type'] == 'ClassDeclaration':
+            class_data = {
+                'name': node['id']['name'],
+                'methods': [],
+                'docstring': extract_docstring(node)
+            }
+            for method_node in node['body']['body']:
+                if method_node['type'] == 'MethodDefinition':
+                    method_data = {
+                        'name': method_node['key']['name'],
+                        'args': [param['name'] for param in method_node['value']['params']],
+                        'async': method_node['value'].get('async', False),
+                        'kind': method_node['kind'],
+                        'docstring': extract_docstring(method_node)
+                    }
+                    class_data['methods'].append(method_data)
+            structure['classes'].append(class_data)
+
+        # Recursively traverse child nodes
+        for key, value in node.items():
+            if isinstance(value, dict):
+                traverse_ast(value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        traverse_ast(item)
+
+    def extract_docstring(node):
+        """Extracts docstring from a node's leading comments."""
+        docstring = ""
+        leading_comments = node.get('leadingComments', [])
+        if leading_comments:
+            for comment in leading_comments:
+                if comment['type'] == 'Block' and comment['value'].startswith('*'):
+                    docstring += comment['value'].lstrip('*').strip() + '\n'
+        return docstring.strip()
+
+    traverse_ast(ast_data)
+    return structure
         
 def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
     """
