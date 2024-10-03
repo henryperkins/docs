@@ -320,7 +320,16 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
     """
     logger.debug("Starting extract_js_ts_structure")
     try:
-        parsed = esprima.parseScript(code, tolerant=True, comment=True, attachComment=True)
+        # Handle React fragments
+        code = code.replace("<>", "<React.Fragment>")
+        code = code.replace("</>", "</React.Fragment>")
+
+        # Use parseModule for modules, parseScript for scripts
+        if language == 'javascript' or language == 'typescript':
+            parsed = esprima.parseModule(code, {"jsx": True})
+        else:
+            parsed = esprima.parseScript(code, tolerant=True, comment=True, attachComment=True)
+
         structure = {
             'functions': extract_functions_from_js_ts(code),
             'classes': []
