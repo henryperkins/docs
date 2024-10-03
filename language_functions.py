@@ -248,7 +248,6 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str, func
         logger.error(f"Exception in extract_js_ts_structure: {e}", exc_info=True)
         return None
 
-
 def extract_structure_from_acorn_ast(ast_data: dict) -> Dict[str, Any]:
     """
     Extracts the desired structure (functions, classes, etc.) from the acorn.js AST.
