@@ -8,7 +8,6 @@ import subprocess
 import logging
 import tempfile
 import astor
-import esprima
 from typing import Optional, Dict, Any, List
 from bs4 import BeautifulSoup, Comment
 import tinycss2
@@ -194,12 +193,6 @@ def is_valid_python_code(code: str) -> bool:
     except SyntaxError as e:
         logger.error(f"Syntax error in Python code: {e}")
         return False
-
-
-import esprima
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 async def extract_js_ts_structure(file_path: str, code: str, language: str, function_schema: dict = None) -> Optional[Dict[str, Any]]:
