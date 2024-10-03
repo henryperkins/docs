@@ -202,8 +202,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-
-async def extract_js_ts_structure(file_path: str, code: str, language: str) -> Optional[Dict[str, Any]]:
+async def extract_js_ts_structure(file_path: str, code: str, language: str, function_schema: dict = None) -> Optional[Dict[str, Any]]:
     """
     Extracts the structure of JavaScript/TypeScript code using acorn.js.
 
@@ -211,6 +210,7 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
         file_path (str): The path to the JS/TS file.
         code (str): The JS/TS source code.
         language (str): The programming language ('javascript' or 'typescript').
+        function_schema (dict): The function schema for validation (optional).
 
     Returns:
         Optional[Dict[str, Any]]: The extracted structure as a dictionary, or None if extraction fails.
@@ -224,8 +224,14 @@ async def extract_js_ts_structure(file_path: str, code: str, language: str) -> O
         # Path to the acorn_parser.js script
         script_path = os.path.join(os.path.dirname(__file__), 'acorn_parser.js')
 
+        # Prepare data to send to Node.js script
+        data_to_send = {
+            'code': code,
+            'functionSchema': function_schema  # Include the schema in the data
+        }
+
         # Run acorn.js as a subprocess
-        process = subprocess.run(['node', script_path], input=code.encode(), capture_output=True, text=True)
+        process = subprocess.run(['node', script_path], input=json.dumps(data_to_send).encode(), capture_output=True, text=True)
 
         if process.returncode == 0:
             # Parse the JSON output from acorn.js
