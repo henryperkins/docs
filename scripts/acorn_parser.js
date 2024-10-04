@@ -1,10 +1,13 @@
-// acorn_parser.js
-
 const fs = require('fs');
 const { parse } = require('@typescript-eslint/typescript-estree');
 const Ajv = require('ajv');
+const path = require('path');
 
 const ajv = new Ajv({ allErrors: true, strict: false });
+
+// Read the schema file
+const schemaPath = path.join(__dirname, '../schemas/js_ts_structure_schema.json');
+const functionSchema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
 
 // Read data from stdin
 let inputChunks = [];
@@ -14,7 +17,7 @@ process.stdin.on('data', chunk => {
 
 process.stdin.on('end', () => {
   const inputData = JSON.parse(inputChunks.join(''));
-  const { code, language, functionSchema } = inputData;
+  const { code, language } = inputData;
 
   // Parse the code
   let ast;
@@ -110,23 +113,21 @@ process.stdin.on('end', () => {
 
   traverse(ast);
 
-  // If functionSchema is provided, perform validation
-  if (functionSchema) {
-    try {
-      const validate = ajv.compile(functionSchema);
-      const valid = validate(structure);
+  // Perform schema validation
+  try {
+    const validate = ajv.compile(functionSchema);
+    const valid = validate(structure);
 
-      if (!valid) {
-        console.error(
-          'Validation errors:',
-          JSON.stringify(validate.errors, null, 2)
-        );
-        process.exit(1);
-      }
-    } catch (e) {
-      console.error(`Schema validation error: ${e.message}`);
+    if (!valid) {
+      console.error(
+        'Validation errors:',
+        JSON.stringify(validate.errors, null, 2)
+      );
       process.exit(1);
     }
+  } catch (e) {
+    console.error(`Schema validation error: ${e.message}`);
+    process.exit(1);
   }
 
   // Output the extracted structure as JSON
