@@ -187,7 +187,7 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
         # Set parent relationships in AST
         def set_parent(node, parent=None):
             for child in ast.iter_child_nodes(node):
-                child.parent = node
+                setattr(child, 'parent', node)
                 set_parent(child, node)
 
         set_parent(tree)
@@ -195,7 +195,7 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
         # Insert docstrings into the AST
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                parent = getattr(node, "parent", None)
+                parent = getattr(node, 'parent', None)
                 if isinstance(parent, ast.ClassDef):
                     full_name = f"{parent.name}.{node.name}"
                 else:
@@ -210,7 +210,7 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
                             node.body.pop(0)
 
                     # Insert the new docstring
-                    docstring_node = ast.Expr(value=ast.Constant(value=doc_content))
+                    docstring_node = ast.Expr(value=ast.Str(s=doc_content))
                     node.body.insert(0, docstring_node)
                     logger.debug(f"Inserted docstring in function/method: {full_name}")
 
@@ -224,15 +224,15 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
                             node.body.pop(0)
 
                     # Insert the new docstring
-                    docstring_node = ast.Expr(value=ast.Constant(value=doc_content))
+                    docstring_node = ast.Expr(value=ast.Str(s=doc_content))
                     node.body.insert(0, docstring_node)
                     logger.debug(f"Inserted docstring in class: {node.name}")
 
-        # Fix missing locations in AST nodes
+        # Fix missing locations and types in AST nodes
         ast.fix_missing_locations(tree)
 
-        # Unparse the modified AST back to source code
-        modified_code = ast.unparse(tree)
+        # Generate code from the AST
+        modified_code = astor.to_source(tree)
 
         logger.debug("Completed inserting Python docstrings")
         return modified_code
@@ -252,16 +252,15 @@ def is_valid_python_code(code: str) -> bool:
     Returns:
         bool: True if the code is valid, False otherwise.
     """
-    logger.debug("Starting is_valid_python_code")
-    logger.debug(f"Code to validate (first 100 chars): {code[:100]}...")
+    logger.debug("Validating Python code syntax.")
     try:
-        ast.parse(code)
-        logger.debug("Python code is valid.")
+        compile(code, '<string>', 'exec')
+        logger.debug("Python code is syntactically valid.")
         return True
     except SyntaxError as e:
         logger.error(f"Syntax error in Python code: {e}")
         return False
-
+    
 
 # JavaScript/TypeScript-specific functions
 async def extract_js_ts_structure(

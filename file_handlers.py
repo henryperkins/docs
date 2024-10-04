@@ -18,6 +18,7 @@ from language_functions import (
     insert_html_comments,
     extract_css_structure,
     insert_css_docstrings,
+    is_valid_python_code
 )
 
 from utils import (
@@ -188,10 +189,7 @@ async def process_file(
         return None
 
 async def process_code_documentation(
-    content: str,
-    documentation: Dict[str, Any],
-    language: str,
-    file_path: str
+    content: str, documentation: Dict[str, Any], language: str, file_path: str
 ) -> str:
     """
     Processes the code documentation by inserting docstrings/comments based on the language.
@@ -207,27 +205,45 @@ async def process_code_documentation(
     """
     logger.debug(f"Processing documentation for '{file_path}' in language '{language}'")
     try:
-        if language == 'python':
+        if language == "python":
             modified_code = insert_python_docstrings(content, documentation)
-            # Optionally format and clean the code
-            modified_code = format_with_black(modified_code)
-            modified_code = clean_unused_imports(modified_code)
-            if not check_with_flake8(file_path):
-                logger.warning(f"Flake8 issues remain after formatting and cleaning in '{file_path}'")
-        elif language in ['javascript', 'typescript']:
+
+            if is_valid_python_code(modified_code):
+                try:
+                    modified_code = format_with_black(modified_code)
+                    modified_code = clean_unused_imports(modified_code)
+                except Exception as e:
+                    logger.error(f"Error formatting code with Black: {e}")
+                    # Decide how to handle this scenario
+            else:
+                logger.error(f"Modified code for '{file_path}' is not valid Python code.")
+                # Decide how to handle this scenario
+
+            if not is_valid_python_code(modified_code):
+                logger.error(f"Final code for '{file_path}' is not valid Python. Reverting to original.")
+                modified_code = content
+
+        elif language in ["javascript", "typescript"]:
+            # Process JS/TS code (no changes here)
             modified_code = insert_js_ts_docstrings(content, documentation)
-            # Optionally, you can format the JS/TS code using Prettier or similar tools.
-            # E.g., modified_code = format_with_prettier(modified_code)
-        elif language == 'html':
+        elif language == "html":
+            # Process HTML code
             modified_code = insert_html_comments(content, documentation)
-        elif language == 'css':
+        elif language == "css":
+            # Process CSS code
             modified_code = insert_css_docstrings(content, documentation)
         else:
-            logger.warning(f"Unsupported language '{language}'. Skipping documentation insertion.")
+            logger.warning(
+                f"Unsupported language '{language}'. Skipping documentation insertion."
+            )
             modified_code = content
+
         return modified_code
+
     except Exception as e:
-        logger.error(f"Error processing documentation for '{file_path}': {e}", exc_info=True)
+        logger.error(
+            f"Error processing code documentation for '{file_path}': {e}", exc_info=True
+        )
         return content
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:

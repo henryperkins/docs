@@ -286,17 +286,20 @@ def format_with_black(code: str) -> str:
 
     Returns:
         str: The formatted Python code.
+
+    Raises:
+        Exception: If Black cannot format the code.
     """
     try:
         formatted_code = black.format_str(code, mode=black.Mode())
-        logger.debug("Successfully formatted code with Black.")
+        logger.debug('Successfully formatted code with Black.')
         return formatted_code
     except black.NothingChanged:
-        logger.debug("No changes made by Black; code is already formatted.")
+        logger.debug('No changes made by Black; code is already formatted.')
         return code
     except Exception as e:
-        logger.error(f"Error formatting code with Black: {e}")
-        return code  # Return the original code if formatting fails
+        logger.error(f'Error formatting code with Black: {e}')
+        raise e  # Raise exception to be handled by the caller
 
 
 def clean_unused_imports(code: str) -> str:
