@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "extract_structure.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "acorn-parser": "node acorn_parser.js",
+    "acorn-inserter": "node acorn_inserter.js"
   },
   "keywords": [],
   "author": "",
@@ -11,7 +13,10 @@
   "dependencies": {
     "acorn": "^8.12.1",
     "acorn-walk": "^8.3.4",
-    "recast": "^0.23.9"
+    "recast": "^0.23.9",
+    "acorn-typescript": "^1.0.0",
+    "ajv": "^8.17.1",
+    "astring": "^1.9.0"
   },
   "devDependencies": {},
   "description": ""
