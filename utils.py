@@ -204,27 +204,26 @@ def extract_json_from_response(response: str) -> Optional[dict]:
     Returns:
         Optional[dict]: The extracted JSON as a dictionary, or None if extraction fails.
     """
-    # First, try to extract JSON using the function calling format
     try:
         response_json = json.loads(response)
-        if "function_call" in response_json and "arguments" in response_json["function_call"]:
+        if (
+            "function_call" in response_json
+            and "arguments" in response_json["function_call"]
+        ):
             return json.loads(response_json["function_call"]["arguments"])
     except json.JSONDecodeError:
-        pass  # Fallback to other extraction methods
-
-    # Try to find JSON enclosed in triple backticks
-    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
+        pass
+    json_match = re.search("```(?:json)?\\s*(\\{.*?\\})\\s*```", response, re.DOTALL)
     if json_match:
         try:
             return json.loads(json_match.group(1))
         except json.JSONDecodeError:
             pass
-
-    # As a last resort, attempt to use the entire response if it's valid JSON
     try:
         return json.loads(response)
     except json.JSONDecodeError:
         return None
+
 
 
 # ----------------------------
