@@ -140,37 +140,23 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
 
 
 def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) -> str:
-    """
-    Inserts docstrings into Python functions and classes based on provided documentation.
-
-    Parameters:
-        original_code (str): The original Python source code.
-        documentation (Dict[str, Any]): A dictionary containing documentation details.
-
-    Returns:
-        str: The modified Python source code with inserted docstrings.
-    """
+    """Inserts docstrings into Python functions and classes based on the provided documentation details."""
     logger.debug("Starting insert_python_docstrings")
     try:
         tree = ast.parse(original_code)
-
-        # Build a mapping of names to docstrings
         docstrings_mapping = {}
-
         if "functions" in documentation:
             for func_doc in documentation["functions"]:
                 name = func_doc.get("name")
                 doc = func_doc.get("docstring", "")
                 if name and doc:
                     docstrings_mapping[name] = doc
-
         if "classes" in documentation:
             for class_doc in documentation["classes"]:
                 class_name = class_doc.get("name")
                 class_docstring = class_doc.get("docstring", "")
                 if class_name and class_docstring:
                     docstrings_mapping[class_name] = class_docstring
-
                 methods = class_doc.get("methods", [])
                 for method_doc in methods:
                     method_name = method_doc.get("name")
@@ -178,66 +164,76 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
                     method_docstring = method_doc.get("docstring", "")
                     if method_name and method_docstring:
                         docstrings_mapping[full_method_name] = method_docstring
-
-        # Function to sanitize docstrings
+        
+        # Overview Handling
+        overview = documentation.get("overview", "")
+        if overview:
+            docstrings_mapping["overview"] = overview
+        
         def sanitize_docstring(docstring: str) -> str:
+            """Cleans or formats a given docstring to ensure it adheres to documentation standards."""
             lines = docstring.strip().splitlines()
             sanitized_lines = [line.rstrip() for line in lines]
-            return '\n'.join(sanitized_lines)
-
-        # Set parent relationships in AST
+            return "\n".join(sanitized_lines)
+        
         def set_parent(node, parent=None):
+            """Assigns a parent reference to a given node."""
             for child in ast.iter_child_nodes(node):
-                setattr(child, 'parent', node)
+                setattr(child, "parent", node)
                 set_parent(child, node)
-
+        
         set_parent(tree)
-
-        # Insert docstrings into the AST
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                parent = getattr(node, 'parent', None)
+                parent = getattr(node, "parent", None)
                 if isinstance(parent, ast.ClassDef):
                     full_name = f"{parent.name}.{node.name}"
                 else:
                     full_name = node.name
-
                 if full_name in docstrings_mapping:
                     doc_content = sanitize_docstring(docstrings_mapping[full_name])
-
-                    # Remove existing docstring if any
                     if ast.get_docstring(node, clean=False) is not None:
-                        if isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str):
+                        if (
+                            isinstance(node.body[0], ast.Expr)
+                            and isinstance(node.body[0].value, ast.Constant)
+                            and isinstance(node.body[0].value.value, str)
+                        ):
                             node.body.pop(0)
-
-                    # Insert the new docstring
                     docstring_node = ast.Expr(value=ast.Str(s=doc_content))
                     node.body.insert(0, docstring_node)
                     logger.debug(f"Inserted docstring in function/method: {full_name}")
-
             elif isinstance(node, ast.ClassDef):
                 if node.name in docstrings_mapping:
                     doc_content = sanitize_docstring(docstrings_mapping[node.name])
-
-                    # Remove existing docstring if any
                     if ast.get_docstring(node, clean=False) is not None:
-                        if isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str):
+                        if (
+                            isinstance(node.body[0], ast.Expr)
+                            and isinstance(node.body[0].value, ast.Constant)
+                            and isinstance(node.body[0].value.value, str)
+                        ):
                             node.body.pop(0)
-
-                    # Insert the new docstring
                     docstring_node = ast.Expr(value=ast.Str(s=doc_content))
                     node.body.insert(0, docstring_node)
                     logger.debug(f"Inserted docstring in class: {node.name}")
-
-        # Fix missing locations and types in AST nodes
+            
+            # Handle Module-Level Overview
+            if isinstance(node, ast.Module) and "overview" in docstrings_mapping:
+                doc_content = sanitize_docstring(docstrings_mapping["overview"])
+                if ast.get_docstring(node, clean=False) is not None:
+                    if (
+                        isinstance(node.body[0], ast.Expr)
+                        and isinstance(node.body[0].value, ast.Constant)
+                        and isinstance(node.body[0].value.value, str)
+                    ):
+                        node.body.pop(0)
+                docstring_node = ast.Expr(value=ast.Str(s=doc_content))
+                node.body.insert(0, docstring_node)
+                logger.debug("Inserted module-level overview docstring.")
+        
         ast.fix_missing_locations(tree)
-
-        # Generate code from the AST
         modified_code = astor.to_source(tree)
-
         logger.debug("Completed inserting Python docstrings")
         return modified_code
-
     except Exception as e:
         logger.error(f"Error inserting Python docstrings: {e}", exc_info=True)
         return original_code
@@ -309,29 +305,34 @@ async def extract_js_ts_structure(
         return None
 
 
-def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any], language: str) -> str:
-    """
-    Inserts docstrings into JavaScript/TypeScript code using acorn_inserter.js.
-    """
+def insert_js_ts_docstrings(
+    original_code: str, documentation: Dict[str, Any], language: str
+) -> str:
+    """Inserts JSDoc comments into JavaScript or TypeScript code based on the provided documentation."""
     logger.debug("Starting insert_js_ts_docstrings")
     try:
-        # Prepare data to send to Node.js script
-        data_to_send = {"code": original_code, "documentation": documentation, "language": language}
-
-        # Path to the acorn_inserter.js script
-        script_path = os.path.join(os.path.dirname(__file__), "scripts", "acorn_inserter.js")
-
-        # Run the Node.js script as a subprocess
-        process = subprocess.run(["node", script_path], input=json.dumps(data_to_send), capture_output=True, text=True)
-
+        documentation_json = json.dumps(documentation)
+        data_to_send = {
+            "code": original_code,
+            "documentation": documentation,
+            "language": language,
+        }
+        script_path = os.path.join(
+            os.path.dirname(__file__), "scripts", "acorn_inserter.js"
+        )
+        process = subprocess.run(
+            ["node", script_path],
+            input=json.dumps(data_to_send),
+            capture_output=True,
+            text=True,
+        )
         if process.returncode == 0:
             modified_code = process.stdout
-            logger.debug("Completed inserting JS/TS docstrings")
+            logger.debug("Completed inserting JSDoc docstrings")
             return modified_code
         else:
             logger.error(f"Error running acorn_inserter.js: {process.stderr}")
             return original_code
-
     except Exception as e:
         logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
