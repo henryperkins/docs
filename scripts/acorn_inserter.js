@@ -72,36 +72,48 @@ process.stdin.on('end', () => {
   }
 
   // Traverse the AST and insert docstrings
-  traverse(ast, {
-    enter(path) {
-      const node = path.node;
-      if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
-        const name = node.id ? node.id.name : 'anonymous';
-        if (docstringsMapping[name]) {
-          insertDocstring(node, docstringsMapping[name]);
-        }
-      } else if (node.type === 'ClassDeclaration') {
-        const className = node.id ? node.id.name : 'anonymous';
-        if (docstringsMapping[className]) {
-          insertDocstring(node, docstringsMapping[className]);
-        }
-        if (node.body && node.body.body) {
-          node.body.body.forEach(element => {
-            if (element.type === 'MethodDefinition') {
-              const methodName = element.key.name;
-              const fullName = `${className}.${methodName}`;
-              if (docstringsMapping[fullName]) {
-                insertDocstring(element, docstringsMapping[fullName]);
+  try {
+    traverse(ast, {
+      enter(path) {
+        const node = path.node;
+        if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
+          const name = node.id ? node.id.name : 'anonymous';
+          if (docstringsMapping[name]) {
+            insertDocstring(node, docstringsMapping[name]);
+          }
+        } else if (node.type === 'ClassDeclaration') {
+          const className = node.id ? node.id.name : 'anonymous';
+          if (docstringsMapping[className]) {
+            insertDocstring(node, docstringsMapping[className]);
+          }
+          if (node.body && node.body.body) {
+            node.body.body.forEach(element => {
+              if (element.type === 'MethodDefinition') {
+                const methodName = element.key.name;
+                const fullName = `${className}.${methodName}`;
+                if (docstringsMapping[fullName]) {
+                  insertDocstring(element, docstringsMapping[fullName]);
+                }
               }
-            }
-          });
+            });
+          }
         }
-      }
-    },
-  });
+      },
+    });
+  } catch (e) {
+    console.error(`Error traversing AST: ${e.message}`);
+    process.exit(1);
+  }
 
   // Generate code from modified AST, including comments
-  const { code: modifiedCode } = generate(ast, { comments: true });
+  let modifiedCode;
+  try {
+    const result = generate(ast, { comments: true });
+    modifiedCode = result.code;
+  } catch (e) {
+    console.error(`Error generating code from AST: ${e.message}`);
+    process.exit(1);
+  }
 
   // Output the modified code
   console.log(modifiedCode);

@@ -225,7 +225,11 @@ async def process_code_documentation(
 
         elif language in ["javascript", "typescript"]:
             # Process JS/TS code
-            modified_code = insert_js_ts_docstrings(content, documentation, language)
+            try:
+                modified_code = insert_js_ts_docstrings(content, documentation, language)
+            except Exception as e:
+                logger.error(f"Error running acorn_inserter.js: {e}", exc_info=True)
+                modified_code = content
         elif language == "html":
             # Process HTML code
             modified_code = insert_html_comments(content, documentation)
