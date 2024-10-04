@@ -6,6 +6,7 @@ from language_functions.java_handler import JavaHandler
 from language_functions.js_ts_handler import JSTsHandler
 from language_functions.html_handler import HTMLHandler
 from language_functions.css_handler import CSSHandler
+from language_functions.go_handler import GoHandler  # Add this line
 from language_functions.base_handler import BaseHandler
 
 def get_handler(language: str) -> Optional[BaseHandler]:
