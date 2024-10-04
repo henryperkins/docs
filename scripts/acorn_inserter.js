@@ -37,7 +37,9 @@ process.stdin.on('end', () => {
   if (documentation.functions) {
     documentation.functions.forEach(funcDoc => {
       if (funcDoc.name && funcDoc.docstring) {
-        docstringsMapping[funcDoc.name] = funcDoc.docstring;
+        // Generate JSDoc format
+        const jsDoc = generateJSDoc(funcDoc);
+        docstringsMapping[funcDoc.name] = jsDoc;
       }
     });
   }
@@ -46,24 +48,45 @@ process.stdin.on('end', () => {
   if (documentation.classes) {
     documentation.classes.forEach(classDoc => {
       if (classDoc.name && classDoc.docstring) {
-        docstringsMapping[classDoc.name] = classDoc.docstring;
+        const classJsDoc = generateJSDoc(classDoc, true); // true indicates class
+        docstringsMapping[classDoc.name] = classJsDoc;
       }
       if (classDoc.methods) {
         classDoc.methods.forEach(methodDoc => {
           if (methodDoc.name && methodDoc.docstring) {
             const fullName = `${classDoc.name}.${methodDoc.name}`;
-            docstringsMapping[fullName] = methodDoc.docstring;
+            const methodJsDoc = generateJSDoc(methodDoc);
+            docstringsMapping[fullName] = methodJsDoc;
           }
         });
       }
     });
   }
 
-  // Function to insert docstrings as comments
-  function insertDocstring(node, docstring) {
+  // Function to generate JSDoc formatted comments
+  function generateJSDoc(doc, isClass = false) {
+    let jsDoc = '/**\n';
+    jsDoc += ` * ${doc.docstring}\n`;
+    if (doc.args && doc.args.length > 0) {
+      doc.args.forEach(arg => {
+        jsDoc += ` * @param {type} ${arg} - Description.\n`; // Replace 'type' and 'Description' as needed
+      });
+    }
+    if (doc.returns) {
+      jsDoc += ` * @returns {type} Description.\n`; // Replace 'type' and 'Description' as needed
+    }
+    if (isClass) {
+      jsDoc += ` * @class\n`;
+    }
+    jsDoc += ' */\n';
+    return jsDoc;
+  }
+
+  // Function to insert JSDoc comments
+  function insertJSDoc(node, jsDoc) {
     const comment = {
-      type: 'Block',
-      value: `*\n * ${docstring.replace(/\n/g, '\n * ')}\n `,
+      type: 'CommentBlock',
+      value: jsDoc.replace('/**', '').replace('*/', '').trim(),
     };
     if (!node.leadingComments) {
       node.leadingComments = [];
@@ -71,7 +94,7 @@ process.stdin.on('end', () => {
     node.leadingComments.push(comment);
   }
 
-  // Traverse the AST and insert docstrings
+  // Traverse the AST and insert JSDoc comments
   try {
     traverse(ast, {
       enter(path) {
@@ -79,12 +102,12 @@ process.stdin.on('end', () => {
         if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
           const name = node.id ? node.id.name : 'anonymous';
           if (docstringsMapping[name]) {
-            insertDocstring(node, docstringsMapping[name]);
+            insertJSDoc(node, docstringsMapping[name]);
           }
         } else if (node.type === 'ClassDeclaration') {
           const className = node.id ? node.id.name : 'anonymous';
           if (docstringsMapping[className]) {
-            insertDocstring(node, docstringsMapping[className]);
+            insertJSDoc(node, docstringsMapping[className]);
           }
           if (node.body && node.body.body) {
             node.body.body.forEach(element => {
@@ -92,7 +115,7 @@ process.stdin.on('end', () => {
                 const methodName = element.key.name;
                 const fullName = `${className}.${methodName}`;
                 if (docstringsMapping[fullName]) {
-                  insertDocstring(element, docstringsMapping[fullName]);
+                  insertJSDoc(element, docstringsMapping[fullName]);
                 }
               }
             });
