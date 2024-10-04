@@ -1,34 +1,33 @@
 # language_functions/__init__.py
 
-from typing import Optional, Dict, Any
+from typing import Optional
 from language_functions.python_handler import PythonHandler
 from language_functions.java_handler import JavaHandler
 from language_functions.js_ts_handler import JSTsHandler
 from language_functions.html_handler import HTMLHandler
 from language_functions.css_handler import CSSHandler
-import logging
-
-logger = logging.getLogger(__name__)
+from language_functions.base_handler import BaseHandler
 
 def get_handler(language: str) -> Optional[BaseHandler]:
     """
-    Returns the appropriate handler based on the language.
+    Factory function to retrieve the appropriate language handler.
     
-    Parameters:
+    Args:
         language (str): The programming language.
     
     Returns:
-        Optional[BaseHandler]: An instance of the language handler or None if unsupported.
+        Optional[BaseHandler]: The corresponding language handler or None if unsupported.
     """
-    handlers = {
-        "python": PythonHandler(),
-        "java": JavaHandler(),
-        "javascript": JSTsHandler(),
-        "typescript": JSTsHandler(),
-        "html": HTMLHandler(),
-        "css": CSSHandler(),
-    }
-    handler = handlers.get(language.lower())
-    if not handler:
-        logger.warning(f"No handler found for language '{language}'.")
-    return handler
+    language = language.lower()
+    if language == "python":
+        return PythonHandler()
+    elif language == "java":
+        return JavaHandler()
+    elif language in ["javascript", "typescript"]:
+        return JSTsHandler()
+    elif language in ["html", "htm"]:
+        return HTMLHandler()
+    elif language == "css":
+        return CSSHandler()
+    else:
+        return None
