@@ -550,12 +550,13 @@ def generate_documentation_prompt(
     1. **Overview:** A high-level overview of the module or class, explaining its purpose, responsibilities, and integration within the project.
     2. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
     3. **Changes Made:** A comprehensive list of changes or updates made to this file.
-    4. **Functions:** Provide a docstring for each function, including its purpose, arguments, return values, and whether it is asynchronous.
-    5. **Classes:** Provide a docstring for each class, including its purpose, methods, and any inheritance details. Also, provide docstrings for each method.
+    4. **Functions:** Provide a JSDoc (for JavaScript/TypeScript) or Javadoc (for Java) comment for each function, including its purpose, parameters (`@param`), return values (`@returns` or `@return`), and whether it is asynchronous.
+    5. **Classes:** Provide a JSDoc/Javadoc comment for each class, including its purpose, methods, inheritance details (`@extends` or `@implements`), and any interfaces it implements. Also, provide JSDoc/Javadoc comments for each method within the class.
 
-    **Please ensure that the documentation adheres to the provided style guidelines and is structured according to the function schema.**
+    **Please ensure that the documentation adheres to the provided style guidelines and is structured according to the function schema. Use appropriate tags and formatting to maximize richness and compatibility with documentation tools like Sphinx, Javadoc, and JSDoc.**
     """
     return prompt
+
 
 
 
