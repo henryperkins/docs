@@ -526,6 +526,8 @@ async def fetch_documentation(
     return None
 
 
+# utils.py
+
 def generate_documentation_prompt(
     file_name: str,
     code_structure: Dict[str, Any],
@@ -556,6 +558,7 @@ def generate_documentation_prompt(
     **Please ensure that the documentation adheres to the provided style guidelines and is structured according to the function schema. Use appropriate tags and formatting to maximize richness and compatibility with documentation tools like Sphinx, Javadoc, and JSDoc.**
     """
     return prompt
+
 
 
 
