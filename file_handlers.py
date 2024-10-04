@@ -285,41 +285,35 @@ async def write_documentation_report(
     repo_root: str,
     new_content: str,
 ) -> str:
-    """
-    Generates the documentation report content for a single file.
-
-    Parameters:
-        documentation (Optional[Dict[str, Any]]): The documentation details or None if unavailable.
-        language (str): The programming language of the file.
-        file_path (str): The path to the file for which the report is generated.
-        repo_root (str): The root of the repository.
-        new_content (str): The content of the file after documentation.
-
-    Returns:
-        str: The documentation content for the file.
-    """
+    """Generates the documentation report content for a single file."""
     try:
-        # Helper function to sanitize text
         def sanitize_text(text: str) -> str:
             """Removes excessive newlines and whitespace from the text."""
             if not text:
                 return ""
             lines = text.strip().splitlines()
             sanitized_lines = [line.strip() for line in lines if line.strip()]
-            return '\n'.join(sanitized_lines)
+            return "\n".join(sanitized_lines)
 
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f"# File: {relative_path}\n\n"
         documentation_content = file_header
+        
+        # Module/Class Overview
+        overview = documentation.get("overview", "") if documentation else ""
+        overview = sanitize_text(overview)
+        if overview:
+            overview_section = f"## Overview\n\n{overview}\n"
+            documentation_content += overview_section
 
-        # Process summary
+        # Summary
         summary = documentation.get("summary", "") if documentation else ""
         summary = sanitize_text(summary)
         if summary:
             summary_section = f"## Summary\n\n{summary}\n"
             documentation_content += summary_section
 
-        # Process changes
+        # Changes Made
         changes = documentation.get("changes_made", []) if documentation else []
         changes = [sanitize_text(change) for change in changes if change.strip()]
         if changes:
@@ -327,7 +321,7 @@ async def write_documentation_report(
             changes_section = f"## Changes Made\n\n{changes_formatted}\n"
             documentation_content += changes_section
 
-        # Process functions
+        # Functions
         functions = documentation.get("functions", []) if documentation else []
         if functions:
             functions_section = "## Functions\n\n"
@@ -337,13 +331,13 @@ async def write_documentation_report(
                 func_name = func.get("name", "N/A")
                 func_args = ", ".join(func.get("args", []))
                 func_doc = sanitize_text(func.get("docstring", ""))
-                first_line_doc = func_doc.splitlines()[0] if func_doc else "No description provided."
                 func_async = "Yes" if func.get("async", False) else "No"
-                functions_section += f"| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n"
+                functions_section += f"""| `{func_name}` | `{func_args}` | {func_doc} | {func_async} |
+"""
             functions_section += "\n"
             documentation_content += functions_section
 
-        # Process classes
+        # Classes
         classes = documentation.get("classes", []) if documentation else []
         if classes:
             classes_section = "## Classes\n\n"
@@ -356,21 +350,37 @@ async def write_documentation_report(
                     classes_section += f"### Class: `{cls_name}`\n\n"
                 methods = cls.get("methods", [])
                 if methods:
-                    classes_section += "| Method | Arguments | Description | Async | Type |\n"
-                    classes_section += "|--------|-----------|-------------|-------|------|\n"
+                    classes_section += (
+                        "| Method | Arguments | Description | Async | Type |\n"
+                    )
+                    classes_section += (
+                        "|--------|-----------|-------------|-------|------|\n"
+                    )
                     for method in methods:
                         method_name = method.get("name", "N/A")
                         method_args = ", ".join(method.get("args", []))
                         method_doc = sanitize_text(method.get("docstring", ""))
-                        first_line_method_doc = method_doc.splitlines()[0] if method_doc else "No description provided."
+                        first_line_method_doc = (
+                            method_doc.splitlines()[0]
+                            if method_doc
+                            else "No description provided."
+                        )
                         method_async = "Yes" if method.get("async", False) else "No"
                         method_type = method.get("type", "N/A")
-                        classes_section += f"| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n"
+                        classes_section += f"""| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |
+"""
                     classes_section += "\n"
             classes_section += "\n"
             documentation_content += classes_section
 
-        # Append code block
+        # Example Usage
+        example_usage = documentation.get("example_usage", "") if documentation else ""
+        example_usage = sanitize_text(example_usage)
+        if example_usage:
+            example_section = f"## Example Usage\n\n```python\n{example_usage}\n```\n"
+            documentation_content += example_section
+
+        # Code Block
         code_content = new_content.strip()
         code_block = f"```{language}\n{code_content}\n```\n\n---\n"
         documentation_content += code_block
@@ -381,6 +391,7 @@ async def write_documentation_report(
             f"Error generating documentation for '{file_path}': {e}", exc_info=True
         )
         return ""
+
 
 def generate_table_of_contents(markdown_content: str) -> str:
     """
