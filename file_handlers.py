@@ -224,8 +224,8 @@ async def process_code_documentation(
                 modified_code = content
 
         elif language in ["javascript", "typescript"]:
-            # Process JS/TS code (no changes here)
-            modified_code = insert_js_ts_docstrings(content, documentation)
+            # Process JS/TS code
+            modified_code = insert_js_ts_docstrings(content, documentation, language)
         elif language == "html":
             # Process HTML code
             modified_code = insert_html_comments(content, documentation)
