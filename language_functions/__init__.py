@@ -1,48 +1,34 @@
 # language_functions/__init__.py
 
-from .python_handler import insert_python_docstrings
-from .java_handler import insert_javadoc_docstrings
-from .js_ts_handler import insert_jsdoc_comments
-from .html_handler import insert_html_comments
-from .css_handler import insert_css_comments
+from typing import Optional, Dict, Any
+from language_functions.python_handler import PythonHandler
+from language_functions.java_handler import JavaHandler
+from language_functions.js_ts_handler import JSTsHandler
+from language_functions.html_handler import HTMLHandler
+from language_functions.css_handler import CSSHandler
 import logging
 
 logger = logging.getLogger(__name__)
 
-def insert_docstrings(
-    original_code: str, documentation: Dict[str, Any], language: str
-) -> str:
+def get_handler(language: str) -> Optional[BaseHandler]:
     """
-    Inserts docstrings/comments into code based on the language.
-
+    Returns the appropriate handler based on the language.
+    
     Parameters:
-        original_code (str): The original source code.
-        documentation (Dict[str, Any]): Documentation details obtained from AI.
-        language (str): Programming language of the source code.
-
+        language (str): The programming language.
+    
     Returns:
-        str: The source code with inserted documentation.
+        Optional[BaseHandler]: An instance of the language handler or None if unsupported.
     """
-    logger.debug(f"Processing docstrings for language: {language}")
-    try:
-        if language == "python":
-            modified_code = insert_python_docstrings(original_code, documentation)
-        elif language == "java":
-            modified_code = insert_javadoc_docstrings(original_code, documentation, language)
-        elif language in ["javascript", "typescript"]:
-            modified_code = insert_jsdoc_comments(original_code, documentation, language)
-        elif language in ["html", "htm"]:
-            modified_code = insert_html_comments(original_code, documentation)
-        elif language == "css":
-            modified_code = insert_css_comments(original_code, documentation)
-        else:
-            logger.warning(
-                f"Unsupported language '{language}'. Skipping documentation insertion."
-            )
-            modified_code = original_code
-        return modified_code
-    except Exception as e:
-        logger.error(
-            f"Error processing docstrings for language '{language}': {e}", exc_info=True
-        )
-        return original_code
+    handlers = {
+        "python": PythonHandler(),
+        "java": JavaHandler(),
+        "javascript": JSTsHandler(),
+        "typescript": JSTsHandler(),
+        "html": HTMLHandler(),
+        "css": CSSHandler(),
+    }
+    handler = handlers.get(language.lower())
+    if not handler:
+        logger.warning(f"No handler found for language '{language}'.")
+    return handler
