@@ -144,8 +144,7 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
 
     Parameters:
         original_code (str): The original Python source code.
-        documentation (Dict[str, Any]): A dictionary containing documentation details,
-                                        primarily the 'summary' and 'changes_made'.
+        documentation (Dict[str, Any]): A dictionary containing documentation details.
 
     Returns:
         str: The modified Python source code with inserted docstrings.
@@ -154,10 +153,9 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
     try:
         tree = ast.parse(original_code)
 
-        # Create a mapping of function and class names to their docstrings
+        # Build a mapping of names to docstrings
         docstrings_mapping = {}
 
-        # Process functions
         if "functions" in documentation:
             for func_doc in documentation["functions"]:
                 name = func_doc.get("name")
@@ -165,7 +163,6 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
                 if name and doc:
                     docstrings_mapping[name] = doc
 
-        # Process classes
         if "classes" in documentation:
             for class_doc in documentation["classes"]:
                 class_name = class_doc.get("name")
@@ -173,7 +170,6 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
                 if class_name and class_docstring:
                     docstrings_mapping[class_name] = class_docstring
 
-                # Process methods within the class
                 methods = class_doc.get("methods", [])
                 for method_doc in methods:
                     method_name = method_doc.get("name")
@@ -181,6 +177,20 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
                     method_docstring = method_doc.get("docstring", "")
                     if method_name and method_docstring:
                         docstrings_mapping[full_method_name] = method_docstring
+
+        # Function to sanitize docstrings
+        def sanitize_docstring(docstring: str) -> str:
+            lines = docstring.strip().splitlines()
+            sanitized_lines = [line.rstrip() for line in lines]
+            return '\n'.join(sanitized_lines)
+
+        # Set parent relationships in AST
+        def set_parent(node, parent=None):
+            for child in ast.iter_child_nodes(node):
+                child.parent = node
+                set_parent(child, node)
+
+        set_parent(tree)
 
         # Insert docstrings into the AST
         for node in ast.walk(tree):
@@ -191,24 +201,42 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
                 else:
                     full_name = node.name
 
-                docstring = ast.get_docstring(node)
-                if full_name in docstrings_mapping and not docstring:
-                    doc_content = docstrings_mapping[full_name]
+                if full_name in docstrings_mapping:
+                    doc_content = sanitize_docstring(docstrings_mapping[full_name])
+
+                    # Remove existing docstring if any
+                    if ast.get_docstring(node, clean=False) is not None:
+                        if isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str):
+                            node.body.pop(0)
+
+                    # Insert the new docstring
                     docstring_node = ast.Expr(value=ast.Constant(value=doc_content))
                     node.body.insert(0, docstring_node)
                     logger.debug(f"Inserted docstring in function/method: {full_name}")
+
             elif isinstance(node, ast.ClassDef):
-                docstring = ast.get_docstring(node)
-                if node.name in docstrings_mapping and not docstring:
-                    doc_content = docstrings_mapping[node.name]
+                if node.name in docstrings_mapping:
+                    doc_content = sanitize_docstring(docstrings_mapping[node.name])
+
+                    # Remove existing docstring if any
+                    if ast.get_docstring(node, clean=False) is not None:
+                        if isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str):
+                            node.body.pop(0)
+
+                    # Insert the new docstring
                     docstring_node = ast.Expr(value=ast.Constant(value=doc_content))
                     node.body.insert(0, docstring_node)
                     logger.debug(f"Inserted docstring in class: {node.name}")
 
-        # Use ast.unparse() available in Python 3.9+
+        # Fix missing locations in AST nodes
+        ast.fix_missing_locations(tree)
+
+        # Unparse the modified AST back to source code
         modified_code = ast.unparse(tree)
+
         logger.debug("Completed inserting Python docstrings")
         return modified_code
+
     except Exception as e:
         logger.error(f"Error inserting Python docstrings: {e}", exc_info=True)
         return original_code
