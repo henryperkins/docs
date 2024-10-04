@@ -10,9 +10,12 @@ from language_functions.base_handler import BaseHandler
 logger = logging.getLogger(__name__)
 
 class CppHandler(BaseHandler):
-    """Handler for the C++ programming language."""
+    def __init__(self, function_schema):
+        self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+        """Extracts structure from C++ code."""
+        # Use code and file_path to extract structure
         """Extracts structure from C++ code using libclang."""
         try:
             # Run clang command to get JSON AST

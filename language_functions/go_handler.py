@@ -10,10 +10,11 @@ from language_functions.base_handler import BaseHandler
 logger = logging.getLogger(__name__)
 
 class GoHandler(BaseHandler):
-    """Handler for the Go programming language."""
+    def __init__(self, function_schema):
+        self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
-        """Extracts structure from Go code using the 'go ast' command."""
+    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+
         try:
             process = subprocess.run(
                 ["go", "ast", "-json"],

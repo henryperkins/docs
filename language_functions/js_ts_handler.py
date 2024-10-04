@@ -8,12 +8,10 @@ from language_functions.base_handler import BaseHandler
 logger = logging.getLogger(__name__)
 
 class JSTsHandler(BaseHandler):
-    """Handler for JavaScript and TypeScript languages."""
+    def __init__(self, function_schema):
+        self.function_schema = function_schema
 
-    def extract_structure(self, code: str) -> Dict[str, Any]:
-        """Extracts the structure of JS/TS code."""
-        # Implementation using existing Node.js scripts (acorn_parser.js)
-        # Here, we'll assume that a separate script handles extraction
+    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
         try:
             # You might need to adjust the script path
             script_path = "scripts/acorn_parser.js"

@@ -6,7 +6,7 @@ import aiofiles
 import aiohttp
 import asyncio
 from tqdm.asyncio import tqdm
-
+from language_functions.base_handler import BaseHandler
 from language_functions import (
     PythonHandler,
     JSTsHandler,

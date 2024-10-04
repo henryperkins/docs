@@ -8,6 +8,10 @@ from language_functions.base_handler import BaseHandler
 logger = logging.getLogger(__name__)
 
 class JavaHandler(BaseHandler):
+    def __init__(self, function_schema):
+        self.function_schema = function_schema
+
+    # Other methods...
     """Handler for Java language."""
 
     def extract_structure(self, code: str) -> Dict[str, Any]:
