@@ -1,4 +1,5 @@
 # language_functions/cpp_handler.py
+
 import subprocess
 import json
 import logging
@@ -37,17 +38,10 @@ class CppHandler(BaseHandler):
                 if kind == "FunctionDecl":
                     func = {
                         "name": node["name"],
-                        "docstring": extract_docstring_from_comment(node.get("inner", [])),
-                        "parameters": [],
-                        "return_value": {"type": node.get("type", {}).get("qualType", ""), "description": ""},
-                        "examples": [],
-                        "error_handling": "",
-                        "assumptions_preconditions": ""
+                        "args": [param["name"] for param in node.get("inner", []) if param.get("kind", "") == "ParmVarDecl"],
+                        "docstring": extract_docstring_from_comment(node.get("inner", [])).strip(),
+                        "async": False  # C++ doesn't have async/await keywords
                     }
-                    for param in node.get("inner", []):
-                        if param.get("kind", "") == "ParmVarDecl":
-                            param_type = param.get("type", {}).get("qualType", "")
-                            func["parameters"].append({"name": param["name"], "type": param_type, "description": ""})
                     structure["functions"].append(func)
                 elif kind == "CXXRecordDecl" and node.get("tagUsed", "") == "class":
                     cls = {
