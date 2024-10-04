@@ -1,6 +1,6 @@
 {
   "directory": "/root/docs",
   "excluded_dirs": [".git", ".github", ".vscode", "modules", "vids", "node_modules", "__pycache__", "pipmodules", "pip"],
-  "excluded_files": ["config.json", ".env", "files.md", "documentation_generation.log", "docs_generation.log", "file_handlers.log", "language_functions.log", ".gitignore", "package.json", "package-lock.json", "README.md", "output.md", "docs_generation.log", "tsconfig.json"],
+  "excluded_files": [".env", "files.md", "documentation_generation.log", "docs_generation.log", "file_handlers.log", "language_functions.log", ".gitignore", "package.json", "package-lock.json", "README.md", "output.md", "docs_generation.log", "tsconfig.json"],
   "skip_types": [".bak"]
 }
