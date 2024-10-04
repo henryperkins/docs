@@ -272,6 +272,8 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             os.remove(backup_path)
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
+# file_handlers.py
+
 async def write_documentation_report(
     documentation: Optional[Dict[str, Any]],
     language: str,
@@ -327,7 +329,7 @@ async def write_documentation_report(
                 func_doc = sanitize_text(func.get("docstring", ""))
                 func_async = "Yes" if func.get("async", False) else "No"
                 functions_section += f"""| `{func_name}` | `{func_args}` | {func_doc} | {func_async} |
-"""
+    """
             functions_section += "\n"
             documentation_content += functions_section
 
@@ -362,7 +364,7 @@ async def write_documentation_report(
                         method_async = "Yes" if method.get("async", False) else "No"
                         method_type = method.get("type", "N/A")
                         classes_section += f"""| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |
-"""
+    """
                     classes_section += "\n"
             classes_section += "\n"
             documentation_content += classes_section
@@ -371,7 +373,7 @@ async def write_documentation_report(
         example_usage = documentation.get("example_usage", "") if documentation else ""
         example_usage = sanitize_text(example_usage)
         if example_usage:
-            example_section = f"## Example Usage\n\n```python\n{example_usage}\n```\n"
+            example_section = f"## Example Usage\n\n```{language}\n{example_usage}\n```\n"
             documentation_content += example_section
 
         # Code Block
