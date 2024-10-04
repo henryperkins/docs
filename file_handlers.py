@@ -191,64 +191,58 @@ async def process_file(
 async def process_code_documentation(
     content: str, documentation: Dict[str, Any], language: str, file_path: str
 ) -> str:
-    """
-    Processes the code documentation by inserting docstrings/comments based on the language.
-
-    Parameters:
-        content (str): The original source code.
-        documentation (Dict[str, Any]]): Documentation details from AI.
-        language (str): Programming language.
-        file_path (str): Path to the source file.
-
-    Returns:
-        str: The modified source code with inserted documentation.
-    """
+    """Processes the code documentation by inserting docstrings/comments based on the language."""
     logger.debug(f"Processing documentation for '{file_path}' in language '{language}'")
     try:
         if language == "python":
             modified_code = insert_python_docstrings(content, documentation)
-
             if is_valid_python_code(modified_code):
                 try:
                     modified_code = format_with_black(modified_code)
                     modified_code = clean_unused_imports(modified_code)
                 except Exception as e:
                     logger.error(f"Error formatting code with Black: {e}")
-                    # Decide how to handle this scenario
             else:
-                logger.error(f"Modified code for '{file_path}' is not valid Python code.")
-                # Decide how to handle this scenario
-
+                logger.error(
+                    f"Modified code for '{file_path}' is not valid Python code."
+                )
             if not is_valid_python_code(modified_code):
-                logger.error(f"Final code for '{file_path}' is not valid Python. Reverting to original.")
+                logger.error(
+                    f"Final code for '{file_path}' is not valid Python. Reverting to original."
+                )
                 modified_code = content
-
         elif language in ["javascript", "typescript"]:
-            # Process JS/TS code
             try:
-                modified_code = insert_js_ts_docstrings(content, documentation, language)
+                modified_code = insert_js_ts_docstrings(
+                    content, documentation, language
+                )
             except Exception as e:
                 logger.error(f"Error running acorn_inserter.js: {e}", exc_info=True)
                 modified_code = content
+        elif language == "java":
+            try:
+                modified_code = insert_javadoc_docstrings(
+                    content, documentation, language
+                )
+            except Exception as e:
+                logger.error(f"Error running javadoc_inserter.js: {e}", exc_info=True)
+                modified_code = content
         elif language == "html":
-            # Process HTML code
             modified_code = insert_html_comments(content, documentation)
         elif language == "css":
-            # Process CSS code
             modified_code = insert_css_docstrings(content, documentation)
         else:
             logger.warning(
                 f"Unsupported language '{language}'. Skipping documentation insertion."
             )
             modified_code = content
-
         return modified_code
-
     except Exception as e:
         logger.error(
             f"Error processing code documentation for '{file_path}': {e}", exc_info=True
         )
         return content
+
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
     """
