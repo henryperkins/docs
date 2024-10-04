@@ -1,4 +1,5 @@
 # language_functions/go_handler.py
+
 import subprocess
 import json
 import logging
@@ -37,21 +38,10 @@ class GoHandler(BaseHandler):
                 if node["Kind"] == "FuncDecl":
                     func = {
                         "name": node["Name"],
-                        "docstring": "",
-                        "parameters": [],
-                        "return_value": {"type": "", "description": ""},
-                        "examples": [],
-                        "error_handling": "",
-                        "assumptions_preconditions": ""
+                        "args": [param.get("Names", [{}])[0].get("Name", "") for param in node.get("Type", {}).get("Params", {}).get("List", [])],
+                        "docstring": node.get("Doc", {}).get("Text", "").strip(),
+                        "async": False  # Go doesn't have async/await keywords
                     }
-                    if "Doc" in node and "Text" in node["Doc"]:
-                        func["docstring"] = node["Doc"]["Text"].strip()
-                    for param in node.get("Type", {}).get("Params", {}).get("List", []):
-                        param_type = get_type_string(param["Type"])
-                        func["parameters"].append({"name": param.get("Names", [{}])[0].get("Name", ""), "type": param_type, "description": ""})
-                    if "Results" in node["Type"]:
-                        return_type = get_type_string(node["Type"]["Results"]["List"][0]["Type"])
-                        func["return_value"]["type"] = return_type
                     structure["functions"].append(func)
                 elif node["Kind"] == "InterfaceType":
                     interface = {
@@ -101,11 +91,9 @@ class GoHandler(BaseHandler):
         """Inserts docstrings into Go code."""
         try:
             modified_code = code
-
             for func in documentation.get("functions", []):
                 docstring = func.get("docstring", "").strip()
                 if docstring:
-                    # Regex to find function definition (handles different parameter and return types)
                     pattern = r"(?P<indent>\s*)func\s+(?P<name>" + re.escape(func["name"]) + r")\s*\((?P<params>[^)]*)\)\s*(?P<return_type>.*?)\s*\{?"
                     match = re.search(pattern, modified_code)
                     if match:
@@ -113,31 +101,6 @@ class GoHandler(BaseHandler):
                         docstring_lines = docstring.splitlines()
                         formatted_docstring = "\n".join([f"{indent}// {line}" for line in docstring_lines])
                         modified_code = re.sub(pattern, f"{indent}{formatted_docstring}\n{match.group(0)}", modified_code)
-
-            for interface in documentation.get("interfaces", []):
-                docstring = interface.get("docstring", "").strip()
-                if docstring:
-                    # Regex to find interface definition
-                    pattern = r"(?P<indent>\s*)type\s+(?P<name>" + re.escape(interface["name"]) + r")\s+interface\s*\{?"
-                    match = re.search(pattern, modified_code)
-                    if match:
-                        indent = match.group("indent")
-                        docstring_lines = docstring.splitlines()
-                        formatted_docstring = "\n".join([f"{indent}// {line}" for line in docstring_lines])
-                        modified_code = re.sub(pattern, f"{indent}{formatted_docstring}\n{match.group(0)}", modified_code)
-
-            for struct in documentation.get("structs", []):
-                docstring = struct.get("docstring", "").strip()
-                if docstring:
-                    # Regex to find struct definition
-                    pattern = r"(?P<indent>\s*)type\s+(?P<name>" + re.escape(struct["name"]) + r")\s+struct\s*\{?"
-                    match = re.search(pattern, modified_code)
-                    if match:
-                        indent = match.group("indent")
-                        docstring_lines = docstring.splitlines()
-                        formatted_docstring = "\n".join([f"{indent}// {line}" for line in docstring_lines])
-                        modified_code = re.sub(pattern, f"{indent}{formatted_docstring}\n{match.group(0)}", modified_code)
-
             return modified_code
 
         except Exception as e:
