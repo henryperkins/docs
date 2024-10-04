@@ -4,7 +4,7 @@ const fs = require('fs');
 const { parse } = require('@typescript-eslint/typescript-estree');
 const Ajv = require('ajv');
 
-const ajv = new Ajv({ allErrors: true });
+const ajv = new Ajv({ allErrors: true, strict: false });
 
 // Read data from stdin
 let inputChunks = [];

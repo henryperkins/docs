@@ -21,17 +21,18 @@ import aiofiles
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
 def configure_logging(log_level):
     """Configures logging based on the provided log level."""
     logger.setLevel(log_level)
 
     # Create formatter with module, function, and line number
     formatter = logging.Formatter(
-        '%(asctime)s [%(levelname)s] %(name)s:%(module)s:%(funcName)s:%(lineno)d: %(message)s'
+        "%(asctime)s [%(levelname)s] %(name)s:%(module)s:%(funcName)s:%(lineno)d: %(message)s"
     )
 
     # Create rotating file handler which logs debug and higher level messages
-    file_handler = RotatingFileHandler('docs_generation.log', maxBytes=5 * 1024 * 1024, backupCount=5)
+    file_handler = RotatingFileHandler("docs_generation.log", maxBytes=5 * 1024 * 1024, backupCount=5)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
@@ -43,6 +44,7 @@ def configure_logging(log_level):
     # Add handlers to the logger
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
+
 
 def validate_model_name(model_name: str) -> bool:
     """Validates the OpenAI model name format."""
@@ -60,11 +62,10 @@ def validate_model_name(model_name: str) -> bool:
         logger.warning(f"Unrecognized model name '{model_name}'. Proceeding with caution.")
         return True  # Allow unrecognized models but log a warning
 
+
 async def main():
     """Main function to orchestrate documentation generation."""
-    parser = argparse.ArgumentParser(
-        description="Generate and insert comments/docstrings using OpenAI's GPT-4 API."
-    )
+    parser = argparse.ArgumentParser(description="Generate and insert comments/docstrings using OpenAI's GPT-4 API.")
     parser.add_argument("repo_path", help="Path to the code repository")
     parser.add_argument("-c", "--config", help="Path to config.json", default="config.json")
     parser.add_argument("--concurrency", help="Number of concurrent requests", type=int, default=5)
@@ -73,7 +74,7 @@ async def main():
     parser.add_argument("--skip-types", help="Comma-separated list of file extensions to skip", default="")
     parser.add_argument("--project-info", help="Information about the project", default="")
     parser.add_argument("--style-guidelines", help="Documentation style guidelines to follow", default="")
-    parser.add_argument("--safe-mode", help="Run in safe mode (no files will be modified)", action='store_true')
+    parser.add_argument("--safe-mode", help="Run in safe mode (no files will be modified)", action="store_true")
     parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
     parser.add_argument("--schema", help="Path to function_schema.json", default="function_schema.json")
     args = parser.parse_args()
@@ -100,7 +101,7 @@ async def main():
     project_info_arg = args.project_info
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
-    schema_path = os.path.join('schemas', args.schema)
+    schema_path = os.path.join("schemas", args.schema)
 
     logger.info(f"Repository Path: {repo_path}")
     logger.info(f"Configuration File: {config_path}")
@@ -125,21 +126,25 @@ async def main():
     excluded_files = set(DEFAULT_EXCLUDED_FILES)
     skip_types = set(DEFAULT_SKIP_TYPES)
     if args.skip_types:
-        skip_types.update(ext.strip() for ext in args.skip_types.split(',') if ext.strip())
+        skip_types.update(ext.strip() for ext in args.skip_types.split(",") if ext.strip())
         logger.debug(f"Updated skip_types: {skip_types}")
 
     # Load configuration
-    project_info_config = ''
-    style_guidelines_config = ''
+    project_info_config = ""
+    style_guidelines_config = ""
 
     if not os.path.isfile(config_path):
-        logger.warning(f"Configuration file '{config_path}' not found. Proceeding with default and command-line settings.")
+        logger.warning(
+            f"Configuration file '{config_path}' not found. Proceeding with default and command-line settings."
+        )
     else:
         try:
             project_info_config, style_guidelines_config = load_config(
                 config_path, excluded_dirs, excluded_files, skip_types
             )
-            logger.debug(f"Loaded configurations from '{config_path}': Project Info='{project_info_config}', Style Guidelines='{style_guidelines_config}'")
+            logger.debug(
+                f"Loaded configurations from '{config_path}': Project Info='{project_info_config}', Style Guidelines='{style_guidelines_config}'"
+            )
         except Exception as e:
             logger.error(f"Failed to load configuration from '{config_path}': {e}")
             sys.exit(1)
@@ -159,10 +164,7 @@ async def main():
 
     try:
         file_paths = get_all_file_paths(
-            repo_path=repo_path,
-            excluded_dirs=excluded_dirs,
-            excluded_files=excluded_files,
-            skip_types=skip_types
+            repo_path=repo_path, excluded_dirs=excluded_dirs, excluded_files=excluded_files, skip_types=skip_types
         )
         logger.info(f"Total files to process: {len(file_paths)}")
     except Exception as e:
@@ -175,7 +177,7 @@ async def main():
 
     logger.info("Initializing output Markdown file.")
     try:
-        async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+        async with aiofiles.open(output_file, "w", encoding="utf-8") as f:
             await f.write("# Documentation Generation Report\n\n")
         logger.debug(f"Output file '{output_file}' initialized.")
     except Exception as e:
@@ -198,7 +200,7 @@ async def main():
                 project_info=project_info,
                 style_guidelines=style_guidelines,
                 safe_mode=safe_mode,
-                output_file=output_file
+                output_file=output_file,
             )
     except Exception as e:
         logger.critical(f"Error during processing: {e}", exc_info=True)
@@ -206,6 +208,7 @@ async def main():
 
     logger.info("Documentation generation completed successfully.")
     logger.info(f"Check the output file '{output_file}' for the generated documentation.")
+
 
 if __name__ == "__main__":
     try:

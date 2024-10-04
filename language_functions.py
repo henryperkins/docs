@@ -18,12 +18,10 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set logging level to DEBUG
 
 # Create formatter with module, function, and line number
-formatter = logging.Formatter(
-    '%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s'
-)
+formatter = logging.Formatter("%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s:%(lineno)d:%(message)s")
 
 # Create file handler which logs debug and higher level messages
-file_handler = logging.FileHandler('language_functions.log')
+file_handler = logging.FileHandler("language_functions.log")
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(formatter)
 
@@ -37,8 +35,8 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 # language_functions.py
-script_path_parser = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_parser.js')
-script_path_inserter = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_inserter.js')
+script_path_parser = os.path.join(os.path.dirname(__file__), "scripts", "acorn_parser.js")
+script_path_inserter = os.path.join(os.path.dirname(__file__), "scripts", "acorn_inserter.js")
 
 
 def is_syntax_valid(code: str) -> bool:
@@ -81,10 +79,7 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
         # Parse the code into an AST
         tree = ast.parse(code)
         # Initialize the structure dictionary
-        structure = {
-            "functions": [],
-            "classes": []
-        }
+        structure = {"functions": [], "classes": []}
         logger.debug("Successfully parsed code into AST")
 
         # Helper function to recursively set parent attributes
@@ -100,34 +95,36 @@ def extract_python_structure(code: str) -> Dict[str, Any]:
         for node in ast.walk(tree):
             # Handle top-level functions (excluding methods within classes)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if not isinstance(getattr(node, 'parent', None), ast.ClassDef):
+                if not isinstance(getattr(node, "parent", None), ast.ClassDef):
                     func_type = "async" if isinstance(node, ast.AsyncFunctionDef) else "function"
                     logger.debug(f"Found top-level {func_type}: {node.name}")
-                    structure["functions"].append({
-                        "name": node.name,
-                        "args": [arg.arg for arg in node.args.args],
-                        "docstring": ast.get_docstring(node),
-                        "async": isinstance(node, ast.AsyncFunctionDef)
-                    })
+                    structure["functions"].append(
+                        {
+                            "name": node.name,
+                            "args": [arg.arg for arg in node.args.args],
+                            "docstring": ast.get_docstring(node),
+                            "async": isinstance(node, ast.AsyncFunctionDef),
+                        }
+                    )
             # Handle classes and their methods
             elif isinstance(node, ast.ClassDef):
                 methods = []
                 for child in node.body:
                     if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         method_type = "async" if isinstance(child, ast.AsyncFunctionDef) else "function"
-                        methods.append({
-                            "name": child.name,
-                            "args": [arg.arg for arg in child.args.args],
-                            "docstring": ast.get_docstring(child),
-                            "async": isinstance(child, ast.AsyncFunctionDef),
-                            "type": method_type
-                        })
+                        methods.append(
+                            {
+                                "name": child.name,
+                                "args": [arg.arg for arg in child.args.args],
+                                "docstring": ast.get_docstring(child),
+                                "async": isinstance(child, ast.AsyncFunctionDef),
+                                "type": method_type,
+                            }
+                        )
                 logger.debug(f"Found class: {node.name} with methods: {methods}")
-                structure["classes"].append({
-                    "name": node.name,
-                    "methods": methods,
-                    "docstring": ast.get_docstring(node)
-                })
+                structure["classes"].append(
+                    {"name": node.name, "methods": methods, "docstring": ast.get_docstring(node)}
+                )
 
         logger.debug(f"Extracted structure: {structure}")
         return structure
@@ -161,34 +158,34 @@ def insert_python_docstrings(original_code: str, documentation: Dict[str, Any]) 
         docstrings_mapping = {}
 
         # Process functions
-        if 'functions' in documentation:
-            for func_doc in documentation['functions']:
-                name = func_doc.get('name')
-                doc = func_doc.get('docstring', '')
+        if "functions" in documentation:
+            for func_doc in documentation["functions"]:
+                name = func_doc.get("name")
+                doc = func_doc.get("docstring", "")
                 if name and doc:
                     docstrings_mapping[name] = doc
 
         # Process classes
-        if 'classes' in documentation:
-            for class_doc in documentation['classes']:
-                class_name = class_doc.get('name')
-                class_docstring = class_doc.get('docstring', '')
+        if "classes" in documentation:
+            for class_doc in documentation["classes"]:
+                class_name = class_doc.get("name")
+                class_docstring = class_doc.get("docstring", "")
                 if class_name and class_docstring:
                     docstrings_mapping[class_name] = class_docstring
 
                 # Process methods within the class
-                methods = class_doc.get('methods', [])
+                methods = class_doc.get("methods", [])
                 for method_doc in methods:
-                    method_name = method_doc.get('name')
+                    method_name = method_doc.get("name")
                     full_method_name = f"{class_name}.{method_name}"
-                    method_docstring = method_doc.get('docstring', '')
+                    method_docstring = method_doc.get("docstring", "")
                     if method_name and method_docstring:
                         docstrings_mapping[full_method_name] = method_docstring
 
         # Insert docstrings into the AST
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                parent = getattr(node, 'parent', None)
+                parent = getattr(node, "parent", None)
                 if isinstance(parent, ast.ClassDef):
                     full_name = f"{parent.name}.{node.name}"
                 else:
@@ -240,10 +237,7 @@ def is_valid_python_code(code: str) -> bool:
 
 # JavaScript/TypeScript-specific functions
 async def extract_js_ts_structure(
-    file_path: str,
-    code: str,
-    language: str,
-    function_schema: dict = None
+    file_path: str, code: str, language: str, function_schema: dict = None
 ) -> Optional[Dict[str, Any]]:
     """
     Extracts the structure of JavaScript/TypeScript code using acorn_parser.js.
@@ -260,14 +254,10 @@ async def extract_js_ts_structure(
     logger.debug("Starting extract_js_ts_structure")
     try:
         # Prepare data to send to Node.js script
-        data_to_send = {
-            'code': code,
-            'language': language,
-            'functionSchema': function_schema
-        }
+        data_to_send = {"code": code, "language": language, "functionSchema": function_schema}
 
         # Path to the acorn_parser.js script
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_parser.js')
+        script_path = os.path.join(os.path.dirname(__file__), "scripts", "acorn_parser.js")
 
         # Check if the script exists
         if not os.path.exists(script_path):
@@ -275,12 +265,7 @@ async def extract_js_ts_structure(
             return None
 
         # Run the Node.js script as a subprocess
-        process = subprocess.run(
-            ['node', script_path],
-            input=json.dumps(data_to_send),
-            capture_output=True,
-            text=True
-        )
+        process = subprocess.run(["node", script_path], input=json.dumps(data_to_send), capture_output=True, text=True)
 
         if process.returncode == 0:
             # Parse the JSON output from acorn_parser.js
@@ -300,29 +285,20 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any], l
     """
     Inserts docstrings into JavaScript/TypeScript code using acorn_inserter.js.
     """
-    logger.debug('Starting insert_js_ts_docstrings')
+    logger.debug("Starting insert_js_ts_docstrings")
     try:
         # Prepare data to send to Node.js script
-        data_to_send = {
-            'code': original_code,
-            'documentation': documentation,
-            'language': language
-        }
+        data_to_send = {"code": original_code, "documentation": documentation, "language": language}
 
         # Path to the acorn_inserter.js script
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_inserter.js')
+        script_path = os.path.join(os.path.dirname(__file__), "scripts", "acorn_inserter.js")
 
         # Run the Node.js script as a subprocess
-        process = subprocess.run(
-            ['node', script_path],
-            input=json.dumps(data_to_send),
-            capture_output=True,
-            text=True
-        )
+        process = subprocess.run(["node", script_path], input=json.dumps(data_to_send), capture_output=True, text=True)
 
         if process.returncode == 0:
             modified_code = process.stdout
-            logger.debug('Completed inserting JS/TS docstrings')
+            logger.debug("Completed inserting JS/TS docstrings")
             return modified_code
         else:
             logger.error(f"Error running acorn_inserter.js: {process.stderr}")
@@ -331,6 +307,7 @@ def insert_js_ts_docstrings(original_code: str, documentation: Dict[str, Any], l
     except Exception as e:
         logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
+
 
 # HTML-specific functions
 def extract_html_structure(code: str) -> Dict[str, Any]:
@@ -343,19 +320,16 @@ def extract_html_structure(code: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: A dictionary containing the HTML structure.
     """
-    logger.debug('Starting extract_html_structure')
+    logger.debug("Starting extract_html_structure")
     try:
-        soup = BeautifulSoup(code, 'lxml')
-        structure = {'tags': []}
+        soup = BeautifulSoup(code, "lxml")
+        structure = {"tags": []}
         for tag in soup.find_all(True):
-            structure['tags'].append({
-                'name': tag.name,
-                'attributes': tag.attrs
-            })
-            logger.debug(f'Extracted tag: {tag.name}')
+            structure["tags"].append({"name": tag.name, "attributes": tag.attrs})
+            logger.debug(f"Extracted tag: {tag.name}")
         return structure
     except Exception as e:
-        logger.error(f'Error extracting HTML structure: {e}', exc_info=True)
+        logger.error(f"Error extracting HTML structure: {e}", exc_info=True)
         return {}
 
 
@@ -372,7 +346,7 @@ def insert_html_comments(original_code: str, documentation: Dict[str, Any]) -> s
     """
     logger.debug("Starting insert_html_comments")
     try:
-        soup = BeautifulSoup(original_code, 'lxml')  # Use 'lxml' parser
+        soup = BeautifulSoup(original_code, "lxml")  # Use 'lxml' parser
 
         # Prepare the comment content
         summary = documentation.get("summary", "").strip()
@@ -419,30 +393,29 @@ def extract_css_structure(code: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: A dictionary containing the CSS structure.
     """
-    logger.debug('Starting extract_css_structure')
+    logger.debug("Starting extract_css_structure")
     try:
         rules = tinycss2.parse_rule_list(code, skip_whitespace=True, skip_comments=True)
-        structure = {'rules': []}
+        structure = {"rules": []}
         for rule in rules:
-            if rule.type == 'qualified-rule':
-                selectors = ''.join([token.serialize() for token in rule.prelude]).strip()
+            if rule.type == "qualified-rule":
+                selectors = "".join([token.serialize() for token in rule.prelude]).strip()
                 declarations = []
                 for decl in tinycss2.parse_declaration_list(rule.content):
-                    if decl.type == 'declaration':
-                        declarations.append({
-                            'property': decl.lower_name,
-                            'value': ''.join([token.serialize() for token in decl.value]).strip()
-                        })
-                structure['rules'].append({
-                    'selectors': selectors,
-                    'declarations': declarations
-                })
-                logger.debug(f'Extracted rule: {selectors}')
+                    if decl.type == "declaration":
+                        declarations.append(
+                            {
+                                "property": decl.lower_name,
+                                "value": "".join([token.serialize() for token in decl.value]).strip(),
+                            }
+                        )
+                structure["rules"].append({"selectors": selectors, "declarations": declarations})
+                logger.debug(f"Extracted rule: {selectors}")
             else:
-                logger.debug(f'Ignored rule of type: {rule.type}')
+                logger.debug(f"Ignored rule of type: {rule.type}")
         return structure
     except Exception as e:
-        logger.error(f'Error extracting CSS structure: {e}', exc_info=True)
+        logger.error(f"Error extracting CSS structure: {e}", exc_info=True)
         return {}
 
 
