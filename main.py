@@ -1,3 +1,5 @@
+# main.py
+
 import os
 import sys
 import argparse
@@ -16,11 +18,11 @@ from utils import (
     DEFAULT_SKIP_TYPES,
     load_function_schema,
 )
+from language_functions import get_handler
 import aiofiles
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
 
 def configure_logging(log_level):
     """Configures logging based on the provided log level."""
@@ -157,34 +159,8 @@ async def main():
     if style_guidelines:
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
-    function_schema_loaded = load_function_schema(schema_path)
-    if not function_schema_loaded:
-        logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
-        sys.exit(1)
+    function_schema_loaded = load_function_schema(schema_path
 
-    try:
-        file_paths = get_all_file_paths(
-            repo_path=repo_path, excluded_dirs=excluded_dirs, excluded_files=excluded_files, skip_types=skip_types
-        )
-        logger.info(f"Total files to process: {len(file_paths)}")
-    except Exception as e:
-        logger.error(f"Error retrieving file paths from '{repo_path}': {e}")
-        sys.exit(1)
-
-    if not file_paths:
-        logger.warning("No files found to process. Exiting.")
-        sys.exit(0)
-
-    logger.info("Initializing output Markdown file.")
-    try:
-        async with aiofiles.open(output_file, "w", encoding="utf-8") as f:
-            await f.write("# Documentation Generation Report\n\n")
-        logger.debug(f"Output file '{output_file}' initialized.")
-    except Exception as e:
-        logger.critical(f"Failed to initialize output file '{output_file}': {e}")
-        sys.exit(1)
-
-    semaphore = asyncio.Semaphore(concurrency)
 
     logger.info("Starting asynchronous file processing.")
     try:
