@@ -83,6 +83,8 @@ async def extract_code_structure(
         )
         return None
 
+# file_handlers.py
+
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -93,69 +95,63 @@ async def process_file(
     repo_root: str,
     project_info: Optional[str] = None,
     style_guidelines: Optional[str] = None,
-    safe_mode: bool = False
+    safe_mode: bool = False,
+    detail_level: str = "detailed",
 ) -> Optional[str]:
-    """
-    Processes a single file: extracts structure, generates documentation, inserts documentation,
-    validates, and returns the documentation content to be added to the report.
-
-    Parameters:
-        ... (existing parameters)
-
-    Returns:
-        Optional[str]: The documentation content for the file or None if failed.
-    """
-    logger.debug(f'Processing file: {file_path}')
+    """Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content to be added to the report."""
+    logger.debug(f"Processing file: {file_path}")
     try:
         _, ext = os.path.splitext(file_path)
         if not is_valid_extension(ext, skip_types) or is_binary(file_path):
-            logger.debug(f"Skipping file '{file_path}' due to invalid extension or binary content.")
+            logger.debug(
+                f"Skipping file '{file_path}' due to invalid extension or binary content."
+            )
             return None
-
         language = get_language(ext)
         logger.debug(f"Detected language for '{file_path}': {language}")
-        if language == 'plaintext':
+        if language == "plaintext":
             logger.debug(f"Skipping unsupported language in '{file_path}'.")
             return None
-
-        logger.info(f'Processing file: {file_path}')
+        logger.info(f"Processing file: {file_path}")
         try:
-            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
-            logger.debug(f'File content for {file_path} read successfully.')
+            logger.debug(f"File content for {file_path} read successfully.")
         except Exception as e:
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return None
-
-        # Initialize documentation to None
         documentation = None
-
         try:
-            code_structure = await extract_code_structure(content, file_path, language, function_schema)
+            code_structure = await extract_code_structure(
+                content, file_path, language, function_schema
+            )
             if not code_structure:
                 logger.warning(f"Could not extract code structure from '{file_path}'")
             else:
-                logger.debug(f'Extracted code structure for {file_path}: {code_structure}')
+                logger.debug(
+                    f"Extracted code structure for {file_path}: {code_structure}"
+                )
                 prompt = generate_documentation_prompt(
                     file_name=os.path.basename(file_path),
                     code_structure=code_structure,
                     project_info=project_info,
                     style_guidelines=style_guidelines,
-                    language=language
+                    language=language,
                 )
                 documentation = await fetch_documentation(
                     session=session,
                     prompt=prompt,
                     semaphore=semaphore,
                     model_name=model_name,
-                    function_schema=function_schema
+                    function_schema=function_schema,
                 )
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
         except Exception as e:
-            logger.error(f"Error during code structure extraction or documentation generation for '{file_path}': {e}", exc_info=True)
-
-        # Process code documentation (insert docstrings/comments)
+            logger.error(
+                f"Error during code structure extraction or documentation generation for '{file_path}': {e}",
+                exc_info=True,
+            )
         if documentation:
             try:
                 new_content = await process_code_documentation(
@@ -165,34 +161,36 @@ async def process_file(
                     await backup_and_write_new_content(file_path, new_content)
                     logger.info(f"Documentation inserted into '{file_path}'")
                 else:
-                    logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
+                    logger.info(
+                        f"Safe mode active. Skipping file modification for '{file_path}'"
+                    )
             except Exception as e:
-                logger.error(f"Error processing code documentation for '{file_path}': {e}", exc_info=True)
-                new_content = content  # Use original content if processing fails
+                logger.error(
+                    f"Error processing code documentation for '{file_path}': {e}",
+                    exc_info=True,
+                )
+                new_content = content
         else:
-            new_content = content  # Use original content if documentation generation failed
-
-        # Generate documentation report content
+            new_content = content
         file_content = await write_documentation_report(
             documentation=documentation,
             language=language,
             file_path=file_path,
             repo_root=repo_root,
-            new_content=new_content
+            new_content=new_content,
         )
-
         logger.info(f"Finished processing '{file_path}'")
         return file_content
-
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
         return None
 
+
 async def process_code_documentation(
-    content: str, documentation: Dict[str, Any], language: str, file_path: str
+    content: str, documentation: Dict[str, Any], language: str, file_path: str, detail_level: str
 ) -> str:
-    """Processes the code documentation by inserting docstrings/comments based on the language."""
-    logger.debug(f"Processing documentation for '{file_path}' in language '{language}'")
+    """Processes the code documentation by inserting docstrings/comments based on the language and detail level."""
+    logger.debug(f"Processing documentation for '{file_path}' in language '{language}' with detail level '{detail_level}'")
     try:
         if language == "python":
             modified_code = insert_python_docstrings(content, documentation)
@@ -225,7 +223,7 @@ async def process_code_documentation(
                     content, documentation, language
                 )
             except Exception as e:
-                logger.error(f"Error running javadoc_inserter.js: {e}", exc_info=True)
+                logger.error(f"Error inserting Javadoc: {e}", exc_info=True)
                 modified_code = content
         elif language == "html":
             modified_code = insert_html_comments(content, documentation)
@@ -242,6 +240,7 @@ async def process_code_documentation(
             f"Error processing code documentation for '{file_path}': {e}", exc_info=True
         )
         return content
+
 
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
@@ -422,6 +421,8 @@ def generate_table_of_contents(markdown_content: str) -> str:
             toc.append(f'{indent}- [{title}](#{anchor})')
     return '\n'.join(toc)
 
+# file_handlers.py
+
 async def process_all_files(
     session: aiohttp.ClientSession,
     file_paths: List[str],
@@ -433,9 +434,11 @@ async def process_all_files(
     project_info: str,
     style_guidelines: str,
     safe_mode: bool = False,
-    output_file: str = 'output.md'
+    output_file: str = "output.md",
+    detail_level: str = "detailed",
 ) -> None:
-    logger.info('Starting process of all files.')
+    """Processes multiple files for documentation, managing their structure extraction, documentation insertion, and report generation."""
+    logger.info("Starting process of all files.")
     tasks = []
     for file_path in file_paths:
         task = asyncio.create_task(
@@ -449,33 +452,32 @@ async def process_all_files(
                 repo_root=repo_root,
                 project_info=project_info,
                 style_guidelines=style_guidelines,
-                safe_mode=safe_mode
+                safe_mode=safe_mode,
+                detail_level=detail_level,  # Pass detail_level
             )
         )
         tasks.append(task)
-
     documentation_contents = []
     for f in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
         file_content = await f
         if file_content:
             documentation_contents.append(file_content)
-
-    logger.info('Completed processing all files.')
-
-    # After processing all files, combine the contents
-    final_content = '\n\n'.join(documentation_contents)
-
-    # Generate TOC
+    logger.info("Completed processing all files.")
+    final_content = "\n\n".join(documentation_contents)
     toc = generate_table_of_contents(final_content)
-
-    # Build the final report with TOC
-    report_content = '# Documentation Generation Report\n\n## Table of Contents\n\n' + toc + '\n\n' + final_content
-
-    # Write to the output file
+    report_content = (
+        "# Documentation Generation Report\n\n## Table of Contents\n\n"
+        + toc
+        + "\n\n"
+        + final_content
+    )
     try:
-        async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+        async with aiofiles.open(output_file, "w", encoding="utf-8") as f:
             await f.write(report_content)
-        logger.info(f'Documentation report written to {output_file}')
+        logger.info(f"Documentation report written to {output_file}")
     except Exception as e:
-        logger.error(f"Error writing final documentation to '{output_file}': {e}", exc_info=True)
+        logger.error(
+            f"Error writing final documentation to '{output_file}': {e}", exc_info=True
+        )
+
 
