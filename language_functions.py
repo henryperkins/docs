@@ -337,6 +337,38 @@ def insert_js_ts_docstrings(
         logger.error(f"Exception in insert_js_ts_docstrings: {e}", exc_info=True)
         return original_code
 
+def insert_javadoc_docstrings(
+    original_code: str, documentation: Dict[str, Any], language: str
+) -> str:
+    """Inserts Javadoc comments into Java code based on the provided documentation."""
+    logger.debug("Starting insert_javadoc_docstrings")
+    try:
+        documentation_json = json.dumps(documentation)
+        data_to_send = {
+            "code": original_code,
+            "documentation": documentation,
+            "language": language,
+        }
+        script_path = os.path.join(
+            os.path.dirname(__file__), "scripts", "javadoc_inserter.js"
+        )
+        process = subprocess.run(
+            ["node", script_path],
+            input=json.dumps(data_to_send),
+            capture_output=True,
+            text=True,
+        )
+        if process.returncode == 0:
+            modified_code = process.stdout
+            logger.debug("Completed inserting Javadoc docstrings")
+            return modified_code
+        else:
+            logger.error(f"Error running javadoc_inserter.js: {process.stderr}")
+            return original_code
+    except Exception as e:
+        logger.error(f"Exception in insert_javadoc_docstrings: {e}", exc_info=True)
+        return original_code
+
 
 # HTML-specific functions
 def extract_html_structure(code: str) -> Dict[str, Any]:
