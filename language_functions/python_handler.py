@@ -8,6 +8,7 @@ from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
+
 class PythonHandler(BaseHandler):
     """Handler for Python language."""
 
