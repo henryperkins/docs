@@ -1,9 +1,7 @@
-# language_functions/java_handler.py
-
 import logging
 from typing import Optional, Dict, Any
 from language_functions.base_handler import BaseHandler
-from parser.java_parser import extract_structure, insert_docstrings
+from parser.java_parser import extract_structure, JavaParser
 
 logger = logging.getLogger(__name__)
 
@@ -22,34 +20,31 @@ class JavaHandler(BaseHandler):
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
         """Inserts Javadoc comments into Java code based on the provided documentation."""
         logger.debug("Inserting Javadoc docstrings into Java code.")
-        from parser.java_parser import JavaParser
-
         parser = JavaParser(code)
         parsed_code = parser.parse_code()
 
         for class_name, class_info in documentation.items():
             if class_name in parsed_code['classes']:
                 class_def = parsed_code['classes'][class_name]
-                class_doc = self.generate_javadoc(class_info.get('description', ''))
+                class_doc = self.generate_javadoc(class_info)
                 code = self.insert_comment(code, class_def['start'], class_doc)
                 
                 for method_name, method_info in class_info.get('methods', {}).items():
                     if method_name in class_def['methods']:
                         method_def = class_def['methods'][method_name]
-                        method_doc = self.generate_javadoc(method_info.get('description', ''), method_info.get('params', {}), method_info.get('returns', ''))
+                        method_doc = self.generate_javadoc(method_info)
                         code = self.insert_comment(code, method_def['start'], method_doc)
 
         return code
 
-    def generate_javadoc(self, description: str, params: Optional[Dict[str, str]] = None, returns: Optional[str] = None) -> str:
+    def generate_javadoc(self, doc_info: Dict[str, Any]) -> str:
         """Generates Javadoc comment string."""
         javadoc = "/**\n"
-        javadoc += f" * {description}\n"
-        if params:
-            for param, desc in params.items():
-                javadoc += f" * @param {param} {desc}\n"
-        if returns:
-            javadoc += f" * @return {returns}\n"
+        javadoc += f" * {doc_info.get('docstring', '')}\n"
+        for arg in doc_info.get('args', []):
+            javadoc += f" * @param {arg} Description.\n"  # Replace 'Description' as needed
+        if doc_info.get('returns'):
+            javadoc += f" * @return {doc_info['returns']}\n"
         javadoc += " */"
         return javadoc
 
@@ -61,7 +56,6 @@ class JavaHandler(BaseHandler):
 
     def validate_code(self, code: str) -> bool:
         """Validates the modified Java code for syntax correctness."""
-        from parser.java_parser import extract_structure
         try:
             structure = extract_structure(code)
             if structure:
