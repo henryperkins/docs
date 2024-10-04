@@ -5,7 +5,6 @@ import sys
 import argparse
 import asyncio
 import logging
-import json
 import aiohttp
 from logging.handlers import RotatingFileHandler
 from file_handlers import process_all_files
@@ -19,7 +18,6 @@ from utils import (
     load_function_schema,
 )
 from language_functions import get_handler
-import aiofiles
 
 # Configure logging
 logger = logging.getLogger(__name__)
