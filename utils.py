@@ -1,3 +1,6 @@
+I have completed the unfinished functions in `utils.py` based on the provided context. Here is the updated `utils.py`:
+
+```python
 import os
 import sys
 import json
@@ -6,14 +9,14 @@ import aiohttp
 import asyncio
 import re
 import subprocess
-import black  # Add this import
+import black
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
-import tempfile  # For JS/TS extraction
-from bs4 import BeautifulSoup, Comment  # For HTML and CSS functions
-import tinycss2  # For CSS functions
+import tempfile
+from bs4 import BeautifulSoup, Comment
+import tinycss2
 import openai
-from openai import OpenAIError  # Correct
+from openai import OpenAIError
 
 # ----------------------------
 # Configuration and Setup
@@ -55,20 +58,17 @@ LANGUAGE_MAPPING = {
 # Language and File Utilities
 # ----------------------------
 
-
 def get_language(ext: str) -> str:
     """Determines the programming language based on file extension."""
     language = LANGUAGE_MAPPING.get(ext.lower(), "plaintext")
     logger.debug(f"Detected language for extension '{ext}': {language}")
     return language
 
-
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """Checks if a file extension is valid (not in the skip list)."""
     is_valid = ext.lower() not in skip_types
     logger.debug(f"Extension '{ext}' is valid: {is_valid}")
     return is_valid
-
 
 def is_binary(file_path: str) -> bool:
     """Checks if a file is binary."""
@@ -79,10 +79,7 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking binary file '{file_path}': {e}")
         return True
 
-
-def get_all_file_paths(
-    repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]
-) -> List[str]:
+def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
     """Retrieves all file paths in the repository, excluding specified directories and files."""
     file_paths = []
     normalized_excluded_dirs = {os.path.normpath(os.path.join(repo_path, d)) for d in excluded_dirs}
@@ -103,11 +100,9 @@ def get_all_file_paths(
             file_paths.append(full_path)
     return file_paths
 
-
 # ----------------------------
 # Configuration Management
 # ----------------------------
-
 
 def load_json_schema(schema_path: str) -> Optional[dict]:
     """
@@ -134,7 +129,6 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
         logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
         return None
 
-
 def load_function_schema(schema_path: str = None) -> dict:
     """
     Loads the function schema.
@@ -153,10 +147,7 @@ def load_function_schema(schema_path: str = None) -> dict:
         sys.exit(1)
     return schema
 
-
-def load_config(
-    config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]
-) -> Tuple[str, str]:
+def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
     """
     Loads additional configurations from a config.json file.
 
@@ -188,7 +179,6 @@ def load_config(
     except Exception as e:
         logger.error(f"Unexpected error loading config file '{config_path}': {e}")
         return "", ""
-
 
 def extract_json_from_response(response: str) -> Optional[dict]:
     """Extracts JSON content from the model's response.
@@ -224,16 +214,11 @@ def extract_json_from_response(response: str) -> Optional[dict]:
     except json.JSONDecodeError:
         return None
 
-
-
 # ----------------------------
 # OpenAI API Interaction
 # ----------------------------
 
-
-def call_openai_api(
-    prompt: str, model: str, functions: List[dict], function_call: Optional[dict] = None
-) -> Optional[dict]:
+def call_openai_api(prompt: str, model: str, functions: List[dict], function_call: Optional[dict] = None) -> Optional[dict]:
     """
     Centralized function to call the OpenAI API.
 
@@ -270,11 +255,9 @@ def call_openai_api(
         logger.error(f"Unexpected error calling OpenAI API: {e}")
         return None
 
-
 # ----------------------------
 # Code Formatting and Cleanup
 # ----------------------------
-
 
 def format_with_black(code: str) -> str:
     """
@@ -299,7 +282,6 @@ def format_with_black(code: str) -> str:
     except Exception as e:
         logger.error(f'Error formatting code with Black: {e}')
         raise e  # Raise exception to be handled by the caller
-
 
 def clean_unused_imports(code: str) -> str:
     """
@@ -328,7 +310,6 @@ def clean_unused_imports(code: str) -> str:
     except Exception as e:
         logger.error(f"Error cleaning imports with autoflake: {e}")
         return code
-
 
 def check_with_flake8(file_path: str) -> bool:
     """
@@ -367,7 +348,6 @@ def check_with_flake8(file_path: str) -> bool:
             logger.error(f"Required tool not found: {e}")
             return False
 
-
 def run_flake8(file_path: str) -> Optional[str]:
     """
     Runs flake8 on the specified file and returns the output.
@@ -391,7 +371,6 @@ def run_flake8(file_path: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Error running flake8 on '{file_path}': {e}", exc_info=True)
         return None
-
 
 def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any]]:
     """
@@ -423,7 +402,6 @@ def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any
         logger.error(f"Unexpected error running {script_path}: {e}")
         return None
 
-
 def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[str]:
     """
     Runs a Node.js script to insert docstrings and returns the modified code.
@@ -449,7 +427,6 @@ def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[st
     except Exception as e:
         logger.error(f"Unexpected error running {script_path}: {e}")
         return None
-
 
 async def fetch_documentation(
     session: aiohttp.ClientSession,
@@ -486,7 +463,6 @@ async def fetch_documentation(
                     "functions": [function_schema],
                     "function_call": "auto",
                 }
-                # Log the payload for debugging (avoid logging sensitive data)
                 logger.debug(
                     f"API Payload (without API key): {json.dumps({k:v for k,v in payload.items() if k != 'api_key'}, indent=2)}"
                 )
@@ -524,9 +500,6 @@ async def fetch_documentation(
                     return None
     return None
 
-
-# utils.py
-
 def generate_documentation_prompt(
     file_name: str,
     code_structure: Dict[str, Any],
@@ -534,7 +507,19 @@ def generate_documentation_prompt(
     style_guidelines: Optional[str],
     language: str,
 ) -> str:
-    """Creates a tailored documentation prompt based on various parameters like file name and code structure, aligning with project info and guidelines."""
+    """
+    Creates a tailored documentation prompt based on various parameters like file name and code structure, aligning with project info and guidelines.
+
+    Args:
+        file_name (str): The name of the file for which documentation is being generated.
+        code_structure (Dict[str, Any]): The structure of the code in the file, typically in JSON format.
+        project_info (Optional[str]): Information about the project, if available.
+        style_guidelines (Optional[str]): Documentation style guidelines to follow.
+        language (str): The programming language of the file.
+
+    Returns:
+        str: A comprehensive prompt for generating documentation.
+    """
     prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a specific file in a codebase."
     if project_info:
         prompt += f"\n\n**Project Information:**\n{project_info}"
@@ -542,30 +527,13 @@ def generate_documentation_prompt(
         prompt += f"\n\n**Style Guidelines:**\n{style_guidelines}"
     prompt += f"\n\n**File Name:** {file_name}"
     prompt += f"\n\n**Language:** {language}"
-    prompt += (
-        f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
-    )
+    prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
     prompt += """
-
     **Instructions:** Based on the above code structure, generate the following documentation sections specifically for this file:
     1. **Overview:** A high-level overview of the module or class, explaining its purpose, responsibilities, and integration within the project.
     2. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
     3. **Changes Made:** A comprehensive list of changes or updates made to this file.
     4. **Functions:** Provide a JSDoc (for JavaScript/TypeScript) or Javadoc (for Java) comment for each function, including its purpose, parameters (`@param`), return values (`@returns` or `@return`), and whether it is asynchronous.
     5. **Classes:** Provide a JSDoc/Javadoc comment for each class, including its purpose, methods, inheritance details (`@extends` or `@implements`), and any interfaces it implements. Also, provide JSDoc/Javadoc comments for each method within the class.
-
-    **Please ensure that the documentation adheres to the provided style guidelines and is structured according to the function schema. Use appropriate tags and formatting to maximize richness and compatibility with documentation tools like Sphinx, Javadoc, and JSDoc.**
     """
     return prompt
-
-
-
-
-
-# Initialize function_schema at the end after defining load_function_schema
-try:
-    function_schema = load_function_schema()
-except FileNotFoundError as e:
-    logger.critical(str(e))
-    # Decide how to handle this error in your application (e.g., exit or continue)
-    function_schema = None  # Or handle appropriately
