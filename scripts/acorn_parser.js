@@ -16,8 +16,17 @@ process.stdin.on('data', chunk => {
 });
 
 process.stdin.on('end', () => {
-  const inputData = JSON.parse(inputChunks.join(''));
-  const { code, language } = inputData;
+  const inputData = inputChunks.join('');
+  
+  let parsedInput;
+  try {
+    parsedInput = JSON.parse(inputData);
+  } catch (e) {
+    console.error(`Error parsing input JSON: ${e.message}`);
+    process.exit(1);
+  }
+
+  const { code, language } = parsedInput;
 
   // Parse the code
   let ast;
@@ -34,12 +43,6 @@ process.stdin.on('end', () => {
     console.error(`Parsing error: ${e.message}`);
     process.exit(1);
   }
-
-  // Build a map of comments
-  const commentsMap = new Map();
-  ast.comments.forEach(comment => {
-    commentsMap.set(comment.range[1], comment);
-  });
 
   // Function to extract docstrings from leading comments
   function extractDocstring(node) {
@@ -94,6 +97,7 @@ process.stdin.on('end', () => {
       default:
         break;
     }
+
     // Recurse on child nodes
     for (const key in node) {
       if (node.hasOwnProperty(key)) {
