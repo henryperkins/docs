@@ -533,39 +533,30 @@ def generate_documentation_prompt(
     style_guidelines: Optional[str],
     language: str,
 ) -> str:
-    """
-    Generates a documentation prompt based on the code structure and other details.
-
-    Parameters:
-        file_name (str): The name of the file.
-        code_structure (Dict[str, Any]]): The structure of the code.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Style guidelines for the documentation.
-        language (str): Programming language.
-
-    Returns:
-        str: The generated prompt.
-    """
+    """Creates a tailored documentation prompt based on various parameters like file name and code structure, aligning with project info and guidelines."""
     prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a specific file in a codebase."
     if project_info:
         prompt += f"\n\n**Project Information:**\n{project_info}"
     if style_guidelines:
         prompt += f"\n\n**Style Guidelines:**\n{style_guidelines}"
-
     prompt += f"\n\n**File Name:** {file_name}"
     prompt += f"\n\n**Language:** {language}"
-    prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
+    prompt += (
+        f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
+    )
     prompt += """
 
     **Instructions:** Based on the above code structure, generate the following documentation sections specifically for this file:
-    1. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
-    2. **Changes Made:** A comprehensive list of changes or updates made to this file.
-    3. **Functions:** Provide a docstring for each function, including its purpose, arguments, return values, and whether it is asynchronous.
-    4. **Classes:** Provide a docstring for each class, including its purpose, methods, and any inheritance details. Also, provide docstrings for each method.
+    1. **Overview:** A high-level overview of the module or class, explaining its purpose, responsibilities, and integration within the project.
+    2. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
+    3. **Changes Made:** A comprehensive list of changes or updates made to this file.
+    4. **Functions:** Provide a docstring for each function, including its purpose, arguments, return values, and whether it is asynchronous.
+    5. **Classes:** Provide a docstring for each class, including its purpose, methods, and any inheritance details. Also, provide docstrings for each method.
 
     **Please ensure that the documentation adheres to the provided style guidelines and is structured according to the function schema.**
     """
     return prompt
+
 
 
 # Initialize function_schema at the end after defining load_function_schema
