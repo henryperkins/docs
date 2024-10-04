@@ -1,0 +1,22 @@
+{
+  "$id": "https://example.com/class.schema.json",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The name of the class."
+    },
+    "methods": {
+      "type": "array",
+      "items": {
+        "$ref": "https://example.com/method.schema.json"
+      },
+      "description": "List of methods defined in the class with their details."
+    },
+    "docstring": {
+      "type": "string",
+      "description": "The docstring or description of the class."
+    }
+  },
+  "required": ["name", "methods"]
+}
