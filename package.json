@@ -4,8 +4,8 @@
   "description": "Tools for generating and inserting documentation into JavaScript/TypeScript codebases.",
   "main": "index.js",
   "scripts": {
-    "acorn-parser": "node scripts/acorn_parser.js", // Add this line
-    "acorn-inserter": "node scripts/acorn_inserter.js" // Add this line
+    "acorn-parser": "node scripts/acorn_parser.js",
+    "acorn-inserter": "node scripts/acorn_inserter.js"
   },
   "keywords": [
     "documentation",
@@ -22,12 +22,12 @@
     "@babel/traverse": "^7.21.3",
     "@babel/types": "^7.21.0",
     "acorn": "^8.12.1",
-    "acorn-typescript": "^1.0.0", // Add this line
+    "acorn-typescript": "^1.0.0",
     "ajv": "^8.17.1",
     "astring": "^1.9.0",
     "esprima": "^4.0.1",
     "prettier": "^2.8.8",
-    "@typescript-eslint/typescript-estree": "^5.0.0" // Add this line
+    "@typescript-eslint/typescript-estree": "^5.0.0"
   },
   "devDependencies": {
     "eslint": "^8.35.0",
