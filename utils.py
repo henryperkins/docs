@@ -1,6 +1,3 @@
-I have completed the unfinished functions in `utils.py` based on the provided context. Here is the updated `utils.py`:
-
-```python
 import os
 import sys
 import json
@@ -537,3 +534,10 @@ def generate_documentation_prompt(
     5. **Classes:** Provide a JSDoc/Javadoc comment for each class, including its purpose, methods, inheritance details (`@extends` or `@implements`), and any interfaces it implements. Also, provide JSDoc/Javadoc comments for each method within the class.
     """
     return prompt
+
+# Initialize function_schema.json
+try:
+    function_schema = load_function_schema()
+except FileNotFoundError as e:
+    logger.critical(str(e))
+    function_schema = None
