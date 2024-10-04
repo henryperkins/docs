@@ -159,36 +159,32 @@ async def main():
     if style_guidelines:
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
-    function_schema_loaded = load_function_schema(schema_path
+    function_schema = load_function_schema(schema_path)
 
-
-    logger.info("Starting asynchronous file processing.")
+    # Get all file paths to process
     try:
-        async with aiohttp.ClientSession() as session:
-            await process_all_files(
-                session=session,
-                file_paths=file_paths,
-                skip_types=skip_types,
-                semaphore=semaphore,
-                model_name=model_name,
-                function_schema=function_schema_loaded,
-                repo_root=repo_path,
-                project_info=project_info,
-                style_guidelines=style_guidelines,
-                safe_mode=safe_mode,
-                output_file=output_file,
-            )
+        file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files, skip_types)
+        logger.debug(f"Found {len(file_paths)} files to process.")
     except Exception as e:
-        logger.critical(f"Error during processing: {e}", exc_info=True)
+        logger.error(f"Error getting file paths: {e}")
         sys.exit(1)
 
-    logger.info("Documentation generation completed successfully.")
-    logger.info(f"Check the output file '{output_file}' for the generated documentation.")
-
+    # Create async HTTP session
+    async with aiohttp.ClientSession(raise_for_status=True) as session:
+        semaphore = asyncio.Semaphore(concurrency)
+        await process_all_files(
+            session=session,
+            file_paths=file_paths,
+            skip_types=skip_types,
+            semaphore=semaphore,
+            model_name=model_name,
+            function_schema=function_schema,
+            repo_root=repo_path,
+            project_info=project_info,
+            style_guidelines=style_guidelines,
+            safe_mode=safe_mode,
+            output_file=output_file,
+        )
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Documentation generation interrupted by user.")
-        sys.exit(0)
+    asyncio.run(main())
