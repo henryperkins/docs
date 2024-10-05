@@ -17,10 +17,13 @@ process.stdin.on('data', chunk => {
 
 process.stdin.on('end', () => {
   const inputData = inputChunks.join('');
-  
+
+  // Remove comments from JSON input
+  const sanitizedInput = inputData.replace(/\/\/[^\n]*\n/g, '');
+
   let parsedInput;
   try {
-    parsedInput = JSON.parse(inputData);
+    parsedInput = JSON.parse(sanitizedInput);
   } catch (e) {
     console.error(`Error parsing input JSON: ${e.message}`);
     process.exit(1);
