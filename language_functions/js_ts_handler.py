@@ -1,23 +1,35 @@
 # language_functions/js_ts_handler.py
 
-import subprocess
 import logging
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
 class JSTsHandler(BaseHandler):
+    """Handler for JavaScript and TypeScript languages."""
+
     def __init__(self, function_schema):
+        """
+        Initialize JSTsHandler with a function schema.
+
+        Args:
+            function_schema (dict): The schema defining functions.
+        """
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         try:
             # You might need to adjust the script path
             script_path = "scripts/acorn_parser.js"
+            input_data = {
+                "code": code,
+                "language": "javascript"  # or determine based on file_path
+            }
+            input_json = json.dumps(input_data)
             result = subprocess.run(
                 ["node", script_path],
-                input=code,
+                input=input_json,
                 capture_output=True,
                 text=True,
                 check=True
@@ -27,6 +39,9 @@ class JSTsHandler(BaseHandler):
             return structure
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running acorn_parser.js: {e.stderr}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing output from acorn_parser.js: {e}")
             return {}
         except Exception as e:
             logger.error(f"Unexpected error extracting JS/TS structure: {e}")
