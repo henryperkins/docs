@@ -5,6 +5,7 @@
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT%204-blue.svg)
 
 <img src="https://github.com/henryperkins/docs/blob/26fc21625be86c63726fd3608a13b9687520214a/DALL%C2%B7E%202024-10-05%2001.00.45%20-%20A%20high-resolution%2C%20modern%2C%20abstract%20logo%20representing%20an%20AI%20documentation%20generation%20tool%20called%20'DocuScribe'.%20Focus%20on%20depicting%20complex%20synapses%2C%20ne.webp?raw=true" alt="DocuScribe Logo" width="450"/>
+
 - **Behind-the-scenes enhancement of AI models.**
 - **Improved contextual understanding for AI models.**
 - **Enhanced AI capabilities across diverse applications.**
