@@ -1,21 +1,35 @@
 # language_functions/css_handler.py
 
 import logging
-from typing import Optional, Dict, Any
-from bs4 import BeautifulSoup, Comment
+from typing import Dict, Any
 import tinycss2
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
 class CSSHandler(BaseHandler):
+    """Handler for CSS language."""
+
     def __init__(self, function_schema):
+        """
+        Initialize CSSHandler with a function schema.
+
+        Args:
+            function_schema (dict): The schema defining functions.
+        """
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
-        """Extracts structure from CSS code."""
-        # Use code and file_path to extract structure
-        """Extracts the structure of CSS code."""
+        """
+        Extracts structure from CSS code.
+
+        Args:
+            code (str): The CSS source code to parse.
+            file_path (str): The path to the CSS file.
+
+        Returns:
+            dict: A dictionary containing the structure of the CSS code.
+        """
         logger.debug("Extracting CSS structure.")
         try:
             rules = tinycss2.parse_rule_list(code, skip_whitespace=True, skip_comments=True)
@@ -34,12 +48,13 @@ class CSSHandler(BaseHandler):
                         "selectors": selectors,
                         "declarations": declarations
                     })
-                    logger.debug(f"Extracted rule: {selectors}")
-                else:
-                    logger.debug(f"Ignored rule of type: {rule.type}")
+                    logger.debug("Extracted rule: %s", selectors)
             return structure
+        except tinycss2.ParseError as e:
+            logger.error("Parse error while extracting CSS structure: %s", e)
+            return {}
         except Exception as e:
-            logger.error(f"Error extracting CSS structure: {e}")
+            logger.error("Unexpected error: %s", e)
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
