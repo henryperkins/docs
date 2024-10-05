@@ -1,5 +1,5 @@
 # language_functions/js_ts_handler.py
-
+import json
 import subprocess
 import logging
 from typing import Optional, Dict, Any
