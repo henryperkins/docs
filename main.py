@@ -4,6 +4,7 @@ import logging
 import argparse
 import asyncio
 import aiohttp
+import sentry_sdk
 from dotenv import load_dotenv
 from file_handlers import process_all_files
 from utils import (
@@ -27,6 +28,21 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Added retrieval of OPENAI_API_KE
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+
+sentry_sdk.init(
+    dsn="https://3d88a4a35fb3b234d0f180ecae63dd56@o4508070823395328.ingest.us.sentry.io/4508070829817856",
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for tracing.
+    traces_sample_rate=1.0,
+    # Set profiles_sample_rate to 1.0 to profile 100%
+    # of sampled transactions.
+    # We recommend adjusting this value in production.
+    profiles_sample_rate=1.0,
+)
+
+
 
 def parse_arguments():
     """Parses command-line arguments."""
