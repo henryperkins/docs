@@ -1,282 +1,392 @@
-# DocScribe: AI-Powered Multi-Language Code Documentation Generator
+# Documentation Generation Tool
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT%204-blue.svg)
 
 ## Table of Contents
 
-- [Introduction](#introduction)
+- [Overview](#overview)
 - [Features](#features)
-- [Supported Languages](#supported-languages)
+- [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Configuration](#configuration)
 - [Usage](#usage)
   - [Command-Line Arguments](#command-line-arguments)
-  - [Configuration File](#configuration-file)
-  - [Examples](#examples)
-- [Configuration and Customization](#configuration-and-customization)
-- [Documentation Report](#documentation-report)
-- [Error Handling and Logging](#error-handling-and-logging)
+  - [Example Commands](#example-commands)
+- [Function Schema](#function-schema)
+- [Logging](#logging)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
-- [Acknowledgments](#acknowledgments)
 
----
+## Overview
 
-## Introduction
-
-**DocScribe** is an advanced, cross-language code documentation tool designed to automate the generation of high-quality, consistent, and comprehensive documentation for codebases written in multiple programming languages. Leveraging the power of OpenAI's GPT-4 API, DocScribe analyzes your code's structure and generates human-readable, informative documentation that adheres to best practices and style guidelines.
-
-By automating the documentation process, DocScribe helps developers maintain up-to-date documentation, improve code readability, facilitate onboarding, and enhance overall code quality.
-DocScribe now supports both OpenAI and Azure OpenAI, giving you flexibility in choosing your AI provider.
+The **Documentation Generation Tool** is a powerful Python-based utility designed to automatically generate comprehensive documentation for your code repositories. Leveraging the capabilities of OpenAI's GPT-4 or Azure OpenAI services, this tool analyzes your codebase and produces detailed documentation, including summaries, function docstrings, class descriptions, and more.
 
 ## Features
 
-- **Multi-Language Support**: Automatically document Python, JavaScript, TypeScript, HTML, and CSS codebases.
-- **AI-Powered Generation**: Utilizes OpenAI's GPT-4 for generating detailed and context-aware documentation.
-- **Language-Specific Parsers**: Uses appropriate parsing tools for accurate code analysis.
-- **Direct Code Modification**: Inserts generated documentation directly into source files, with backups.
-- **Customizable Configuration**: Flexible settings via `config.json` and command-line arguments.
-- **Comprehensive Reporting**: Generates a Markdown report summarizing all documentation added.
-- **Robust Logging and Error Handling**: Detailed logs and exception handling for smooth operation.
-- **Azure OpenAI Support**: Option to use Azure OpenAI services instead of regular OpenAI API.
+- **Automated Documentation**: Generate overviews, summaries, and detailed docstrings for functions and classes.
+- **Language Support**: Supports multiple programming languages including Python, JavaScript, TypeScript, HTML, CSS, and more.
+- **Customizable Configuration**: Exclude specific directories, files, or file types from processing.
+- **Code Formatting and Cleanup**: Integrates tools like Black, Flake8, and Autoflake to ensure code quality.
+- **Concurrency Control**: Manage the number of concurrent API requests for efficient processing.
+- **Azure OpenAI Integration**: Seamlessly switch between OpenAI and Azure OpenAI services.
+- **Comprehensive Logging**: Detailed logs for monitoring and troubleshooting.
 
-## Supported Languages
+## Prerequisites
 
-- **Python**
-- **JavaScript / TypeScript**
-- **HTML**
-- **CSS**
-
-Support for additional languages can be added via custom parsers and extensions.
+- **Python**: Version 3.8 or higher.
+- **Node.js**: Required for running auxiliary Node.js scripts.
+- **API Keys**:
+  - **OpenAI API Key**: For accessing OpenAI's GPT-4 services.
+  - **Azure OpenAI Key and Endpoint**: If using Azure OpenAI services.
 
 ## Installation
 
-### Prerequisites
+1. **Clone the Repository**
 
-- **Python 3.9** or higher
-- **Node.js** (v12 or higher)
-- **OpenAI API key** or **Azure OpenAI credentials**
+   ```bash
+   git clone https://github.com/yourusername/documentation-generation-tool.git
+   cd documentation-generation-tool
+   ```
 
-### Clone the Repository
+2. **Create a Virtual Environment**
 
-```bash
-git clone https://github.com/yourusername/docscribe.git
-cd docscribe
-```
+   It's recommended to use a virtual environment to manage dependencies.
 
-### Install Python Dependencies
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-Create and activate a virtual environment (optional but recommended):
+3. **Install Python Dependencies**
 
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-Install the required Python packages:
+4. **Install Node.js Dependencies**
 
-```bash
-pip install -r requirements.txt
-```
+   Ensure you have Node.js installed. Then, install any required Node.js packages.
 
-### Install Node.js Dependencies
+   ```bash
+   cd scripts
+   npm install
+   cd ..
+   ```
 
-Navigate to the `scripts` directory and install Node.js dependencies:
+5. **Install External Tools**
 
-```bash
-cd scripts
-npm install
-cd ..
-```
+   The script relies on external tools like `black`, `flake8`, and `autoflake`. Install them using `pip`:
 
-### Set Up Environment Variables
+   ```bash
+   pip install black flake8 autoflake
+   ```
 
-Create a `.env` file in the root directory and add your OpenAI API key or Azure OpenAI credentials:
+   Ensure that these tools are accessible in your system's PATH.
 
-```bash
-echo "OPENAI_API_KEY=your_api_key_here" > .env
-echo "AZURE_OPENAI_KEY=your_azure_key_here" >> .env
-echo "AZURE_OPENAI_ENDPOINT=your_azure_endpoint_here" >> .env
-```
+## Configuration
 
-Alternatively, set the `OPENAI_API_KEY` environment variable in your system.
+1. **Environment Variables**
+
+   Create a `.env` file in the project's root directory to store your API keys and other configurations securely.
+
+   ```bash
+   touch .env
+   ```
+
+   **Example `.env` File:**
+
+   ```env
+   OPENAI_API_KEY=your_openai_api_key_here
+   AZURE_OPENAI_KEY=your_azure_openai_key_here
+   AZURE_OPENAI_ENDPOINT=https://your-azure-openai-endpoint.azure.com/
+   DEPLOYMENT_NAME=gpt4o
+   ```
+
+   **Notes:**
+   - **`OPENAI_API_KEY`**: Required if using OpenAI's GPT-4.
+   - **`AZURE_OPENAI_KEY`** and **`AZURE_OPENAI_ENDPOINT`**: Required if using Azure OpenAI services.
+   - **`DEPLOYMENT_NAME`**: The name of your Azure OpenAI deployment.
+
+2. **Configuration File (`config.json`)**
+
+   Optionally, you can create a `config.json` file to specify additional configurations such as excluded directories, files, and style guidelines.
+
+   **Example `config.json`:**
+
+   ```json
+   {
+     "project_info": "This project automates the generation of documentation for code repositories.",
+     "style_guidelines": "Follow PEP8 for Python code and Airbnb style guide for JavaScript.",
+     "excluded_dirs": [".git", "__pycache__", "node_modules", ".venv", ".idea"],
+     "excluded_files": [".DS_Store"],
+     "skip_types": [".json", ".md", ".txt", ".csv", ".lock"]
+   }
+   ```
 
 ## Usage
 
+The tool is executed via the command line with various arguments to customize its behavior.
+
 ### Command-Line Arguments
 
-Run the script using:
+| Argument            | Description                                                   | Default                                             |
+|---------------------|---------------------------------------------------------------|-----------------------------------------------------|
+| `repo_path`         | **(Required)** Path to the code repository.                   | N/A                                                 |
+| `-c`, `--config`    | Path to `config.json` for additional configurations.          | `config.json`                                       |
+| `--concurrency`     | Number of concurrent API requests.                           | `5`                                                 |
+| `-o`, `--output`    | Output Markdown file for the generated documentation.         | `output.md`                                         |
+| `--model`           | OpenAI model to use (e.g., `gpt-4`, `gpt-4o`).                | `gpt-4`                                             |
+| `--skip-types`      | Comma-separated list of file extensions to skip (e.g., `.exe,.bin`). | `""`                                         |
+| `--project-info`    | Additional information about the project.                     | `""`                                                |
+| `--style-guidelines`| Documentation style guidelines to follow.                      | `""`                                                |
+| `--safe-mode`       | Run in safe mode (no files will be modified).                  | `False`                                             |
+| `--log-level`       | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). | `INFO`                                          |
+| `--schema`          | Path to `function_schema.json`.                                | `schemas/function_schema.json`                      |
+| `--use-azure`       | Use Azure OpenAI instead of regular OpenAI API.                | `False`                                             |
 
-```bash
-python main.py /path/to/your/repository [options]
-```
+### Example Commands
 
-**Options:**
+1. **Basic Usage with OpenAI GPT-4**
 
-- `-c`, `--config`: Path to `config.json` file (default: `config.json`).
-- `--concurrency`: Number of concurrent API requests (default: 5).
-- `-o`, `--output`: Output Markdown file for the documentation report (default: `output.md`).
-- `--model`: OpenAI model to use (default: `gpt-4`).
-- `--skip-types`: Comma-separated list of file extensions to skip.
-- `--project-info`: Project-specific information to include (overrides `config.json`).
-- `--style-guidelines`: Documentation style guidelines to follow (overrides `config.json`).
-- `--safe-mode`: Run in safe mode without modifying files.
-- `--log-level`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
-- `--schema`: Path to the function schema JSON file (default: `function_schema.json`).
-- `--use-azure`: Use Azure OpenAI instead of regular OpenAI API.
+   ```bash
+   python main.py /path/to/repo --model gpt-4
+   ```
 
-### Configuration File
+2. **Using Azure OpenAI**
 
-DocScribe can be configured using a `config.json` file. This allows you to set default parameters and options without specifying them every time via command-line arguments.
+   ```bash
+   python main.py /path/to/repo --model gpt-4o --use-azure
+   ```
 
-**Example `config.json`:**
+3. **Specifying Custom Configuration and Schema Paths**
+
+   ```bash
+   python main.py /path/to/repo --config /path/to/config.json --schema /path/to/schemas/custom_function_schema.json
+   ```
+
+4. **Running in Safe Mode with Increased Concurrency**
+
+   ```bash
+   python main.py /path/to/repo --concurrency 10 --safe-mode
+   ```
+
+5. **Excluding Specific File Types and Setting Log Level to DEBUG**
+
+   ```bash
+   python main.py /path/to/repo --skip-types .exe,.bin --log-level DEBUG
+   ```
+
+## Function Schema
+
+The `function_schema.json` file defines the structure of the functions that the OpenAI API will use for generating documentation. Ensure that this schema aligns with OpenAI's expectations, primarily that it is a **list** of function definitions.
+
+**Example `function_schema.json`:**
 
 ```json
-{
-  "project_info": "This project is designed to...",
-  "style_guidelines": "Please adhere to the PEP 8 style guide.",
-  "excluded_dirs": ["tests", "docs"],
-  "excluded_files": ["setup.py"],
-  "skip_types": [".json", ".md"],
-  "function_schema_path": "function_schema.json"
-}
+[
+  {
+    "name": "generate_documentation",
+    "description": "Generates comprehensive documentation for the provided code structure.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "A detailed summary of the file."
+        },
+        "changes_made": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of changes made to the file."
+        },
+        "functions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/function" },
+          "description": "List of documented functions."
+        },
+        "classes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/class" },
+          "description": "List of documented classes."
+        }
+      },
+      "required": ["summary"],
+      "definitions": {
+        "function": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "docstring": { "type": "string" },
+            "args": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "async": { "type": "boolean" }
+          },
+          "required": ["name", "docstring", "args", "async"]
+        },
+        "class": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "docstring": { "type": "string" },
+            "methods": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/method" }
+            }
+          },
+          "required": ["name", "docstring", "methods"]
+        },
+        "method": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "docstring": { "type": "string" },
+            "args": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "async": { "type": "boolean" },
+            "type": { "type": "string" }
+          },
+          "required": ["name", "docstring", "args", "async", "type"]
+        }
+      }
+    }
+  }
+]
 ```
 
-### Examples
+**Key Points:**
 
-**Basic Usage:**
+- **List Format**: The schema is a list containing function definitions.
+- **Function Definition**: Each function has a `name`, `description`, and `parameters`.
+- **Parameters**: Define the expected input for the function, including properties and required fields.
+- **Definitions**: Reusable components (`function`, `class`, `method`) defined to structure the documentation output.
+
+## Logging
+
+The tool provides comprehensive logging to help monitor its operation and troubleshoot issues.
+
+- **Log File**: `documentation_generation.log` located in the project's root directory.
+- **Log Levels**:
+  - **DEBUG**: Detailed information, typically of interest only when diagnosing problems.
+  - **INFO**: Confirmation that things are working as expected.
+  - **WARNING**: An indication that something unexpected happened.
+  - **ERROR**: Due to a more serious problem, the software has not been able to perform some function.
+  - **CRITICAL**: A serious error, indicating that the program itself may be unable to continue running.
+
+**Configuring Log Level:**
+
+Use the `--log-level` argument to set the desired logging level.
 
 ```bash
-python main.py /path/to/your/repository
+python main.py /path/to/repo --log-level DEBUG
 ```
 
-**Using Custom Configuration:**
+## Troubleshooting
 
-```bash
-python main.py /path/to/your/repository -c custom_config.json
-```
+### Common Issues
 
-**Running in Safe Mode (No Files Modified):**
+1. **`function_schema.json` Not Found**
 
-```bash
-python main.py /path/to/your/repository --safe-mode
-```
+   - **Error Message:**
+     ```
+     [CRITICAL] __main__: Failed to load function schema from '/path/to/schemas/function_schema.json'. Exiting.
+     ```
+   - **Solution:**
+     - Ensure that `function_schema.json` exists in the specified `schemas` directory.
+     - Verify the path using the `--schema` argument.
+     - Check file permissions to ensure the script can read the file.
 
-**Specifying OpenAI Model and Concurrency:**
+2. **AzureOpenAI Initialization Error**
 
-```bash
-python main.py /path/to/your/repository --model gpt-4 --concurrency 10
-```
+   - **Error Message:**
+     ```
+     [CRITICAL] __main__: An unexpected error occurred: AzureOpenAI.__init__() got an unexpected keyword argument 'api_base'
+     ```
+   - **Solution:**
+     - Verify that you are using the correct version of the OpenAI Python library that supports the `AzureOpenAI` class with the `api_base` parameter.
+     - Update the OpenAI library:
+       ```bash
+       pip install --upgrade openai
+       ```
+     - Check the `AzureOpenAI` class documentation to ensure correct usage.
 
-**Using Azure OpenAI with a specific model deployment:**
+3. **Missing External Tools (`autoflake`, `flake8`, `black`)**
 
-This example uses Azure OpenAI with the `gpt4o` model deployment and a custom configuration file:
+   - **Error Messages:**
+     ```
+     [ERROR] __main__: Autoflake is not installed. Please install it using 'pip install autoflake'.
+     ```
+   - **Solution:**
+     - Install the missing tools:
+       ```bash
+       pip install autoflake flake8 black
+       ```
+     - Ensure they are accessible in your system's PATH.
 
-```bash
-python main.py /path/to/your/repository --use-azure --model gpt4o -c config.json
-```
+4. **Node.js Scripts Not Found**
 
-## Configuration and Customization
+   - **Error Message:**
+     ```
+     [ERROR] __main__: Node.js script /path/to/script.js not found.
+     ```
+   - **Solution:**
+     - Ensure Node.js is installed:
+       ```bash
+       node -v
+       ```
+     - Install required Node.js packages:
+       ```bash
+       cd scripts
+       npm install
+       cd ..
+       ```
+     - Verify the path to the Node.js scripts.
 
-- **API Credentials**: Set via `.env` file or environment variables (`OPENAI_API_KEY` or `AZURE_OPENAI_KEY` and `AZURE_OPENAI_ENDPOINT`).
-- **Project Information**: Provide context to the AI for better documentation.
-- **Style Guidelines**: Customize the style and format of the generated documentation.
-- **Excluded Directories and Files**: Specify paths to ignore during traversal.
-- **Supported File Extensions**: Extend or modify the file types to include.
-- **Concurrency Level**: Adjust based on your network and API rate limits.
-- **Output File**: Define the name and location of the documentation report.
-**Azure OpenAI Configuration:**
-- Set `AZURE_OPENAI_KEY` and `AZURE_OPENAI_ENDPOINT` in your `.env` file or as environment variables.
-- Use the `--use-azure` flag to enable Azure OpenAI.
-- Specify the Azure OpenAI model deployment name using the `--model` argument (e.g., `gpt4o`).
+### General Tips
 
-
-## Documentation Report
-
-After execution, DocScribe generates a Markdown report summarizing the documentation added to each file. The report includes:
-
-- **Table of Contents**: Auto-generated for easy navigation.
-- **File Summaries**: High-level overviews of each file's purpose.
-- **Changes Made**: Lists any modifications or additions.
-- **Detailed Documentation**: Function and class docstrings, parameter explanations, etc.
-- **Code Blocks**: Snippets showing the updated code with inserted documentation.
-
-**Example Output:**
-
-```markdown
-# Documentation Generation Report
-
-## Table of Contents
-
-- [File: src/main.py](#file-srcmainpy)
-  - [Summary](#summary)
-  - [Changes Made](#changes-made)
-  - [Functions](#functions)
-  - [Classes](#classes)
-
-...
-
-## File: src/main.py
-
-### Summary
-
-This file contains the main execution logic of the application, handling user input and orchestrating the core functions.
-
-### Changes Made
-
-- Added docstrings to all functions and classes.
-- Updated function `process_data` to include parameter descriptions.
-
-### Functions
-
-| Function     | Arguments       | Description                         | Async |
-|--------------|-----------------|-------------------------------------|-------|
-| `process_data` | `data, options` | Processes input data according to specified options. | No    |
-
-### Classes
-
-#### Class: `DataProcessor`
-
-A class responsible for processing data and generating output.
-
-| Method       | Arguments     | Description                         | Async | Type     |
-|--------------|---------------|-------------------------------------|-------|----------|
-| `run`        | `self`        | Executes the data processing routine.| No    | function |
-
-...
-```
-
-## Error Handling and Logging
-
-- **Logging**: All activities are logged to `docs_generation.log` and console output.
-- **Log Levels**: Can be adjusted via the `--log-level` argument.
-- **Error Handling**: The script gracefully handles errors, logging them without stopping the entire process.
-- **Retries**: Implements retry logic for transient errors, such as network timeouts.
+- **Check Logs**: Review the `documentation_generation.log` file for detailed error messages and stack traces.
+- **Environment Variables**: Ensure all required environment variables are set correctly in the `.env` file.
+- **Dependencies**: Confirm that all Python and Node.js dependencies are installed.
+- **Permissions**: Verify that the script has the necessary permissions to read and write files in the specified directories.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request or open an Issue on GitHub.
+Contributions are welcome! Please follow these steps to contribute:
 
-**Steps to Contribute:**
+1. **Fork the Repository**
 
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature/YourFeature`).
-3. Commit your changes (`git commit -am 'Add new feature'`).
-4. Push to the branch (`git push origin feature/YourFeature`).
-5. Open a Pull Request.
+2. **Create a Feature Branch**
+
+   ```bash
+   git checkout -b feature/YourFeatureName
+   ```
+
+3. **Commit Your Changes**
+
+   ```bash
+   git commit -m "Add your feature description"
+   ```
+
+4. **Push to the Branch**
+
+   ```bash
+   git push origin feature/YourFeatureName
+   ```
+
+5. **Open a Pull Request**
+
+   Describe your changes and provide context for reviewers.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- **OpenAI** for providing the GPT-4 model.
-- **Microsoft Azure** for providing Azure OpenAI services.
-- **Contributors** who have helped improve this project.
-- **Community** for feedback and support.
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-**Contact Information:**
-
-For questions or support, please contact [hperkin4@asu.edu](mailto:hperkin4@asu.edu).
+*Developed with ❤️ by [Your Name](https://github.com/yourusername)*
