@@ -1,9 +1,13 @@
-# Documentation Generation Tool
-
+# Synapse
+## Documentation Generator
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT%204-blue.svg)
 
+- **Behind-the-scenes enhancement of AI models.**
+- **Improved contextual understanding for AI models.**
+- **Enhanced AI capabilities across diverse applications.**
+- **Ease of use and seamless integration.
 <img src="https://github.com/henryperkins/docs/blob/26fc21625be86c63726fd3608a13b9687520214a/DALL%C2%B7E%202024-10-05%2001.00.45%20-%20A%20high-resolution%2C%20modern%2C%20abstract%20logo%20representing%20an%20AI%20documentation%20generation%20tool%20called%20'DocuScribe'.%20Focus%20on%20depicting%20complex%20synapses%2C%20ne.webp?raw=true" alt="DocuScribe Logo" width="450"/>
 
 ## Table of Contents
