@@ -9,7 +9,7 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 const schemaPath = path.join(__dirname, '../schemas/js_ts_structure_schema.json');
 const functionSchema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
 
-// Read data from stdin (this is treated as plain text, not JSON)
+// Read data from stdin
 let inputChunks = [];
 process.stdin.on('data', chunk => {
   inputChunks.push(chunk);
@@ -18,20 +18,20 @@ process.stdin.on('data', chunk => {
 process.stdin.on('end', () => {
   const inputData = inputChunks.join('');
 
-  let code;
-  let language;
+  // Remove comments from JSON input
+  const sanitizedInput = inputData.replace(/\/\/[^\n]*\n/g, '');
 
-  // Expect the input to contain a code block directly
+  let parsedInput;
   try {
-    const parsedInput = JSON.parse(inputData);  // Parse the input once for metadata (language, etc.)
-    code = parsedInput.code;                    // Code itself is plain text
-    language = parsedInput.language || 'javascript';
+    parsedInput = JSON.parse(sanitizedInput);
   } catch (e) {
-    console.error(`Error parsing input metadata as JSON: ${e.message}`);
+    console.error(`Error parsing input JSON: ${e.message}`);
     process.exit(1);
   }
 
-  // Parse the code (plain JavaScript or TypeScript)
+  const { code, language } = parsedInput;
+
+  // Parse the code
   let ast;
   try {
     ast = parse(code, {
