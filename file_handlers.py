@@ -223,7 +223,7 @@ async def write_documentation_report(
                     func_doc.splitlines()[0] if func_doc else "No description provided."
                 )
                 func_async = "Yes" if func.get("async", False) else "No"
-                functions_section += f"| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async}` |\n"
+                functions_section += f"| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n"
             documentation_content += functions_section + "\n"
         classes = documentation.get("classes", []) if documentation else []
         if classes:
@@ -254,7 +254,7 @@ async def write_documentation_report(
                         )
                         method_async = "Yes" if method.get("async", False) else "No"
                         method_type = method.get("type", "N/A")
-                        classes_section += f"| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type}` |\n"
+                        classes_section += f"| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n"
                     classes_section += "\n"
             documentation_content += classes_section
         code_content = new_content.strip()
@@ -279,8 +279,12 @@ def generate_table_of_contents(markdown_content: str) -> str:
         if match:
             level = len(match.group(1))
             title = match.group(2).strip()
-            anchor = re.sub(r"[^\w\s\-]", "", title).lower()
-            anchor = re.sub(r"\s+", "-", anchor)
+            # Generate anchor similar to GitHub's markdown anchor generation
+            anchor = title.lower()
+            anchor = re.sub(r'[^\w\- ]', '', anchor)  # Remove punctuation except hyphens and spaces
+            anchor = anchor.replace(' ', '-')  # Replace spaces with hyphens
+            anchor = re.sub(r'-+', '-', anchor)  # Replace multiple hyphens with a single one
+            anchor = anchor.strip('-')  # Remove leading/trailing hyphens
             original_anchor = anchor
             counter = 1
             while anchor in seen_anchors:
@@ -290,6 +294,7 @@ def generate_table_of_contents(markdown_content: str) -> str:
             indent = "  " * (level - 1)
             toc.append(f"{indent}- [{title}](#{anchor})")
     return "\n".join(toc)
+
 
 
 async def process_all_files(
