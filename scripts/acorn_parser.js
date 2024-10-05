@@ -26,6 +26,7 @@ process.stdin.on('end', () => {
     parsedInput = JSON.parse(sanitizedInput);
   } catch (e) {
     console.error(`Error parsing input JSON: ${e.message}`);
+    console.error(`Input JSON: ${sanitizedInput}`);
     process.exit(1);
   }
 
