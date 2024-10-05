@@ -1,5 +1,4 @@
 # language_functions/js_ts_handler.py
-
 import logging
 from typing import Dict, Any
 from language_functions.base_handler import BaseHandler
