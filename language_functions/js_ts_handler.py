@@ -1,5 +1,7 @@
 # language_functions/js_ts_handler.py
 import logging
+import subprocess
+import json
 from typing import Dict, Any
 from language_functions.base_handler import BaseHandler
 

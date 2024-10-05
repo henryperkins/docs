@@ -26,6 +26,7 @@
 **DocScribe** is an advanced, cross-language code documentation tool designed to automate the generation of high-quality, consistent, and comprehensive documentation for codebases written in multiple programming languages. Leveraging the power of OpenAI's GPT-4 API, DocScribe analyzes your code's structure and generates human-readable, informative documentation that adheres to best practices and style guidelines.
 
 By automating the documentation process, DocScribe helps developers maintain up-to-date documentation, improve code readability, facilitate onboarding, and enhance overall code quality.
+DocScribe now supports both OpenAI and Azure OpenAI, giving you flexibility in choosing your AI provider.
 
 ## Features
 
@@ -36,6 +37,7 @@ By automating the documentation process, DocScribe helps developers maintain up-
 - **Customizable Configuration**: Flexible settings via `config.json` and command-line arguments.
 - **Comprehensive Reporting**: Generates a Markdown report summarizing all documentation added.
 - **Robust Logging and Error Handling**: Detailed logs and exception handling for smooth operation.
+- **Azure OpenAI Support**: Option to use Azure OpenAI services instead of regular OpenAI API.
 
 ## Supported Languages
 
@@ -52,7 +54,7 @@ Support for additional languages can be added via custom parsers and extensions.
 
 - **Python 3.9** or higher
 - **Node.js** (v12 or higher)
-- **OpenAI API key**
+- **OpenAI API key** or **Azure OpenAI credentials**
 
 ### Clone the Repository
 
@@ -88,10 +90,12 @@ cd ..
 
 ### Set Up Environment Variables
 
-Create a `.env` file in the root directory and add your OpenAI API key:
+Create a `.env` file in the root directory and add your OpenAI API key or Azure OpenAI credentials:
 
 ```bash
 echo "OPENAI_API_KEY=your_api_key_here" > .env
+echo "AZURE_OPENAI_KEY=your_azure_key_here" >> .env
+echo "AZURE_OPENAI_ENDPOINT=your_azure_endpoint_here" >> .env
 ```
 
 Alternatively, set the `OPENAI_API_KEY` environment variable in your system.
@@ -118,6 +122,7 @@ python main.py /path/to/your/repository [options]
 - `--safe-mode`: Run in safe mode without modifying files.
 - `--log-level`: Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
 - `--schema`: Path to the function schema JSON file (default: `function_schema.json`).
+- `--use-azure`: Use Azure OpenAI instead of regular OpenAI API.
 
 ### Configuration File
 
@@ -162,15 +167,28 @@ python main.py /path/to/your/repository --safe-mode
 python main.py /path/to/your/repository --model gpt-4 --concurrency 10
 ```
 
+**Using Azure OpenAI with a specific model deployment:**
+
+This example uses Azure OpenAI with the `gpt4o` model deployment and a custom configuration file:
+
+```bash
+python main.py /path/to/your/repository --use-azure --model gpt4o -c config.json
+```
+
 ## Configuration and Customization
 
-- **OpenAI API Key**: Set via `.env` file or environment variable `OPENAI_API_KEY`.
+- **API Credentials**: Set via `.env` file or environment variables (`OPENAI_API_KEY` or `AZURE_OPENAI_KEY` and `AZURE_OPENAI_ENDPOINT`).
 - **Project Information**: Provide context to the AI for better documentation.
 - **Style Guidelines**: Customize the style and format of the generated documentation.
 - **Excluded Directories and Files**: Specify paths to ignore during traversal.
 - **Supported File Extensions**: Extend or modify the file types to include.
 - **Concurrency Level**: Adjust based on your network and API rate limits.
 - **Output File**: Define the name and location of the documentation report.
+**Azure OpenAI Configuration:**
+- Set `AZURE_OPENAI_KEY` and `AZURE_OPENAI_ENDPOINT` in your `.env` file or as environment variables.
+- Use the `--use-azure` flag to enable Azure OpenAI.
+- Specify the Azure OpenAI model deployment name using the `--model` argument (e.g., `gpt4o`).
+
 
 ## Documentation Report
 
@@ -253,6 +271,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - **OpenAI** for providing the GPT-4 model.
+- **Microsoft Azure** for providing Azure OpenAI services.
 - **Contributors** who have helped improve this project.
 - **Community** for feedback and support.
 

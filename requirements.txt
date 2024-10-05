@@ -1,3 +1,4 @@
+
 aiofiles==24.1.0
 aiohappyeyeballs==2.4.2
 aiohttp==3.10.7
@@ -19,7 +20,7 @@ flake8==6.1.0
 frozenlist==1.4.1
 h11==0.14.0
 httpcore==1.0.6
-httpx==0.27.2
+httpx==0.24.1
 idna==3.10
 Jinja2==3.1.4
 jiter==0.5.0
@@ -30,7 +31,8 @@ MarkupSafe==2.1.5
 mccabe==0.7.0
 multidict==6.1.0
 mypy-extensions==1.0.0
-openai==1.51.0
+openai==1.12.0
+azure-core==1.29.5
 packaging==24.1
 pathspec==0.12.1
 platformdirs==4.3.6

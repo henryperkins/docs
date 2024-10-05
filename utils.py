@@ -12,8 +12,9 @@ from typing import Any, Set, List, Optional, Dict, Tuple
 import tempfile
 from bs4 import BeautifulSoup, Comment
 import tinycss2
-import openai
-from openai import OpenAIError
+from openai import OpenAI, AzureOpenAI, OpenAIError
+import argparse
+from jsonschema import validate, ValidationError
 
 # ----------------------------
 # Configuration and Setup
@@ -34,7 +35,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ----------------------------
 
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_EXCLUDED_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".idea"}
 DEFAULT_EXCLUDED_FILES = {".DS_Store"}
@@ -126,7 +128,7 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
         logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
         return None
 
-def load_function_schema(schema_path: str = None) -> dict:
+def load_function_schema(schema_path: str) -> dict:
     """
     Loads the function schema.
 
@@ -136,8 +138,7 @@ def load_function_schema(schema_path: str = None) -> dict:
     Returns:
         dict: Function schema.
     """
-    if not schema_path:
-        schema_path = os.path.join(os.path.dirname(__file__), "schemas", "function_schema.json")
+    logger.debug(f"Attempting to load function schema from '{schema_path}'")
     schema = load_json_schema(schema_path)
     if not schema:
         logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
@@ -200,7 +201,7 @@ def extract_json_from_response(response: str) -> Optional[dict]:
             return json.loads(response_json["function_call"]["arguments"])
     except json.JSONDecodeError:
         pass
-    json_match = re.search("```(?:json)?\\s*(\\{.*?\\})\\s*```", response, re.DOTALL)
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
     if json_match:
         try:
             return json.loads(json_match.group(1))
@@ -215,42 +216,129 @@ def extract_json_from_response(response: str) -> Optional[dict]:
 # OpenAI API Interaction
 # ----------------------------
 
-def call_openai_api(prompt: str, model: str, functions: List[dict], function_call: Optional[dict] = None) -> Optional[dict]:
+def call_openai_api(prompt: str, model: str, functions: List[dict], function_call: Optional[dict] = None, use_azure: bool = False) -> Optional[dict]:
     """
-    Centralized function to call the OpenAI API.
+    Centralized function to call the OpenAI API or Azure OpenAI API.
 
     Args:
         prompt (str): The prompt to send.
         model (str): The OpenAI model to use.
         functions (List[dict]): List of function schemas.
         function_call (Optional[dict]): Function call parameters.
+        use_azure (bool): Whether to use Azure OpenAI API instead of regular OpenAI API.
 
     Returns:
         Optional[dict]: The API response or None if failed.
     """
-    openai.api_key = OPENAI_API_KEY
-    if not OPENAI_API_KEY:
-        logger.critical("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
-        return None
+    if use_azure:
+        if not AZURE_OPENAI_KEY or not AZURE_OPENAI_ENDPOINT:
+            logger.critical("AZURE_OPENAI_KEY or AZURE_OPENAI_ENDPOINT not set. Please set them in your environment or .env file.")
+            return None
+        client = AzureOpenAI(
+            api_key=AZURE_OPENAI_KEY,
+            api_base=AZURE_OPENAI_ENDPOINT,
+            api_version="2023-05-15"
+        )
+    else:
+        if not OPENAI_API_KEY:
+            logger.critical("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
+            return None
+        client = OpenAI(api_key=OPENAI_API_KEY)
 
     try:
-        response = openai.ChatCompletion.create(
+        messages = [
+            {"role": "system", "content": "You are an assistant that generates documentation."},
+            {"role": "user", "content": prompt},
+        ]
+
+        response = client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": "You are an assistant that generates documentation."},
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages,
             functions=functions,
             function_call=function_call,
         )
-        logger.debug("OpenAI API call successful.")
+
+        logger.debug("API call successful.")
         return response
     except OpenAIError as e:
         logger.error(f"OpenAI API Error: {e}")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error calling OpenAI API: {e}")
+        logger.error(f"Unexpected error calling API: {e}")
         return None
+
+async def fetch_documentation(
+    session: aiohttp.ClientSession,
+    prompt: str,
+    semaphore: asyncio.Semaphore,
+    model_name: str,
+    function_schema: dict,
+    retry: int = 3,
+    use_azure: bool = False
+) -> Optional[dict]:
+    """
+    Fetches documentation from OpenAI's API or Azure OpenAI API with optional retries.
+
+    Parameters:
+        session (aiohttp.ClientSession): The HTTP session.
+        prompt (str): The prompt to send to the AI.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
+        model_name (str): The AI model to use.
+        function_schema (dict): The function schema for structured responses.
+        retry (int): Number of retry attempts.
+        use_azure (bool): Whether to use Azure OpenAI API instead of regular OpenAI API.
+
+    Returns:
+        Optional[dict]: The structured documentation or None if failed.
+    """
+    for attempt in range(1, retry + 1):
+        async with semaphore:
+            try:
+                if use_azure:
+                    client = AzureOpenAI(
+                        api_key=AZURE_OPENAI_KEY,
+                        api_base=AZURE_OPENAI_ENDPOINT,
+                        api_version="2023-05-15"
+                    )
+                else:
+                    client = OpenAI(api_key=OPENAI_API_KEY)
+
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
+                    {"role": "user", "content": prompt},
+                ]
+
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    functions=[function_schema],
+                    function_call="auto",
+                )
+                logger.debug(f"API Response: {response}")
+                choice = response.choices[0]
+                message = choice.message
+                if message.function_call:
+                    arguments = message.function_call.arguments
+                    try:
+                        documentation = json.loads(arguments)
+                        logger.debug("Received documentation via function_call.")
+                        return documentation
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Error decoding JSON from function_call arguments: {e}")
+                        logger.error(f"Arguments Content: {arguments}")
+                        return None
+                else:
+                    logger.error("No function_call found in the response.")
+                    return None
+            except Exception as e:
+                logger.error(f"Error fetching documentation from API: {e}")
+                if attempt < retry:
+                    logger.info(f"Retrying... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(2**attempt)
+                else:
+                    logger.error("All retry attempts failed.")
+                    return None
+    return None
 
 # ----------------------------
 # Code Formatting and Cleanup
@@ -344,6 +432,9 @@ def check_with_flake8(file_path: str) -> bool:
         except FileNotFoundError as e:
             logger.error(f"Required tool not found: {e}")
             return False
+        except Exception as e:
+            logger.error(f"Error auto-fixing flake8 issues for {file_path}: {e}", exc_info=True)
+            return False
 
 def run_flake8(file_path: str) -> Optional[str]:
     """
@@ -425,78 +516,6 @@ def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[st
         logger.error(f"Unexpected error running {script_path}: {e}")
         return None
 
-async def fetch_documentation(
-    session: aiohttp.ClientSession,
-    prompt: str,
-    semaphore: asyncio.Semaphore,
-    model_name: str,
-    function_schema: dict,
-    retry: int = 3,
-) -> Optional[dict]:
-    """
-    Fetches documentation from OpenAI's API with optional retries.
-
-    Parameters:
-        session (aiohttp.ClientSession): The HTTP session.
-        prompt (str): The prompt to send to the AI.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): The AI model to use.
-        function_schema (dict): The function schema for structured responses.
-        retry (int): Number of retry attempts.
-
-    Returns:
-        Optional[dict]: The structured documentation or None if failed.
-    """
-    for attempt in range(1, retry + 1):
-        async with semaphore:
-            try:
-                headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-                payload = {
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "functions": [function_schema],
-                    "function_call": "auto",
-                }
-                logger.debug(
-                    f"API Payload (without API key): {json.dumps({k:v for k,v in payload.items() if k != 'api_key'}, indent=2)}"
-                )
-                async with session.post(
-                    "https://api.openai.com/v1/chat/completions", headers=headers, json=payload
-                ) as resp:
-                    response_text = await resp.text()
-                    if resp.status != 200:
-                        logger.error(f"OpenAI API request failed with status {resp.status}: {response_text}")
-                        continue
-                    response = await resp.json()
-                    logger.debug(f"API Response: {json.dumps(response, indent=2)}")
-                    choice = response.get("choices", [])[0]
-                    message = choice.get("message", {})
-                    if "function_call" in message:
-                        arguments = message["function_call"].get("arguments", "{}")
-                        try:
-                            documentation = json.loads(arguments)
-                            logger.debug("Received documentation via function_call.")
-                            return documentation
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Error decoding JSON from function_call arguments: {e}")
-                            logger.error(f"Arguments Content: {arguments}")
-                            return None
-                    else:
-                        logger.error("No function_call found in the response.")
-                        return None
-            except Exception as e:
-                logger.error(f"Error fetching documentation from OpenAI API: {e}")
-                if attempt < retry:
-                    logger.info(f"Retrying... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(2**attempt)
-                else:
-                    logger.error("All retry attempts failed.")
-                    return None
-    return None
-
 def generate_documentation_prompt(
     file_name: str,
     code_structure: Dict[str, Any],
@@ -535,9 +554,171 @@ def generate_documentation_prompt(
     """
     return prompt
 
+# ----------------------------
+# Schema Validation (Optional)
+# ----------------------------
+
+def validate_schema(schema: dict):
+    """Validates the loaded schema against a predefined schema."""
+    predefined_schema = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "parameters": {"type": "object"}
+            },
+            "required": ["name", "description", "parameters"]
+        }
+    }
+    try:
+        validate(instance=schema, schema=predefined_schema)
+        logger.debug("Function schema is valid.")
+    except ValidationError as ve:
+        logger.critical(f"Schema validation error: {ve.message}")
+        sys.exit(1)
+
+# ----------------------------
 # Initialize function_schema.json
-try:
-    function_schema = load_function_schema()
-except FileNotFoundError as e:
-    logger.critical(str(e))
-    function_schema = None
+# ----------------------------
+
+async def process_all_files(
+    session: aiohttp.ClientSession,
+    file_paths: List[str],
+    skip_types: Set[str],
+    semaphore: asyncio.Semaphore,
+    model_name: str,
+    function_schema: dict,
+    repo_root: str,
+    project_info: Optional[str],
+    style_guidelines: Optional[str],
+    safe_mode: bool,
+    output_file: str,
+):
+    """
+    Processes all files: extracts structure, fetches documentation, and inserts docstrings.
+
+    Args:
+        session (aiohttp.ClientSession): The HTTP session.
+        file_paths (List[str]): List of file paths to process.
+        skip_types (Set[str]): Set of file types to skip.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
+        model_name (str): The AI model to use.
+        function_schema (dict): The function schema for structured responses.
+        repo_root (str): Root directory of the repository.
+        project_info (Optional[str]): Project information.
+        style_guidelines (Optional[str]): Style guidelines.
+        safe_mode (bool): Whether to run in safe mode.
+        output_file (str): Output Markdown file.
+    """
+    for file_path in file_paths:
+        try:
+            file_ext = os.path.splitext(file_path)[1]
+            language = get_language(file_ext)
+            if is_binary(file_path):
+                logger.info(f"Skipping binary file: {file_path}")
+                continue
+
+            with open(file_path, "r", encoding="utf-8") as f:
+                code = f.read()
+
+            # Optionally format the code
+            code = format_with_black(code)
+            code = clean_unused_imports(code)
+
+            # Extract code structure using Node.js script (assuming extract_structure.js exists)
+            structure = run_node_script("extract_structure.js", code)
+            if not structure:
+                logger.error(f"Failed to extract structure from {file_path}")
+                continue
+
+            # Generate prompt
+            file_name = os.path.basename(file_path)
+            prompt = generate_documentation_prompt(
+                file_name=file_name,
+                code_structure=structure,
+                project_info=project_info,
+                style_guidelines=style_guidelines,
+                language=language
+            )
+
+            # Fetch documentation from API
+            documentation = await fetch_documentation(
+                session=session,
+                prompt=prompt,
+                semaphore=semaphore,
+                model_name=model_name,
+                function_schema=function_schema,
+                use_azure=args.use_azure  # Ensure 'args' is accessible or passed appropriately
+            )
+
+            if not documentation:
+                logger.error(f"Failed to fetch documentation for {file_path}")
+                continue
+
+            # Insert docstrings using Node.js script (assuming insert_docstrings.js exists)
+            input_json = json.dumps({
+                "code": code,
+                "documentation": documentation
+            })
+            modified_code = run_node_insert_docstrings("insert_docstrings.js", input_json)
+            if not modified_code:
+                logger.error(f"Failed to insert docstrings into {file_path}")
+                continue
+
+            if not safe_mode:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(modified_code)
+                logger.info(f"Updated file with docstrings: {file_path}")
+            else:
+                logger.info(f"Safe mode enabled. Skipping file modification: {file_path}")
+
+            # Optionally, append to output Markdown
+            with open(output_file, "a", encoding="utf-8") as out_f:
+                out_f.write(f"# Documentation for {file_name}\n\n")
+                out_f.write(f"## Summary\n{documentation.get('summary', 'No summary provided.')}\n\n")
+                out_f.write(f"## Changes Made\n" + "\n".join(documentation.get('changes_made', [])) + "\n\n")
+                out_f.write(f"## Functions\n")
+                for func in documentation.get('functions', []):
+                    out_f.write(f"### {func['name']}\n{func['docstring']}\n\n")
+                out_f.write(f"## Classes\n")
+                for cls in documentation.get('classes', []):
+                    out_f.write(f"### {cls['name']}\n{cls['docstring']}\n\n")
+        except Exception as e:
+            logger.error(f"Unexpected error processing {file_path}: {e}", exc_info=True)
+
+def validate_schema(schema: dict):
+    """Validates the loaded schema against a predefined schema."""
+    predefined_schema = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "parameters": {"type": "object"}
+            },
+            "required": ["name", "description", "parameters"]
+        }
+    }
+    try:
+        validate(instance=schema, schema=predefined_schema)
+        logger.debug("Function schema is valid.")
+    except ValidationError as ve:
+        logger.critical(f"Schema validation error: {ve.message}")
+        sys.exit(1)
+
+# ----------------------------
+# Initialize function_schema.json
+# ----------------------------
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.warning("Documentation generation interrupted by user.")
+        sys.exit(1)
+    except Exception as e:
+        logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
+        sys.exit(1)
