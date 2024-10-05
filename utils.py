@@ -12,9 +12,11 @@ from typing import Any, Set, List, Optional, Dict, Tuple
 import tempfile
 from bs4 import BeautifulSoup, Comment
 import tinycss2
-from openai import OpenAI, AzureOpenAI, OpenAIError
 import argparse
 from jsonschema import validate, ValidationError
+from logging.handlers import RotatingFileHandler
+import openai
+from openai import OpenAIError, APIError, APIConnectionError, RateLimitError
 
 # ----------------------------
 # Configuration and Setup
@@ -222,7 +224,7 @@ def call_openai_api(prompt: str, model: str, functions: List[dict], function_cal
 
     Args:
         prompt (str): The prompt to send.
-        model (str): The OpenAI model to use.
+        model (str): The OpenAI model to use, or deployment ID for Azure.
         functions (List[dict]): List of function schemas.
         function_call (Optional[dict]): Function call parameters.
         use_azure (bool): Whether to use Azure OpenAI API instead of regular OpenAI API.
@@ -230,20 +232,8 @@ def call_openai_api(prompt: str, model: str, functions: List[dict], function_cal
     Returns:
         Optional[dict]: The API response or None if failed.
     """
-    if use_azure:
-        if not AZURE_OPENAI_KEY or not AZURE_OPENAI_ENDPOINT:
-            logger.critical("AZURE_OPENAI_KEY or AZURE_OPENAI_ENDPOINT not set. Please set them in your environment or .env file.")
-            return None
-        client = AzureOpenAI(
-            api_key=AZURE_OPENAI_KEY,
-            api_base=AZURE_OPENAI_ENDPOINT,
-            api_version="2023-05-15"
-        )
-    else:
-        if not OPENAI_API_KEY:
-            logger.critical("OPENAI_API_KEY not set. Please set it in your environment or .env file.")
-            return None
-        client = OpenAI(api_key=OPENAI_API_KEY)
+    if not check_api_keys(use_azure):
+        return None
 
     try:
         messages = [
@@ -251,21 +241,35 @@ def call_openai_api(prompt: str, model: str, functions: List[dict], function_cal
             {"role": "user", "content": prompt},
         ]
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            functions=functions,
-            function_call=function_call,
-        )
+        if use_azure:
+            # Use 'engine' parameter for Azure OpenAI
+            response = openai.ChatCompletion.create(
+                engine=model,  # 'model' is the deployment ID in Azure
+                messages=messages,
+                functions=functions,
+                function_call=function_call,
+            )
+        else:
+            # Use 'model' parameter for OpenAI API
+            response = openai.ChatCompletion.create(
+                model=model,
+                messages=messages,
+                functions=functions,
+                function_call=function_call,
+            )
 
         logger.debug("API call successful.")
         return response
-    except OpenAIError as e:
+    except openai.error.OpenAIError as e:
         logger.error(f"OpenAI API Error: {e}")
         return None
     except Exception as e:
         logger.error(f"Unexpected error calling API: {e}")
         return None
+
+
+import openai
+from openai import OpenAIError, APIError, APIConnectionError, RateLimitError
 
 async def fetch_documentation(
     session: aiohttp.ClientSession,
@@ -276,49 +280,36 @@ async def fetch_documentation(
     retry: int = 3,
     use_azure: bool = False
 ) -> Optional[dict]:
-    """
-    Fetches documentation from OpenAI's API or Azure OpenAI API with optional retries.
-
-    Parameters:
-        session (aiohttp.ClientSession): The HTTP session.
-        prompt (str): The prompt to send to the AI.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): The AI model to use.
-        function_schema (dict): The function schema for structured responses.
-        retry (int): Number of retry attempts.
-        use_azure (bool): Whether to use Azure OpenAI API instead of regular OpenAI API.
-
-    Returns:
-        Optional[dict]: The structured documentation or None if failed.
-    """
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
-                if use_azure:
-                    client = AzureOpenAI(
-                        api_key=AZURE_OPENAI_KEY,
-                        api_base=AZURE_OPENAI_ENDPOINT,
-                        api_version="2023-05-15"
-                    )
-                else:
-                    client = OpenAI(api_key=OPENAI_API_KEY)
-
                 messages = [
                     {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
                     {"role": "user", "content": prompt},
                 ]
 
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    functions=[function_schema],
-                    function_call="auto",
-                )
+                if use_azure:
+                    # Use 'engine' parameter for Azure OpenAI
+                    response = openai.ChatCompletion.create(
+                        engine=model_name,  # model_name is your deployment ID
+                        messages=messages,
+                        functions=[function_schema],
+                        function_call="auto",
+                    )
+                else:
+                    # Use 'model' parameter for OpenAI API
+                    response = openai.ChatCompletion.create(
+                        model=model_name,
+                        messages=messages,
+                        functions=[function_schema],
+                        function_call="auto",
+                    )
+
                 logger.debug(f"API Response: {response}")
                 choice = response.choices[0]
                 message = choice.message
-                if message.function_call:
-                    arguments = message.function_call.arguments
+                if message.get("function_call"):
+                    arguments = message["function_call"].get("arguments")
                     try:
                         documentation = json.loads(arguments)
                         logger.debug("Received documentation via function_call.")
@@ -330,15 +321,40 @@ async def fetch_documentation(
                 else:
                     logger.error("No function_call found in the response.")
                     return None
-            except Exception as e:
-                logger.error(f"Error fetching documentation from API: {e}")
+            except APIError as e:
+                logger.error(f"OpenAI API returned an API Error: {e}")
                 if attempt < retry:
                     logger.info(f"Retrying... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(2**attempt)
+                    await asyncio.sleep(2 ** attempt)
                 else:
                     logger.error("All retry attempts failed.")
                     return None
+            except APIConnectionError as e:
+                logger.error(f"Failed to connect to OpenAI API: {e}")
+                if attempt < retry:
+                    logger.info(f"Retrying... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    logger.error("All retry attempts failed.")
+                    return None
+            except RateLimitError as e:
+                logger.error(f"OpenAI API request exceeded rate limit: {e}")
+                if attempt < retry:
+                    logger.info(f"Retrying after rate limit error... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    logger.error("All retry attempts failed due to rate limit.")
+                    return None
+            except OpenAIError as e:
+                logger.error(f"An OpenAI error occurred: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
+                return None
     return None
+
+
+
 
 # ----------------------------
 # Code Formatting and Cleanup

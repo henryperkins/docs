@@ -22,6 +22,7 @@ from utils import (
     generate_documentation_prompt,
     fetch_documentation,
 )
+from logging.handlers import RotatingFileHandler
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,8 @@ async def process_file(
     repo_root: str,
     project_info: str,
     style_guidelines: str,
-    safe_mode: bool
+    safe_mode: bool,
+    use_azure: bool = False,  # Added use_azure parameter
 ) -> Optional[str]:
     """Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content."""
     logger.debug(f"Processing file: {file_path}")
@@ -111,6 +113,7 @@ async def process_file(
                     semaphore=semaphore,
                     model_name=model_name,
                     function_schema=function_schema,
+                    use_azure=use_azure,  # Pass use_azure to fetch_documentation
                 )
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
@@ -152,6 +155,7 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
         return None
+
 
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
@@ -300,6 +304,7 @@ async def process_all_files(
     style_guidelines: str,
     safe_mode: bool = False,
     output_file: str = "output.md",
+    use_azure: bool = False,  # Added use_azure parameter
 ) -> None:
     """Processes multiple files for documentation."""
     logger.info("Starting process of all files.")
@@ -317,6 +322,7 @@ async def process_all_files(
                 project_info=project_info,
                 style_guidelines=style_guidelines,
                 safe_mode=safe_mode,
+                use_azure=use_azure,  # Pass use_azure to process_file
             )
         )
         tasks.append(task)
