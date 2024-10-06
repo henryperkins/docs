@@ -1,10 +1,12 @@
 import os
 import logging
 import shutil
-from typing import Any, Set, Optional, Dict
 import aiofiles
 import aiohttp
 import asyncio
+from typing import Any, Set, Optional, Dict, List
+from tqdm.asyncio import tqdm  # For progress bar
+
 from language_functions.base_handler import BaseHandler
 from language_functions import (
     PythonHandler,
@@ -20,10 +22,20 @@ from utils import (
     is_valid_extension,
     generate_documentation_prompt,
     fetch_documentation,
+    extract_code_structure,
+    backup_and_write_new_content,
+    write_documentation_report,
+    generate_table_of_contents,
+)
+
+# Initialize Sentry
+import sentry_sdk
+sentry_sdk.init(
+    dsn="YOUR_SENTRY_DSN",  # Replace with your actual Sentry DSN
+    traces_sample_rate=1.0,
 )
 
 logger = logging.getLogger(__name__)
-
 
 async def extract_code_structure(
     content: str, file_path: str, language: str, handler: BaseHandler
@@ -37,6 +49,25 @@ async def extract_code_structure(
     except Exception as e:
         logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
         return None
+
+async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
+    """Creates a backup of the file and writes the new content."""
+    backup_path = f"{file_path}.bak"
+    try:
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+            logger.debug(f"Removed existing backup at '{backup_path}'.")
+        shutil.copy(file_path, backup_path)
+        logger.debug(f"Backup created at '{backup_path}'.")
+        async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+            await f.write(new_content)
+        logger.info(f"Inserted documentation into '{file_path}'.")
+    except Exception as e:
+        logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
+        if os.path.exists(backup_path):
+            shutil.copy(backup_path, file_path)
+            os.remove(backup_path)
+            logger.info(f"Restored original file from backup for '{file_path}'.")
 
 
 async def process_file(
@@ -52,26 +83,7 @@ async def process_file(
     safe_mode: bool,
     use_azure: bool = False,
 ) -> Optional[str]:
-    """
-    Processes a single file: extracts structure, generates documentation, inserts documentation, validates,
-    and returns the documentation content.
-
-    Args:
-        session (aiohttp.ClientSession): The HTTP session.
-        file_path (str): The path to the file to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): The OpenAI model or Azure deployment ID.
-        function_schema (dict): The function schema for structured responses.
-        repo_root (str): Root directory of the repository.
-        project_info (str): Project information to include in the prompt.
-        style_guidelines (str): Style guidelines to include in the prompt.
-        safe_mode (bool): If True, do not modify files.
-        use_azure (bool, optional): Whether to use Azure OpenAI API. Defaults to False.
-
-    Returns:
-        Optional[str]: The documentation content if successful, else None.
-    """
+    """Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content."""
     logger.debug(f"Processing file: {file_path}")
     try:
         _, ext = os.path.splitext(file_path)
@@ -173,138 +185,70 @@ async def process_file(
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
         return None
 
-async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
-    """Creates a backup of the file and writes the new content."""
-    backup_path = f"{file_path}.bak"
-    try:
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-            logger.debug(f"Removed existing backup at '{backup_path}'.")
-        shutil.copy(file_path, backup_path)
-        logger.debug(f"Backup created at '{backup_path}'.")
-        async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
-            await f.write(new_content)
-        logger.info(f"Inserted documentation into '{file_path}'.")
-    except Exception as e:
-        logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
-        if os.path.exists(backup_path):
-            shutil.copy(backup_path, file_path)
-            os.remove(backup_path)
-            logger.info(f"Restored original file from backup for '{file_path}'.")
-
-async def write_documentation_report(
-    documentation: Optional[Dict[str, Any]],
-    language: str,
-    file_path: str,
+async def process_all_files(
+    session: aiohttp.ClientSession,
+    file_paths: List[str],
+    skip_types: Set[str],
+    semaphore: asyncio.Semaphore,
+    model_name: str,
+    function_schema: dict,
     repo_root: str,
-    new_content: str,
-) -> str:
-    """Generates the documentation report content for a single file."""
+    project_info: Optional[str],
+    style_guidelines: Optional[str],
+    safe_mode: bool = False,
+    output_file: str = "output.md",
+    use_azure: bool = False,
+) -> None:
+    """Processes multiple files for documentation."""
+    logger.info("Starting process of all files.")
+    tasks = []
+    for file_path in file_paths:
+        task = asyncio.create_task(
+            process_file(
+                session=session,
+                file_path=file_path,
+                skip_types=skip_types,
+                semaphore=semaphore,
+                model_name=model_name,
+                function_schema=function_schema,
+                repo_root=repo_root,
+                project_info=project_info,
+                style_guidelines=style_guidelines,
+                safe_mode=safe_mode,
+                use_azure=use_azure,
+            )
+        )
+        tasks.append(task)
+
+    documentation_contents = []
+    for f in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Processing Files"):
+        try:
+            file_content = await f
+            if file_content:
+                documentation_contents.append(file_content)
+        except Exception as e:
+            logger.error(f"Error processing a file: {e}", exc_info=True)
+            # Capture exception in Sentry
+            sentry_sdk.capture_exception(e)
+
+    logger.info("Completed processing all files.")
+
+    final_content = "\n\n".join(documentation_contents)
+    toc = generate_table_of_contents(final_content)
+    report_content = (
+        "# Documentation Generation Report\n\n## Table of Contents\n\n"
+        + toc
+        + "\n\n"
+        + final_content
+    )
+
     try:
-
-        def sanitize_text(text: str) -> str:
-            """Removes excessive newlines and whitespace from the text."""
-            if not text:
-                return ""
-            lines = text.strip().splitlines()
-            sanitized_lines = [line.strip() for line in lines if line.strip()]
-            return "\n".join(sanitized_lines)
-
-        relative_path = os.path.relpath(file_path, repo_root)
-        file_header = f"# File: {relative_path}\n\n"
-        documentation_content = file_header
-        summary = documentation.get("summary", "") if documentation else ""
-        summary = sanitize_text(summary)
-        if summary:
-            summary_section = f"## Summary\n\n{summary}\n"
-            documentation_content += summary_section
-        changes = documentation.get("changes_made", []) if documentation else []
-        changes = [sanitize_text(change) for change in changes if change.strip()]
-        if changes:
-            changes_formatted = "\n".join(f"- {change}" for change in changes)
-            changes_section = f"## Changes Made\n\n{changes_formatted}\n"
-            documentation_content += changes_section
-        functions = documentation.get("functions", []) if documentation else []
-        if functions:
-            functions_section = "## Functions\n\n"
-            functions_section += "| Function | Arguments | Description | Async |\n"
-            functions_section += "|----------|-----------|-------------|-------|\n"
-            for func in functions:
-                func_name = func.get("name", "N/A")
-                func_args = ", ".join(func.get("args", []))
-                func_doc = sanitize_text(func.get("docstring", ""))
-                first_line_doc = (
-                    func_doc.splitlines()[0] if func_doc else "No description provided."
-                )
-                func_async = "Yes" if func.get("async", False) else "No"
-                functions_section += f"| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n"
-            documentation_content += functions_section + "\n"
-        classes = documentation.get("classes", []) if documentation else []
-        if classes:
-            classes_section = "## Classes\n\n"
-            for cls in classes:
-                cls_name = cls.get("name", "N/A")
-                cls_doc = sanitize_text(cls.get("docstring", ""))
-                if cls_doc:
-                    classes_section += f"### Class: `{cls_name}`\n\n{cls_doc}\n\n"
-                else:
-                    classes_section += f"### Class: `{cls_name}`\n\n"
-                methods = cls.get("methods", [])
-                if methods:
-                    classes_section += (
-                        "| Method | Arguments | Description | Async | Type |\n"
-                    )
-                    classes_section += (
-                        "|--------|-----------|-------------|-------|------|\n"
-                    )
-                    for method in methods:
-                        method_name = method.get("name", "N/A")
-                        method_args = ", ".join(method.get("args", []))
-                        method_doc = sanitize_text(method.get("docstring", ""))
-                        first_line_method_doc = (
-                            method_doc.splitlines()[0]
-                            if method_doc
-                            else "No description provided."
-                        )
-                        method_async = "Yes" if method.get("async", False) else "No"
-                        method_type = method.get("type", "N/A")
-                        classes_section += f"| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n"
-                    classes_section += "\n"
-            documentation_content += classes_section
-        code_content = new_content.strip()
-        code_block = f"```{language}\n{code_content}\n```\n\n---\n"
-        documentation_content += code_block
-        return documentation_content
+        async with aiofiles.open(output_file, "w", encoding="utf-8") as f:
+            await f.write(report_content)
+        logger.info(f"Documentation report written to '{output_file}'")
     except Exception as e:
         logger.error(
-            f"Error generating documentation for '{file_path}': {e}", exc_info=True
+            f"Error writing final documentation to '{output_file}': {e}", exc_info=True
         )
-        return ""
-
-
-def generate_table_of_contents(markdown_content: str) -> str:
-    """Generates a markdown table of contents from the given markdown content."""
-    import re
-
-    toc = []
-    seen_anchors = set()
-    for line in markdown_content.split("\n"):
-        match = re.match(r"^(#{1,6})\s+(.*)", line)
-        if match:
-            level = len(match.group(1))
-            title = match.group(2).strip()
-            # Generate anchor similar to GitHub's markdown anchor generation
-            anchor = title.lower()
-            anchor = re.sub(r'[^\w\- ]', '', anchor)  # Remove punctuation except hyphens and spaces
-            anchor = anchor.replace(' ', '-')  # Replace spaces with hyphens
-            anchor = re.sub(r'-+', '-', anchor)  # Replace multiple hyphens with a single one
-            anchor = anchor.strip('-')  # Remove leading/trailing hyphens
-            original_anchor = anchor
-            counter = 1
-            while anchor in seen_anchors:
-                anchor = f"{original_anchor}-{counter}"
-                counter += 1
-            seen_anchors.add(anchor)
-            indent = "  " * (level - 1)
-            toc.append(f"{indent}- [{title}](#{anchor})")
-    return "\n".join(toc)
+        # Capture exception in Sentry
+        sentry_sdk.capture_exception(e)

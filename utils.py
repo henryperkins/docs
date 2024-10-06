@@ -600,114 +600,106 @@ def validate_schema(schema: dict):
         logger.critical(f"Schema validation error: {ve.message}")
         sys.exit(1)
 
-# ----------------------------
-# Initialize function_schema.json
-# ----------------------------
-
-async def process_all_files(
-    session: aiohttp.ClientSession,
-    file_paths: List[str],
-    skip_types: Set[str],
-    semaphore: asyncio.Semaphore,
-    model_name: str,
-    function_schema: dict,
+async def write_documentation_report(
+    documentation: Optional[Dict[str, Any]],
+    language: str,
+    file_path: str,
     repo_root: str,
-    project_info: Optional[str],
-    style_guidelines: Optional[str],
-    safe_mode: bool,
-    output_file: str,
-):
-    """
-    Processes all files: extracts structure, fetches documentation, and inserts docstrings.
+    new_content: str,
+) -> str:
+    """Generates the documentation report content for a single file."""
+    try:
 
-    Args:
-        session (aiohttp.ClientSession): The HTTP session.
-        file_paths (List[str]): List of file paths to process.
-        skip_types (Set[str]): Set of file types to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): The AI model to use.
-        function_schema (dict): The function schema for structured responses.
-        repo_root (str): Root directory of the repository.
-        project_info (Optional[str]): Project information.
-        style_guidelines (Optional[str]): Style guidelines.
-        safe_mode (bool): Whether to run in safe mode.
-        output_file (str): Output Markdown file.
-    """
-    for file_path in file_paths:
-        try:
-            file_ext = os.path.splitext(file_path)[1]
-            language = get_language(file_ext)
-            if is_binary(file_path):
-                logger.info(f"Skipping binary file: {file_path}")
-                continue
+        def sanitize_text(text: str) -> str:
+            """Removes excessive newlines and whitespace from the text."""
+            if not text:
+                return ""
+            lines = text.strip().splitlines()
+            sanitized_lines = [line.strip() for line in lines if line.strip()]
+            return "\n".join(sanitized_lines)
 
-            with open(file_path, "r", encoding="utf-8") as f:
-                code = f.read()
+        relative_path = os.path.relpath(file_path, repo_root)
+        file_header = f"# File: {relative_path}\n\n"
+        documentation_content = file_header
+        summary = documentation.get("summary", "") if documentation else ""
+        summary = sanitize_text(summary)
+        if summary:
+            summary_section = f"## Summary\n\n{summary}\n"
+            documentation_content += summary_section
+        changes = documentation.get("changes_made", []) if documentation else []
+        changes = [sanitize_text(change) for change in changes if change.strip()]
+        if changes:
+            changes_formatted = "\n".join(f"- {change}" for change in changes)
+            changes_section = f"## Changes Made\n\n{changes_formatted}\n"
+            documentation_content += changes_section
+        functions = documentation.get("functions", []) if documentation else []
+        if functions:
+            functions_section = "## Functions\n\n"
+            functions_section += "| Function | Arguments | Description | Async |\n"
+            functions_section += "|----------|-----------|-------------|-------|\n"
+            for func in functions:
+                func_name = func.get("name", "N/A")
+                func_args = ", ".join(func.get("args", []))
+                func_doc = sanitize_text(func.get("docstring", ""))
+                first_line_doc = (
+                    func_doc.splitlines()[0] if func_doc else "No description provided."
+                )
+                func_async = "Yes" if func.get("async", False) else "No"
+                functions_section += f"| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n"
+            documentation_content += functions_section + "\n"
+        classes = documentation.get("classes", []) if documentation else []
+        if classes:
+            classes_section = "## Classes\n\n"
+            for cls in classes:
+                cls_name = cls.get("name", "N/A")
+                cls_doc = sanitize_text(cls.get("docstring", ""))
+                if cls_doc:
+                    classes_section += f"### Class: `{cls_name}`\n\n{cls_doc}\n\n"
+                else:
+                    classes_section += f"### Class: `{cls_name}`\n\n"
+                methods = cls.get("methods", [])
+                if methods:
+                    classes_section += (
+                        "| Method | Arguments | Description | Async | Type |\n"
+                    )
+                    classes_section += (
+                        "|--------|-----------|-------------|-------|------|\n"
+                    )
+                    for method in methods:
+                        method_name = method.get("name", "N/A")
+                        method_args = ", ".join(method.get("args", []))
+                        method_doc = sanitize_text(method.get("docstring", ""))
+                        first_line_method_doc = (
+                            method_doc.splitlines()[0]
+                            if method_doc
+                            else "No description provided."
+                        )
+                        method_async = "Yes" if method.get("async", False) else "No"
+                        method_type = method.get("type", "N/A")
+                        classes_section += f"| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n"
+                    classes_section += "\n"
+            documentation_content += classes_section
+        code_content = new_content.strip()
+        code_block = f"```{language}\n{code_content}\n```\n\n---\n"
+        documentation_content += code_block
+        return documentation_content
+    except Exception as e:
+        logger.error(
+            f"Error generating documentation for '{file_path}': {e}", exc_info=True
+        )
+        return ""
 
-            # Optionally format the code
-            code = format_with_black(code)
-            code = clean_unused_imports(code)
 
-            # Extract code structure using Node.js script (assuming extract_structure.js exists)
-            structure = run_node_script("extract_structure.js", code)
-            if not structure:
-                logger.error(f"Failed to extract structure from {file_path}")
-                continue
-
-            # Generate prompt
-            file_name = os.path.basename(file_path)
-            prompt = generate_documentation_prompt(
-                file_name=file_name,
-                code_structure=structure,
-                project_info=project_info,
-                style_guidelines=style_guidelines,
-                language=language
-            )
-
-            # Fetch documentation from API
-            documentation = await fetch_documentation(
-                session=session,
-                prompt=prompt,
-                semaphore=semaphore,
-                model_name=model_name,
-                function_schema=function_schema,
-                use_azure=args.use_azure  # Ensure 'args' is accessible or passed appropriately
-            )
-
-            if not documentation:
-                logger.error(f"Failed to fetch documentation for {file_path}")
-                continue
-
-            # Insert docstrings using Node.js script (assuming insert_docstrings.js exists)
-            input_json = json.dumps({
-                "code": code,
-                "documentation": documentation
-            })
-            modified_code = run_node_insert_docstrings("insert_docstrings.js", input_json)
-            if not modified_code:
-                logger.error(f"Failed to insert docstrings into {file_path}")
-                continue
-
-            if not safe_mode:
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(modified_code)
-                logger.info(f"Updated file with docstrings: {file_path}")
-            else:
-                logger.info(f"Safe mode enabled. Skipping file modification: {file_path}")
-
-            # Optionally, append to output Markdown
-            with open(output_file, "a", encoding="utf-8") as out_f:
-                out_f.write(f"# Documentation for {file_name}\n\n")
-                out_f.write(f"## Summary\n{documentation.get('summary', 'No summary provided.')}\n\n")
-                out_f.write(f"## Changes Made\n" + "\n".join(documentation.get('changes_made', [])) + "\n\n")
-                out_f.write(f"## Functions\n")
-                for func in documentation.get('functions', []):
-                    out_f.write(f"### {func['name']}\n{func['docstring']}\n\n")
-                out_f.write(f"## Classes\n")
-                for cls in documentation.get('classes', []):
-                    out_f.write(f"### {cls['name']}\n{cls['docstring']}\n\n")
-        except Exception as e:
-            logger.error(f"Unexpected error processing {file_path}: {e}", exc_info=True)
+def generate_table_of_contents(content: str) -> str:
+    """Generates a table of contents from markdown headings."""
+    toc = []
+    for line in content.splitlines():
+        if line.startswith("#"):
+            level = line.count("#")
+            title = line.lstrip("#").strip()
+            anchor = re.sub(r'[^a-zA-Z0-9\s]', '', title).replace(' ', '-').lower()
+            toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
+    return "\n".join(toc)
 
 
 # ----------------------------

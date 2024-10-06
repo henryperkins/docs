@@ -3,13 +3,17 @@ import sys
 import logging
 import argparse
 import asyncio
+from logging.handlers import RotatingFileHandler
 
 import aiohttp
 import openai
 from dotenv import load_dotenv
-from logging.handlers import RotatingFileHandler
 
-from file_handlers import process_all_files
+from file_handlers import (
+    process_file,
+    process_all_files,
+    extract_code_structure,
+  )
 from utils import (
     load_config,
     get_all_file_paths,
@@ -17,6 +21,13 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     load_function_schema,
+)
+
+# Initialize Sentry
+import sentry_sdk
+sentry_sdk.init(
+    dsn="https://3d88a4a35fb3b234d0f180ecae63dd56@o4508070823395328.ingest.us.sentry.io/4508070829817856",
+    traces_sample_rate=1.0,
 )
 
 # Load environment variables from .env file
@@ -310,4 +321,6 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as e:
         logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
+        # Capture exception in Sentry
+        sentry_sdk.capture_exception(e)
         sys.exit(1)
