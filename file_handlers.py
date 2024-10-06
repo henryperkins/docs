@@ -1,11 +1,10 @@
 import os
 import logging
 import shutil
-from typing import Any, Set, List, Optional, Dict
+from typing import Any, Set, Optional, Dict
 import aiofiles
 import aiohttp
 import asyncio
-from tqdm.asyncio import tqdm
 from language_functions.base_handler import BaseHandler
 from language_functions import (
     PythonHandler,
@@ -22,7 +21,6 @@ from utils import (
     generate_documentation_prompt,
     fetch_documentation,
 )
-from logging.handlers import RotatingFileHandler
 
 logger = logging.getLogger(__name__)
 
@@ -30,29 +28,48 @@ logger = logging.getLogger(__name__)
 async def extract_code_structure(
     content: str, file_path: str, language: str, handler: BaseHandler
 ) -> Optional[dict]:
-    """Extracts code structure based on language using the appropriate handler."""
-    logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
-    try:
-        loop = asyncio.get_event_loop()
-        # Run the potentially blocking extract_structure in a thread pool
-        return await loop.run_in_executor(None, handler.extract_structure, content, file_path)
-    except Exception as e:
-        logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
-        return None
+    """
+    Extracts the code structure from the given content based on the language.
 
+    Args:
+        content (str): The content of the file.
+        file_path (str): The path to the file.
+        language (str): The programming language of the file.
+        handler (BaseHandler): The handler to use for parsing.
+
+    Returns:
+        Optional[dict]: The extracted code structure or None if extraction fails.
+    """
+    if language in ["javascript", "typescript"]:
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_parser.js')
+        structure = run_node_script(script_path, content)
+        return structure
+    elif language == "python":
+        structure = parse_python_code(content)
+        return structure
+    elif language == "java":
+        structure = parse_java_code(content)
+        return structure
+    elif language == "cpp":
+        structure = parse_cpp_code(content)
+        return structure
+    else:
+        logger.warning(f"Unsupported language: {language}")
+        return None
+    
 
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
     skip_types: Set[str],
     semaphore: asyncio.Semaphore,
-    model_name: str,
+    model_name: str,  # Deployment name in Azure
     function_schema: dict,
     repo_root: str,
     project_info: str,
     style_guidelines: str,
     safe_mode: bool,
-    use_azure: bool = False,  # Added use_azure parameter
+    use_azure: bool = False
 ) -> Optional[str]:
     """Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content."""
     logger.debug(f"Processing file: {file_path}")
@@ -113,7 +130,7 @@ async def process_file(
                     semaphore=semaphore,
                     model_name=model_name,
                     function_schema=function_schema,
-                    use_azure=use_azure,  # Pass use_azure to fetch_documentation
+                    use_azure=use_azure,
                 )
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
@@ -155,7 +172,6 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
         return None
-
 
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
@@ -294,66 +310,3 @@ def generate_table_of_contents(markdown_content: str) -> str:
             indent = "  " * (level - 1)
             toc.append(f"{indent}- [{title}](#{anchor})")
     return "\n".join(toc)
-
-
-
-async def process_all_files(
-    session: aiohttp.ClientSession,
-    file_paths: List[str],
-    skip_types: Set[str],
-    semaphore: asyncio.Semaphore,
-    model_name: str,
-    function_schema: dict,
-    repo_root: str,
-    project_info: str,
-    style_guidelines: str,
-    safe_mode: bool = False,
-    output_file: str = "output.md",
-    use_azure: bool = False,  # Added use_azure parameter
-) -> None:
-    """Processes multiple files for documentation."""
-    logger.info("Starting process of all files.")
-    tasks = []
-    for file_path in file_paths:
-        task = asyncio.create_task(
-            process_file(
-                session=session,
-                file_path=file_path,
-                skip_types=skip_types,
-                semaphore=semaphore,
-                model_name=model_name,
-                function_schema=function_schema,
-                repo_root=repo_root,
-                project_info=project_info,
-                style_guidelines=style_guidelines,
-                safe_mode=safe_mode,
-                use_azure=use_azure,  # Pass use_azure to process_file
-            )
-        )
-        tasks.append(task)
-
-    documentation_contents = []
-    async for f in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Processing Files"):
-        file_content = await f
-        if file_content:
-            documentation_contents.append(file_content)
-
-    logger.info("Completed processing all files.")
-
-    final_content = "\n\n".join(documentation_contents)
-    toc = generate_table_of_contents(final_content)
-    report_content = (
-        "# Documentation Generation Report\n\n## Table of Contents\n\n"
-        + toc
-        + "\n\n"
-        + final_content
-    )
-
-    try:
-        async with aiofiles.open(output_file, "w", encoding="utf-8") as f:
-            await f.write(report_content)
-        logger.info(f"Documentation report written to '{output_file}'")
-    except Exception as e:
-        logger.error(
-            f"Error writing final documentation to '{output_file}': {e}", exc_info=True
-        )

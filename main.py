@@ -22,13 +22,6 @@ from utils import (
 # Load environment variables from .env file
 load_dotenv()
 
-# Retrieve API keys and endpoints from environment
-api_base = os.getenv("ENDPOINT_URL", "https://openai-eastus2-hp.openai.azure.com")
-deployment_id = os.getenv("DEPLOYMENT_NAME", "gpt4o")
-api_version = os.getenv("API_VERSION", "2024-08-06")
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -59,8 +52,13 @@ def parse_arguments():
     )
     parser.add_argument(
         "--model",
-        help="OpenAI model to use (default: gpt-4)",
-        default="gpt-4"
+        help="OpenAI model to use (e.g., gpt-4)",
+        default=None
+    )
+    parser.add_argument(
+        "--deployment-name",
+        help="Deployment name for Azure OpenAI",
+        default=None
     )
     parser.add_argument(
         "--skip-types",
@@ -126,24 +124,28 @@ def configure_logging(log_level):
     logger.addHandler(console_handler)
 
 
-def validate_model_name(model_name: str) -> bool:
+def validate_model_name(model_name: str, use_azure: bool) -> bool:
     """Validates the OpenAI model name format."""
-    valid_models = [
-        "gpt-4",
-        "gpt-4-0314",
-        "gpt-4-32k",
-        "gpt-4-32k-0314",
-        "gpt-4o-mini-2024-07-18",
-        "gpt-4o-2024-08-06",
-        "gpt-4o",
-    ]
-    if model_name in valid_models:
+    if use_azure:
+        # Skip validation for Azure OpenAI; deployment IDs are user-defined
         return True
     else:
-        logger.warning(
-            f"Unrecognized model name '{model_name}'. Proceeding with caution."
-        )
-        return True
+        valid_models = [
+            "gpt-4",
+            "gpt-4-0314",
+            "gpt-4-32k",
+            "gpt-4-32k-0314",
+            "gpt-4o-mini-2024-07-18",
+            "gpt-4o-2024-08-06",
+            "gpt-4o",
+        ]
+        if model_name in valid_models:
+            return True
+        else:
+            logger.warning(
+                f"Unrecognized model name '{model_name}'. Proceeding with caution."
+            )
+            return False  # Change to False to enforce valid model names
 
 
 async def main():
@@ -161,19 +163,19 @@ async def main():
     config_path = args.config
     concurrency = args.concurrency
     output_file = args.output
-    model_name = args.model
     project_info_arg = args.project_info
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
     schema_path = args.schema
-    use_azure = args.use_azure  # Ensure this variable is set
+    use_azure = args.use_azure
 
-    # Fetch API keys from environment variables
+    # Fetch API keys and endpoints from environment variables or command-line arguments
     AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
     api_base = os.getenv('ENDPOINT_URL')
     api_version = os.getenv('API_VERSION')
-    deployment_id = os.getenv('DEPLOYMENT_ID')
+    deployment_id = args.deployment_name or os.getenv('DEPLOYMENT_NAME')
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    model_name = args.model or os.getenv('MODEL_NAME')
 
     # Validate API keys and initialize client
     if use_azure:
@@ -183,7 +185,10 @@ async def main():
                 "Please set them in your environment or .env file."
             )
             sys.exit(1)
-        logger.info("Using Azure OpenAI.")
+        if not deployment_id:
+            logger.critical("DEPLOYMENT_NAME not set. Please set it in your environment or .env file.")
+            sys.exit(1)
+        logger.info("Using Azure OpenAI with Deployment ID: %s", deployment_id)
         # Configure the OpenAI library for Azure
         openai.api_type = "azure"
         openai.api_key = AZURE_OPENAI_API_KEY
@@ -196,18 +201,21 @@ async def main():
                 "OPENAI_API_KEY not set. Please set it in your environment or .env file."
             )
             sys.exit(1)
-        logger.info("Using OpenAI.")
+        if not model_name:
+            logger.error("Model name is not specified.")
+            sys.exit(1)
+        logger.info("Using OpenAI with Model: %s", model_name)
         openai.api_key = OPENAI_API_KEY
 
     logger.info(f"Repository Path: {repo_path}")
     logger.info(f"Configuration File: {config_path}")
     logger.info(f"Concurrency Level: {concurrency}")
     logger.info(f"Output Markdown File: {output_file}")
-    logger.info(f"OpenAI Model: {model_name}")
+    logger.info(f"Model Name / Deployment ID: {model_name}")
     logger.info(f"Safe Mode: {'Enabled' if safe_mode else 'Disabled'}")
     logger.info(f"Function Schema Path: {schema_path}")
 
-    if not validate_model_name(model_name):
+    if not validate_model_name(model_name, use_azure):
         logger.error(f"Invalid model name '{model_name}'. Exiting.")
         sys.exit(1)
 
@@ -288,7 +296,7 @@ async def main():
             style_guidelines=style_guidelines,
             safe_mode=safe_mode,
             output_file=output_file,
-            use_azure=use_azure,  # Pass this to the function
+            use_azure=use_azure,
         )
 
     logger.info("Documentation generation completed successfully.")

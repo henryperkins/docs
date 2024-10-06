@@ -22,7 +22,7 @@ class JSTsHandler(BaseHandler):
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         try:
             # You might need to adjust the script path
-            script_path = "scripts/acorn_parser.js"
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'acorn_parser.js')
             input_data = {
                 "code": code,
                 "language": "javascript"  # or determine based on file_path

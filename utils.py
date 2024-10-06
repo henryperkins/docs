@@ -268,48 +268,52 @@ def call_openai_api(prompt: str, model: str, functions: List[dict], function_cal
         return None
 
 
-import openai
-from openai import OpenAIError, APIError, APIConnectionError, RateLimitError
+
+logger = logging.getLogger(__name__)
 
 async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
     semaphore: asyncio.Semaphore,
-    model_name: str,
+    model_name: str,  # This should be your deployment name in Azure
     function_schema: dict,
     retry: int = 3,
     use_azure: bool = False
 ) -> Optional[dict]:
+    """
+    Fetches documentation from Azure OpenAI's API with optional retries.
+    """
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
-                messages = [
-                    {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
-                    {"role": "user", "content": prompt},
-                ]
-
                 if use_azure:
-                    # Use 'engine' parameter for Azure OpenAI
-                    response = openai.ChatCompletion.create(
-                        engine=model_name,  # model_name is your deployment ID
-                        messages=messages,
-                        functions=[function_schema],
-                        function_call="auto",
+                    # Initialize AzureOpenAI client
+                    client = AzureOpenAI(
+                        api_version="2023-07-01-preview",
+                        azure_endpoint="https://<your-resource-name>.openai.azure.com/",
+                        azure_deployment=model_name,  # Deployment name
+                        azure_ad_token=None,  # Optional
+                        azure_ad_token_provider=None,  # Optional
                     )
+                    client.api_key = "your-azure-openai-api-key"  # Securely manage your API key
                 else:
-                    # Use 'model' parameter for OpenAI API
-                    response = openai.ChatCompletion.create(
-                        model=model_name,
-                        messages=messages,
-                        functions=[function_schema],
-                        function_call="auto",
-                    )
+                    client = openai
+
+                response = await client.chat.completions.acreate(
+                    model=model_name,  # Deployment name for Azure
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    functions=[function_schema],
+                    function_call="auto",
+                )
 
                 logger.debug(f"API Response: {response}")
                 choice = response.choices[0]
                 message = choice.message
-                if message.get("function_call"):
-                    arguments = message["function_call"].get("arguments")
+                if "function_call" in message:
+                    arguments = message["function_call"].get("arguments", "{}")
                     try:
                         documentation = json.loads(arguments)
                         logger.debug("Received documentation via function_call.")
@@ -321,6 +325,7 @@ async def fetch_documentation(
                 else:
                     logger.error("No function_call found in the response.")
                     return None
+
             except APIError as e:
                 logger.error(f"OpenAI API returned an API Error: {e}")
                 if attempt < retry:
@@ -352,9 +357,6 @@ async def fetch_documentation(
                 logger.error(f"An unexpected error occurred: {e}")
                 return None
     return None
-
-
-
 
 # ----------------------------
 # Code Formatting and Cleanup
@@ -476,35 +478,28 @@ def run_flake8(file_path: str) -> Optional[str]:
         logger.error(f"Error running flake8 on '{file_path}': {e}", exc_info=True)
         return None
 
+import os
+
 def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any]]:
-    """
-    Runs a Node.js script that outputs JSON (e.g., extract_structure.js) and returns the parsed JSON.
-
-    Parameters:
-        script_path (str): Path to the Node.js script.
-        input_code (str): The code to process.
-
-    Returns:
-        Optional[Dict[str, Any]]: The JSON output from the script if successful, None otherwise.
-    """
     try:
-        logger.debug(f"Running Node.js script: {script_path}")
-        result = subprocess.run(["node", script_path], input=input_code, capture_output=True, text=True, check=True)
-        logger.debug(f"Successfully ran {script_path}")
+        # Adjust the path to point to 'scripts/acorn_parser.js'
+        script_full_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_parser.js')
+        logger.debug(f"Running Node.js script: {script_full_path}")
+        result = subprocess.run(
+            ["node", script_full_path],
+            input=input_code,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        logger.debug(f"Successfully ran {script_full_path}")
         output_json = json.loads(result.stdout)
         return output_json
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error running {script_path}: {e.stderr}")
+        logger.error(f"Error running {script_full_path}: {e.stderr}")
         return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON output from {script_path}: {e}")
-        return None
-    except FileNotFoundError:
-        logger.error(f"Node.js script {script_path} not found.")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error running {script_path}: {e}")
-        return None
+    # ... rest of the code remains unchanged
+
 
 def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[str]:
     """
@@ -704,26 +699,6 @@ async def process_all_files(
         except Exception as e:
             logger.error(f"Unexpected error processing {file_path}: {e}", exc_info=True)
 
-def validate_schema(schema: dict):
-    """Validates the loaded schema against a predefined schema."""
-    predefined_schema = {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "description": {"type": "string"},
-                "parameters": {"type": "object"}
-            },
-            "required": ["name", "description", "parameters"]
-        }
-    }
-    try:
-        validate(instance=schema, schema=predefined_schema)
-        logger.debug("Function schema is valid.")
-    except ValidationError as ve:
-        logger.critical(f"Schema validation error: {ve.message}")
-        sys.exit(1)
 
 # ----------------------------
 # Initialize function_schema.json
