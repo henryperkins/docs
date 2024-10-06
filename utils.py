@@ -275,45 +275,56 @@ async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
     semaphore: asyncio.Semaphore,
-    model_name: str,  # This should be your deployment name in Azure
+    model_name: str,
     function_schema: dict,
     retry: int = 3,
     use_azure: bool = False
 ) -> Optional[dict]:
     """
-    Fetches documentation from Azure OpenAI's API with optional retries.
+    Fetches documentation from the OpenAI or Azure OpenAI API based on the provided prompt.
+
+    Args:
+        session (aiohttp.ClientSession): The HTTP session.
+        prompt (str): The prompt to send to the API.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
+        model_name (str): The OpenAI model or Azure deployment ID.
+        function_schema (dict): The function schema for structured responses.
+        retry (int, optional): Number of retry attempts on failure. Defaults to 3.
+        use_azure (bool, optional): Whether to use Azure OpenAI API. Defaults to False.
+
+    Returns:
+        Optional[dict]: The documentation as a dictionary if successful, else None.
     """
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
-                if use_azure:
-                    # Initialize AzureOpenAI client
-                    client = AzureOpenAI(
-                        api_version="2023-07-01-preview",
-                        azure_endpoint="https://<your-resource-name>.openai.azure.com/",
-                        azure_deployment=model_name,  # Deployment name
-                        azure_ad_token=None,  # Optional
-                        azure_ad_token_provider=None,  # Optional
-                    )
-                    client.api_key = "your-azure-openai-api-key"  # Securely manage your API key
-                else:
-                    client = openai
+                messages = [
+                    {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
+                    {"role": "user", "content": prompt},
+                ]
 
-                response = await client.chat.completions.acreate(
-                    model=model_name,  # Deployment name for Azure
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    functions=[function_schema],
-                    function_call="auto",
-                )
+                if use_azure:
+                    # Use 'engine' parameter for Azure OpenAI
+                    response = openai.ChatCompletion.create(
+                        engine=model_name,  # model_name is your deployment ID
+                        messages=messages,
+                        functions=[function_schema],
+                        function_call="auto",
+                    )
+                else:
+                    # Use 'model' parameter for OpenAI API
+                    response = openai.ChatCompletion.create(
+                        model=model_name,
+                        messages=messages,
+                        functions=[function_schema],
+                        function_call="auto",
+                    )
 
                 logger.debug(f"API Response: {response}")
                 choice = response.choices[0]
                 message = choice.message
-                if "function_call" in message:
-                    arguments = message["function_call"].get("arguments", "{}")
+                if message.get("function_call"):
+                    arguments = message["function_call"].get("arguments")
                     try:
                         documentation = json.loads(arguments)
                         logger.debug("Received documentation via function_call.")
@@ -325,7 +336,6 @@ async def fetch_documentation(
                 else:
                     logger.error("No function_call found in the response.")
                     return None
-
             except APIError as e:
                 logger.error(f"OpenAI API returned an API Error: {e}")
                 if attempt < retry:
@@ -354,7 +364,7 @@ async def fetch_documentation(
                 logger.error(f"An OpenAI error occurred: {e}")
                 return None
             except Exception as e:
-                logger.error(f"An unexpected error occurred: {e}")
+                logger.error(f"An unexpected error occurred: {e}", exc_info=True)
                 return None
     return None
 
