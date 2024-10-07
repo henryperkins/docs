@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup, Comment
 from jsonschema import validate, ValidationError
 from logging.handlers import RotatingFileHandler
 import openai
-from openai.error import OpenAIError, APIError, APIConnectionError, RateLimitError
+from openai import OpenAIError, APIError, APIConnectionError, RateLimitError
 
 # ----------------------------
 # Configuration and Setup
@@ -91,6 +91,42 @@ else:
         sys.exit(1)
 
     openai.api_key = OPENAI_API_KEY
+
+def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
+    """
+    Validates the provided model name against a list of supported OpenAI models.
+
+    Args:
+        model_name (str): The name of the OpenAI model to validate.
+        use_azure (bool, optional): Flag indicating whether Azure OpenAI is being used.
+                                     Defaults to False.
+
+    Returns:
+        bool: True if the model name is valid and supported, False otherwise.
+    """
+    # Define a list of supported models for the standard OpenAI API
+    supported_models = [
+        "gpt-3.5-turbo",
+        "gpt-4",
+        "gpt-4-32k",
+        # Add other supported models as needed
+    ]
+    
+    if use_azure:
+        # When using Azure OpenAI, model validation is different because
+        # deployment names are used instead of model names.
+        # Here, we assume that deployment names are correctly configured
+        # and skip model name validation.
+        logger.debug("Azure OpenAI is enabled; skipping model name validation.")
+        return True
+    else:
+        # Validate the model name against the supported models list
+        if model_name in supported_models:
+            logger.debug(f"Model name '{model_name}' is valid and supported.")
+            return True
+        else:
+            logger.error(f"Model name '{model_name}' is not supported.")
+            return False
 
 # ----------------------------
 # Language and File Utilities
