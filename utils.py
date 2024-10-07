@@ -11,18 +11,17 @@ import subprocess
 import black
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
-import tempfile
 from bs4 import BeautifulSoup, Comment
 from jsonschema import validate, ValidationError
 from logging.handlers import RotatingFileHandler
 import openai
-from openai import OpenAIError, APIError, APIConnectionError, RateLimitError
+from openai.error import OpenAIError, APIError, APIConnectionError, RateLimitError
 
 # ----------------------------
 # Configuration and Setup
 # ----------------------------
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
 # Configure logging
@@ -63,34 +62,215 @@ LANGUAGE_MAPPING = {
 # OpenAI API Configuration
 # ----------------------------
 
-# Determine whether to use Azure OpenAI based on environment variable
-use_azure = os.getenv("USE_AZURE", "false").lower() == "true"
+def configure_openai(use_azure: bool, deployment_name: str):
+    """
+    Configures the OpenAI client for either Azure OpenAI or standard OpenAI API.
 
-if use_azure:
-    # Azure OpenAI configuration
-    AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-    AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL")
-    API_VERSION = os.getenv("API_VERSION")
-    DEPLOYMENT_NAME = os.getenv("DEPLOYMENT_NAME")
+    Args:
+        use_azure (bool): Flag indicating whether to use Azure OpenAI.
+        deployment_name (str): Deployment name for Azure OpenAI or model name for standard OpenAI.
+    """
+    if use_azure:
+        AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+        AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL")
+        API_VERSION = os.getenv("API_VERSION")
 
-    if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, DEPLOYMENT_NAME]):
-        logger.error("Azure OpenAI environment variables are not set properly.")
+        if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, deployment_name]):
+            logger.critical(
+                "Azure OpenAI environment variables are not set properly. "
+                "Please set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, and DEPLOYMENT_NAME."
+            )
+            sys.exit(1)
+
+        # Configure the OpenAI library for Azure
+        openai.api_type = "azure"
+        openai.api_key = AZURE_OPENAI_API_KEY
+        openai.api_base = AZURE_OPENAI_ENDPOINT
+        openai.api_version = API_VERSION
+        logger.debug("Configured OpenAI for Azure.")
+        logger.debug(f"api_type: {openai.api_type}")
+        logger.debug(f"api_base: {openai.api_base}")
+        logger.debug(f"api_version: {openai.api_version}")
+    else:
+        # OpenAI configuration
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+        if not OPENAI_API_KEY:
+            logger.critical(
+                "OPENAI_API_KEY environment variable is not set. "
+                "Please set it in your environment or .env file."
+            )
+            sys.exit(1)
+
+        openai.api_key = OPENAI_API_KEY
+        logger.debug("Configured OpenAI for standard API.")
+        logger.debug(f"api_key: {'***' * 4} (hidden)")
+
+# ----------------------------
+# Language and File Utilities
+# ----------------------------
+
+def get_language(ext: str) -> str:
+    """
+    Determines the programming language based on file extension.
+
+    Args:
+        ext (str): File extension.
+
+    Returns:
+        str: Corresponding programming language.
+    """
+    language = LANGUAGE_MAPPING.get(ext.lower(), "plaintext")
+    logger.debug(f"Detected language for extension '{ext}': {language}")
+    return language
+
+def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
+    """
+    Checks if a file extension is valid (not in the skip list).
+
+    Args:
+        ext (str): File extension.
+        skip_types (Set[str]): Set of file extensions to skip.
+
+    Returns:
+        bool: True if valid, False otherwise.
+    """
+    is_valid = ext.lower() not in skip_types
+    logger.debug(f"Extension '{ext}' is valid: {is_valid}")
+    return is_valid
+
+def is_binary(file_path: str) -> bool:
+    """
+    Checks if a file is binary.
+
+    Args:
+        file_path (str): Path to the file.
+
+    Returns:
+        bool: True if binary, False otherwise.
+    """
+    try:
+        with open(file_path, "rb") as file:
+            return b"\0" in file.read(1024)
+    except Exception as e:
+        logger.error(f"Error checking if file is binary '{file_path}': {e}")
+        return True
+
+def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
+    """
+    Retrieves all file paths in the repository, excluding specified directories and files.
+
+    Args:
+        repo_path (str): Path to the repository.
+        excluded_dirs (Set[str]): Set of directories to exclude.
+        excluded_files (Set[str]): Set of files to exclude.
+        skip_types (Set[str]): Set of file extensions to skip.
+
+    Returns:
+        List[str]: List of file paths.
+    """
+    file_paths = []
+    normalized_excluded_dirs = {os.path.normpath(os.path.join(repo_path, d)) for d in excluded_dirs}
+
+    for root, dirs, files in os.walk(repo_path, topdown=True):
+        # Exclude directories
+        dirs[:] = [d for d in dirs if os.path.normpath(os.path.join(root, d)) not in normalized_excluded_dirs]
+
+        for file in files:
+            # Exclude files
+            if file in excluded_files:
+                continue
+            file_ext = os.path.splitext(file)[1]
+            # Skip specified file types
+            if file_ext in skip_types:
+                continue
+            full_path = os.path.join(root, file)
+            file_paths.append(full_path)
+    logger.debug(f"Collected {len(file_paths)} files from '{repo_path}'.")
+    return file_paths
+
+# ----------------------------
+# Configuration Management
+# ----------------------------
+
+def load_json_schema(schema_path: str) -> Optional[dict]:
+    """
+    Loads a JSON schema from the specified path.
+
+    Args:
+        schema_path (str): Path to the JSON schema file.
+
+    Returns:
+        Optional[dict]: Loaded JSON schema or None if failed.
+    """
+    try:
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        logger.debug(f"Successfully loaded JSON schema from '{schema_path}'.")
+        return schema
+    except FileNotFoundError:
+        logger.error(f"JSON schema file '{schema_path}' not found.")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON from '{schema_path}': {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
+        return None
+
+def load_function_schema(schema_path: str) -> dict:
+    """
+    Loads the function schema.
+
+    Args:
+        schema_path (str): Path to the function schema JSON file.
+
+    Returns:
+        dict: Function schema.
+    """
+    logger.debug(f"Attempting to load function schema from '{schema_path}'.")
+    schema = load_json_schema(schema_path)
+    if not schema:
+        logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
         sys.exit(1)
+    return schema
 
-    # Configure the OpenAI library for Azure
-    openai.api_type = "azure"
-    openai.api_key = AZURE_OPENAI_API_KEY
-    openai.api_base = AZURE_OPENAI_ENDPOINT
-    openai.api_version = API_VERSION
-else:
-    # OpenAI configuration
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
+    """
+    Loads additional configurations from a config.json file.
 
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY environment variable is not set.")
-        sys.exit(1)
+    Args:
+        config_path (str): Path to the config.json file.
+        excluded_dirs (Set[str]): Set to update with excluded directories.
+        excluded_files (Set[str]): Set to update with excluded files.
+        skip_types (Set[str]): Set to update with file types to skip.
 
-    openai.api_key = OPENAI_API_KEY
+    Returns:
+        Tuple[str, str]: Project information and style guidelines.
+    """
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        project_info = config.get("project_info", "")
+        style_guidelines = config.get("style_guidelines", "")
+        excluded_dirs.update(config.get("excluded_dirs", []))
+        excluded_files.update(config.get("excluded_files", []))
+        skip_types.update(config.get("skip_types", []))
+        logger.debug(f"Loaded configuration from '{config_path}'.")
+        return project_info, style_guidelines
+    except FileNotFoundError:
+        logger.error(f"Config file '{config_path}' not found.")
+        return "", ""
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON from '{config_path}': {e}")
+        return "", ""
+    except Exception as e:
+        logger.error(f"Unexpected error loading config file '{config_path}': {e}")
+        return "", ""
+
+# ----------------------------
+# Model Validation
+# ----------------------------
 
 def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
     """
@@ -129,131 +309,6 @@ def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
             return False
 
 # ----------------------------
-# Language and File Utilities
-# ----------------------------
-
-def get_language(ext: str) -> str:
-    """Determines the programming language based on file extension."""
-    language = LANGUAGE_MAPPING.get(ext.lower(), "plaintext")
-    logger.debug(f"Detected language for extension '{ext}': {language}")
-    return language
-
-def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
-    """Checks if a file extension is valid (not in the skip list)."""
-    is_valid = ext.lower() not in skip_types
-    logger.debug(f"Extension '{ext}' is valid: {is_valid}")
-    return is_valid
-
-def is_binary(file_path: str) -> bool:
-    """Checks if a file is binary."""
-    try:
-        with open(file_path, "rb") as file:
-            return b"\0" in file.read(1024)
-    except Exception as e:
-        logger.error(f"Error checking if file is binary '{file_path}': {e}")
-        return True
-
-def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
-    """Retrieves all file paths in the repository, excluding specified directories and files."""
-    file_paths = []
-    normalized_excluded_dirs = {os.path.normpath(os.path.join(repo_path, d)) for d in excluded_dirs}
-
-    for root, dirs, files in os.walk(repo_path, topdown=True):
-        # Exclude directories
-        dirs[:] = [d for d in dirs if os.path.normpath(os.path.join(root, d)) not in normalized_excluded_dirs]
-
-        for file in files:
-            # Exclude files
-            if file in excluded_files:
-                continue
-            file_ext = os.path.splitext(file)[1]
-            # Skip specified file types
-            if file_ext in skip_types:
-                continue
-            full_path = os.path.join(root, file)
-            file_paths.append(full_path)
-    return file_paths
-
-# ----------------------------
-# Configuration Management
-# ----------------------------
-
-def load_json_schema(schema_path: str) -> Optional[dict]:
-    """
-    Loads a JSON schema from the specified path.
-
-    Args:
-        schema_path (str): Path to the JSON schema file.
-
-    Returns:
-        Optional[dict]: Loaded JSON schema or None if failed.
-    """
-    try:
-        with open(schema_path, "r", encoding="utf-8") as f:
-            schema = json.load(f)
-        logger.debug(f"Successfully loaded JSON schema from '{schema_path}'")
-        return schema
-    except FileNotFoundError:
-        logger.error(f"JSON schema file '{schema_path}' not found.")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from '{schema_path}': {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
-        return None
-
-def load_function_schema(schema_path: str) -> dict:
-    """
-    Loads the function schema.
-
-    Args:
-        schema_path (str): Path to the function schema JSON file.
-
-    Returns:
-        dict: Function schema.
-    """
-    logger.debug(f"Attempting to load function schema from '{schema_path}'")
-    schema = load_json_schema(schema_path)
-    if not schema:
-        logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
-        sys.exit(1)
-    return schema
-
-def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
-    """
-    Loads additional configurations from a config.json file.
-
-    Args:
-        config_path (str): Path to the config.json file.
-        excluded_dirs (Set[str]): Set to update with excluded directories.
-        excluded_files (Set[str]): Set to update with excluded files.
-        skip_types (Set[str]): Set to update with file types to skip.
-
-    Returns:
-        Tuple[str, str]: Project information and style guidelines.
-    """
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        project_info = config.get("project_info", "")
-        style_guidelines = config.get("style_guidelines", "")
-        excluded_dirs.update(config.get("excluded_dirs", []))
-        excluded_files.update(config.get("excluded_files", []))
-        skip_types.update(config.get("skip_types", []))
-        logger.debug(f"Loaded configuration from '{config_path}'")
-        return project_info, style_guidelines
-    except FileNotFoundError:
-        logger.error(f"Config file '{config_path}' not found.")
-        return "", ""
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from '{config_path}': {e}")
-        return "", ""
-    except Exception as e:
-        logger.error(f"Unexpected error loading config file '{config_path}': {e}")
-        return "", ""
-
-# ----------------------------
 # OpenAI API Interaction
 # ----------------------------
 
@@ -261,7 +316,7 @@ async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
     semaphore: asyncio.Semaphore,
-    model_name: str,
+    deployment_name: str,
     function_schema: dict,
     retry: int = 3,
     use_azure: bool = False
@@ -273,7 +328,7 @@ async def fetch_documentation(
         session (aiohttp.ClientSession): The HTTP session.
         prompt (str): The prompt to send to the API.
         semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): The OpenAI model or Azure deployment ID.
+        deployment_name (str): Deployment name for Azure OpenAI or model name for standard OpenAI.
         function_schema (dict): The function schema for structured responses.
         retry (int, optional): Number of retry attempts on failure. Defaults to 3.
         use_azure (bool, optional): Whether to use Azure OpenAI API. Defaults to False.
@@ -281,6 +336,7 @@ async def fetch_documentation(
     Returns:
         Optional[dict]: The documentation as a dictionary if successful, else None.
     """
+    logger.debug(f"Fetching documentation for deployment/model: {deployment_name}, use_azure: {use_azure}")
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
@@ -291,16 +347,18 @@ async def fetch_documentation(
 
                 if use_azure:
                     # Use 'deployment_id' parameter for Azure OpenAI
+                    logger.debug("Using Azure OpenAI deployment.")
                     response = await openai.ChatCompletion.acreate(
-                        deployment_id=model_name,  # model_name is your deployment ID
+                        deployment_id=deployment_name,  # deployment_name is your deployment ID
                         messages=messages,
                         functions=[function_schema],
                         function_call="auto",
                     )
                 else:
                     # Use 'model' parameter for OpenAI API
+                    logger.debug("Using standard OpenAI model.")
                     response = await openai.ChatCompletion.acreate(
-                        model=model_name,
+                        model=deployment_name,  # For standard OpenAI, 'deployment_name' acts as 'model'
                         messages=messages,
                         functions=[function_schema],
                         function_call="auto",
@@ -322,29 +380,32 @@ async def fetch_documentation(
                 else:
                     logger.error("No function_call found in the response.")
                     return None
-            except APIError as e:
-                logger.error(f"OpenAI API returned an API Error: {e}")
+            except RateLimitError as e:
+                logger.error(f"OpenAI API rate limit exceeded: {e}")
                 if attempt < retry:
-                    logger.info(f"Retrying... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(2 ** attempt)
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(wait_time)
                 else:
-                    logger.error("All retry attempts failed.")
+                    logger.error("All retry attempts failed due to rate limiting.")
                     return None
             except APIConnectionError as e:
                 logger.error(f"Failed to connect to OpenAI API: {e}")
                 if attempt < retry:
-                    logger.info(f"Retrying... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(2 ** attempt)
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(wait_time)
                 else:
-                    logger.error("All retry attempts failed.")
+                    logger.error("All retry attempts failed due to connection errors.")
                     return None
-            except RateLimitError as e:
-                logger.error(f"OpenAI API request exceeded rate limit: {e}")
+            except APIError as e:
+                logger.error(f"OpenAI API returned an API Error: {e}")
                 if attempt < retry:
-                    logger.info(f"Retrying after rate limit error... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(2 ** attempt)
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(wait_time)
                 else:
-                    logger.error("All retry attempts failed due to rate limit.")
+                    logger.error("All retry attempts failed due to API errors.")
                     return None
             except OpenAIError as e:
                 logger.error(f"An OpenAI error occurred: {e}")
@@ -414,7 +475,7 @@ def run_flake8(file_path: str) -> Optional[str]:
     """
     Runs flake8 on the specified file and returns the output.
 
-    Parameters:
+    Args:
         file_path (str): Path to the Python file to check.
 
     Returns:
@@ -442,7 +503,7 @@ def run_node_script(script_name: str, input_data: dict) -> Optional[dict]:
     """
     Runs a Node.js script and returns the output.
 
-    Parameters:
+    Args:
         script_name (str): Name of the script to run.
         input_data (dict): Input data to pass to the script.
 
@@ -478,7 +539,7 @@ def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[s
     """
     Runs a Node.js script to insert docstrings and returns the modified code.
 
-    Parameters:
+    Args:
         script_name (str): Name of the script to run.
         input_data (dict): Input data to pass to the script.
 
@@ -521,7 +582,8 @@ def generate_documentation_prompt(
     language: str,
 ) -> str:
     """
-    Creates a tailored documentation prompt based on various parameters like file name and code structure, aligning with project info and guidelines.
+    Creates a tailored documentation prompt based on various parameters like file name and code structure,
+    aligning with project info and guidelines.
 
     Args:
         file_name (str): The name of the file for which documentation is being generated.
@@ -533,7 +595,10 @@ def generate_documentation_prompt(
     Returns:
         str: A comprehensive prompt for generating documentation.
     """
-    prompt = "You are an experienced software developer tasked with generating comprehensive documentation for a specific file in a codebase."
+    prompt = (
+        "You are an experienced software developer tasked with generating comprehensive documentation "
+        "for a specific file in a codebase."
+    )
     if project_info:
         prompt += f"\n\n**Project Information:**\n{project_info}"
     if style_guidelines:
@@ -551,10 +616,6 @@ def generate_documentation_prompt(
 """
     return prompt
 
-# ----------------------------
-# Documentation Report Generation
-# ----------------------------
-
 async def write_documentation_report(
     documentation: Optional[Dict[str, Any]],
     language: str,
@@ -562,9 +623,20 @@ async def write_documentation_report(
     repo_root: str,
     new_content: str,
 ) -> str:
-    """Generates the documentation report content for a single file."""
-    try:
+    """
+    Generates the documentation report content for a single file.
 
+    Args:
+        documentation (Optional[Dict[str, Any]]): Documentation data generated by OpenAI.
+        language (str): Programming language of the file.
+        file_path (str): Path to the file.
+        repo_root (str): Root path of the repository.
+        new_content (str): Content of the file after processing.
+
+    Returns:
+        str: Markdown-formatted documentation for the file.
+    """
+    try:
         def sanitize_text(text: str) -> str:
             """Removes excessive newlines and whitespace from the text."""
             if not text:
@@ -576,17 +648,23 @@ async def write_documentation_report(
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f"# File: {relative_path}\n\n"
         documentation_content = file_header
+
+        # Summary Section
         summary = documentation.get("summary", "") if documentation else ""
         summary = sanitize_text(summary)
         if summary:
             summary_section = f"## Summary\n\n{summary}\n"
             documentation_content += summary_section
+
+        # Changes Made Section
         changes = documentation.get("changes_made", []) if documentation else []
         changes = [sanitize_text(change) for change in changes if change.strip()]
         if changes:
             changes_formatted = "\n".join(f"- {change}" for change in changes)
             changes_section = f"## Changes Made\n\n{changes_formatted}\n"
             documentation_content += changes_section
+
+        # Functions Section
         functions = documentation.get("functions", []) if documentation else []
         if functions:
             functions_section = "## Functions\n\n"
@@ -597,12 +675,13 @@ async def write_documentation_report(
                 func_args = ", ".join(func.get("args", []))
                 func_doc = sanitize_text(func.get("docstring", ""))
                 first_line_doc = (
-                    func_doc.splitlines()[0] if func_doc
-                    else "No description provided."
+                    func_doc.splitlines()[0] if func_doc else "No description provided."
                 )
                 func_async = "Yes" if func.get("async", False) else "No"
                 functions_section += f"| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n"
             documentation_content += functions_section + "\n"
+
+        # Classes Section
         classes = documentation.get("classes", []) if documentation else []
         if classes:
             classes_section = "## Classes\n\n"
@@ -613,6 +692,7 @@ async def write_documentation_report(
                     classes_section += f"### Class: `{cls_name}`\n\n{cls_doc}\n\n"
                 else:
                     classes_section += f"### Class: `{cls_name}`\n\n"
+
                 methods = cls.get("methods", [])
                 if methods:
                     classes_section += "| Method | Arguments | Description | Async | Type |\n"
@@ -622,18 +702,19 @@ async def write_documentation_report(
                         method_args = ", ".join(method.get("args", []))
                         method_doc = sanitize_text(method.get("docstring", ""))
                         first_line_method_doc = (
-                            method_doc.splitlines()[0]
-                            if method_doc
-                            else "No description provided."
+                            method_doc.splitlines()[0] if method_doc else "No description provided."
                         )
                         method_async = "Yes" if method.get("async", False) else "No"
                         method_type = method.get("type", "N/A")
                         classes_section += f"| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n"
                     classes_section += "\n"
             documentation_content += classes_section
+
+        # Code Block
         code_content = new_content.strip()
         code_block = f"```{language}\n{code_content}\n```\n\n---\n"
         documentation_content += code_block
+
         return documentation_content
     except Exception as e:
         logger.error(
@@ -642,7 +723,15 @@ async def write_documentation_report(
         return ""
 
 def generate_table_of_contents(content: str) -> str:
-    """Generates a table of contents from markdown headings."""
+    """
+    Generates a table of contents from markdown headings.
+
+    Args:
+        content (str): Markdown content.
+
+    Returns:
+        str: Markdown-formatted table of contents.
+    """
     toc = []
     for line in content.splitlines():
         if line.startswith("#"):
@@ -653,11 +742,16 @@ def generate_table_of_contents(content: str) -> str:
     return "\n".join(toc)
 
 # ----------------------------
-# Schema Validation (Optional)
+# Schema Validation
 # ----------------------------
 
 def validate_schema(schema: dict):
-    """Validates the loaded schema against a predefined schema."""
+    """
+    Validates the loaded schema against a predefined schema.
+
+    Args:
+        schema (dict): The schema to validate.
+    """
     predefined_schema = {
         "type": "object",
         "properties": {

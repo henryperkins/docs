@@ -19,6 +19,7 @@ from utils import (
     DEFAULT_SKIP_TYPES,
     load_function_schema,
     validate_model_name,
+    configure_openai,  # Ensure this import is present
 )
 
 # Load environment variables from .env file
@@ -52,14 +53,9 @@ def parse_arguments():
         default="output.md"
     )
     parser.add_argument(
-        "--model",
-        help="OpenAI model to use (e.g., gpt-4)",
-        default="gpt-4o"
-    )
-    parser.add_argument(
         "--deployment-name",
         help="Deployment name for Azure OpenAI",
-        default=None
+        required=True
     )
     parser.add_argument(
         "--skip-types",
@@ -138,60 +134,43 @@ async def main():
     config_path = args.config
     concurrency = args.concurrency
     output_file = args.output
+    deployment_name = args.deployment_name
+    skip_types = args.skip_types
     project_info_arg = args.project_info
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
     schema_path = args.schema
     use_azure = args.use_azure
 
-    # Fetch API keys and endpoints from environment variables or command-line arguments
     if use_azure:
         AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
         AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT') or os.getenv('ENDPOINT_URL')
         API_VERSION = os.getenv('API_VERSION')
-        DEPLOYMENT_NAME = args.deployment_name or os.getenv('DEPLOYMENT_NAME')
 
-        model_name = DEPLOYMENT_NAME  # Use deployment name as model_name
-
-        if not AZURE_OPENAI_API_KEY or not AZURE_OPENAI_ENDPOINT:
+        if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, deployment_name]):
             logger.critical(
-                "AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT not set. "
+                "AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, or DEPLOYMENT_NAME not set. "
                 "Please set them in your environment or .env file."
             )
             sys.exit(1)
-        if not DEPLOYMENT_NAME:
-            logger.critical("DEPLOYMENT_NAME not set. Please set it in your environment or .env file.")
-            sys.exit(1)
-        if not API_VERSION:
-            logger.critical("API_VERSION not set. Please set it in your environment or .env file.")
-            sys.exit(1)
 
-        logger.info("Using Azure OpenAI with Deployment ID: %s", DEPLOYMENT_NAME)
+        logger.info("Using Azure OpenAI with Deployment ID: %s", deployment_name)
     else:
         OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-        model_name = args.model or os.getenv('MODEL_NAME')
         if not OPENAI_API_KEY:
             logger.critical(
                 "OPENAI_API_KEY not set. Please set it in your environment or .env file."
             )
             sys.exit(1)
-        if not model_name:
-            logger.error("Model name is not specified.")
-            sys.exit(1)
-        logger.info("Using OpenAI with Model: %s", model_name)
+        logger.info("Using standard OpenAI API.")
 
     logger.info(f"Repository Path: {repo_path}")
     logger.info(f"Configuration File: {config_path}")
     logger.info(f"Concurrency Level: {concurrency}")
     logger.info(f"Output Markdown File: {output_file}")
-    logger.info(f"Model Name / Deployment ID: {model_name}")
+    logger.info(f"Deployment Name: {deployment_name if use_azure else 'N/A'}")
     logger.info(f"Safe Mode: {'Enabled' if safe_mode else 'Disabled'}")
     logger.info(f"Function Schema Path: {schema_path}")
-
-    if not use_azure:
-        if not validate_model_name(model_name, use_azure):
-            logger.error(f"Invalid model name '{model_name}'. Exiting.")
-            sys.exit(1)
 
     if not os.path.isdir(repo_path):
         logger.critical(
@@ -203,13 +182,13 @@ async def main():
 
     excluded_dirs = set(DEFAULT_EXCLUDED_DIRS)
     excluded_files = set(DEFAULT_EXCLUDED_FILES)
-    skip_types = set(DEFAULT_SKIP_TYPES)
-    if args.skip_types:
-        skip_types.update(
+    skip_types_set = set(DEFAULT_SKIP_TYPES)
+    if skip_types:
+        skip_types_set.update(
             ext.strip() if ext.strip().startswith(".") else f".{ext.strip()}"
-            for ext in args.skip_types.split(",") if ext.strip()
+            for ext in skip_types.split(",") if ext.strip()
         )
-        logger.debug(f"Updated skip_types: {skip_types}")
+        logger.debug(f"Updated skip_types: {skip_types_set}")
 
     # Load configuration
     project_info_config = ""
@@ -223,7 +202,7 @@ async def main():
     else:
         try:
             project_info_config, style_guidelines_config = load_config(
-                config_path, excluded_dirs, excluded_files, skip_types
+                config_path, excluded_dirs, excluded_files, skip_types_set
             )
             logger.debug(
                 f"Loaded configurations from '{config_path}': "
@@ -245,10 +224,19 @@ async def main():
     # Load and validate function schema
     function_schema = load_function_schema(schema_path)
 
+    # Validate model name if not using Azure OpenAI
+    if not use_azure:
+        if not validate_model_name(deployment_name, use_azure):
+            logger.error(f"Invalid model name '{deployment_name}'. Exiting.")
+            sys.exit(1)
+
+    # Configure OpenAI API
+    configure_openai(use_azure, deployment_name)
+
     # Get all file paths to process
     try:
         file_paths = get_all_file_paths(
-            repo_path, excluded_dirs, excluded_files, skip_types
+            repo_path, excluded_dirs, excluded_files, skip_types_set
         )
         logger.info(f"Found {len(file_paths)} files to process.")
     except Exception as e:
@@ -261,9 +249,9 @@ async def main():
         await process_all_files(
             session=session,
             file_paths=file_paths,
-            skip_types=skip_types,
+            skip_types=skip_types_set,
             semaphore=semaphore,
-            model_name=model_name,
+            deployment_name=deployment_name,
             function_schema=function_schema,
             repo_root=repo_path,
             project_info=project_info,
