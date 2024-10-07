@@ -1,3 +1,5 @@
+# main.py
+
 import os
 import sys
 import logging
@@ -6,14 +8,9 @@ import asyncio
 from logging.handlers import RotatingFileHandler
 
 import aiohttp
-import openai
 from dotenv import load_dotenv
 
-from file_handlers import (
-    process_file,
-    process_all_files,
-    extract_code_structure,
-  )
+from file_handlers import process_all_files
 from utils import (
     load_config,
     get_all_file_paths,
@@ -21,13 +18,7 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     load_function_schema,
-)
-
-# Initialize Sentry
-import sentry_sdk
-sentry_sdk.init(
-    dsn="https://3d88a4a35fb3b234d0f180ecae63dd56@o4508070823395328.ingest.us.sentry.io/4508070829817856",
-    traces_sample_rate=1.0,
+    validate_model_name,
 )
 
 # Load environment variables from .env file
@@ -35,7 +26,6 @@ load_dotenv()
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
 
 def parse_arguments():
     """Parses command-line arguments."""
@@ -64,7 +54,7 @@ def parse_arguments():
     parser.add_argument(
         "--model",
         help="OpenAI model to use (e.g., gpt-4)",
-        default=None
+        default="gpt-4o"
     )
     parser.add_argument(
         "--deployment-name",
@@ -112,7 +102,6 @@ def parse_arguments():
     )
     return parser.parse_args()
 
-
 def configure_logging(log_level):
     """Configures logging based on the provided log level."""
     logger.setLevel(log_level)
@@ -133,31 +122,6 @@ def configure_logging(log_level):
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-
-
-def validate_model_name(model_name: str, use_azure: bool) -> bool:
-    """Validates the OpenAI model name format."""
-    if use_azure:
-        # Skip validation for Azure OpenAI; deployment IDs are user-defined
-        return True
-    else:
-        valid_models = [
-            "gpt-4",
-            "gpt-4-0314",
-            "gpt-4-32k",
-            "gpt-4-32k-0314",
-            "gpt-4o-mini-2024-07-18",
-            "gpt-4o-2024-08-06",
-            "gpt-4o",
-        ]
-        if model_name in valid_models:
-            return True
-        else:
-            logger.warning(
-                f"Unrecognized model name '{model_name}'. Proceeding with caution."
-            )
-            return False  # Change to False to enforce valid model names
-
 
 async def main():
     """Main function to orchestrate documentation generation."""
@@ -181,32 +145,31 @@ async def main():
     use_azure = args.use_azure
 
     # Fetch API keys and endpoints from environment variables or command-line arguments
-    AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
-    api_base = os.getenv('ENDPOINT_URL')
-    api_version = os.getenv('API_VERSION')
-    deployment_id = args.deployment_name or os.getenv('DEPLOYMENT_NAME')
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-    model_name = args.model or os.getenv('MODEL_NAME')
-
-    # Validate API keys and initialize client
     if use_azure:
-        if not AZURE_OPENAI_API_KEY or not api_base:
+        AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
+        AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT') or os.getenv('ENDPOINT_URL')
+        API_VERSION = os.getenv('API_VERSION')
+        DEPLOYMENT_NAME = args.deployment_name or os.getenv('DEPLOYMENT_NAME')
+
+        model_name = DEPLOYMENT_NAME  # Use deployment name as model_name
+
+        if not AZURE_OPENAI_API_KEY or not AZURE_OPENAI_ENDPOINT:
             logger.critical(
-                "AZURE_OPENAI_API_KEY or ENDPOINT_URL not set. "
+                "AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT not set. "
                 "Please set them in your environment or .env file."
             )
             sys.exit(1)
-        if not deployment_id:
+        if not DEPLOYMENT_NAME:
             logger.critical("DEPLOYMENT_NAME not set. Please set it in your environment or .env file.")
             sys.exit(1)
-        logger.info("Using Azure OpenAI with Deployment ID: %s", deployment_id)
-        # Configure the OpenAI library for Azure
-        openai.api_type = "azure"
-        openai.api_key = AZURE_OPENAI_API_KEY
-        openai.api_base = api_base
-        openai.api_version = api_version
-        model_name = deployment_id  # Use deployment ID for Azure OpenAI
+        if not API_VERSION:
+            logger.critical("API_VERSION not set. Please set it in your environment or .env file.")
+            sys.exit(1)
+
+        logger.info("Using Azure OpenAI with Deployment ID: %s", DEPLOYMENT_NAME)
     else:
+        OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+        model_name = args.model or os.getenv('MODEL_NAME')
         if not OPENAI_API_KEY:
             logger.critical(
                 "OPENAI_API_KEY not set. Please set it in your environment or .env file."
@@ -216,7 +179,6 @@ async def main():
             logger.error("Model name is not specified.")
             sys.exit(1)
         logger.info("Using OpenAI with Model: %s", model_name)
-        openai.api_key = OPENAI_API_KEY
 
     logger.info(f"Repository Path: {repo_path}")
     logger.info(f"Configuration File: {config_path}")
@@ -226,9 +188,10 @@ async def main():
     logger.info(f"Safe Mode: {'Enabled' if safe_mode else 'Disabled'}")
     logger.info(f"Function Schema Path: {schema_path}")
 
-    if not validate_model_name(model_name, use_azure):
-        logger.error(f"Invalid model name '{model_name}'. Exiting.")
-        sys.exit(1)
+    if not use_azure:
+        if not validate_model_name(model_name, use_azure):
+            logger.error(f"Invalid model name '{model_name}'. Exiting.")
+            sys.exit(1)
 
     if not os.path.isdir(repo_path):
         logger.critical(
@@ -307,11 +270,10 @@ async def main():
             style_guidelines=style_guidelines,
             safe_mode=safe_mode,
             output_file=output_file,
-            use_azure=use_azure,
+            use_azure=use_azure,  # Pass use_azure to process_all_files
         )
 
     logger.info("Documentation generation completed successfully.")
-
 
 if __name__ == "__main__":
     try:
@@ -321,6 +283,4 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as e:
         logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
-        # Capture exception in Sentry
-        sentry_sdk.capture_exception(e)
         sys.exit(1)

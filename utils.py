@@ -1,3 +1,5 @@
+# utils.py
+
 import os
 import sys
 import json
@@ -11,12 +13,10 @@ from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
 import tempfile
 from bs4 import BeautifulSoup, Comment
-import tinycss2
-import argparse
 from jsonschema import validate, ValidationError
 from logging.handlers import RotatingFileHandler
 import openai
-from openai import OpenAIError, APIError, APIConnectionError, RateLimitError
+from openai.error import OpenAIError, APIError, APIConnectionError, RateLimitError
 
 # ----------------------------
 # Configuration and Setup
@@ -29,7 +29,10 @@ load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.FileHandler("documentation_generation.log"), logging.StreamHandler()],
+    handlers=[
+        logging.FileHandler("documentation_generation.log"),
+        logging.StreamHandler(sys.stdout)
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -37,9 +40,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # ----------------------------
 
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_EXCLUDED_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".idea"}
 DEFAULT_EXCLUDED_FILES = {".DS_Store"}
 DEFAULT_SKIP_TYPES = {".json", ".md", ".txt", ".csv", ".lock"}
@@ -53,7 +53,44 @@ LANGUAGE_MAPPING = {
     ".html": "html",
     ".htm": "html",
     ".css": "css",
+    ".go": "go",
+    ".cpp": "cpp",
+    ".c": "cpp",
+    ".java": "java",
 }
+
+# ----------------------------
+# OpenAI API Configuration
+# ----------------------------
+
+# Determine whether to use Azure OpenAI based on environment variable
+use_azure = os.getenv("USE_AZURE", "false").lower() == "true"
+
+if use_azure:
+    # Azure OpenAI configuration
+    AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+    AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL")
+    API_VERSION = os.getenv("API_VERSION")
+    DEPLOYMENT_NAME = os.getenv("DEPLOYMENT_NAME")
+
+    if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, DEPLOYMENT_NAME]):
+        logger.error("Azure OpenAI environment variables are not set properly.")
+        sys.exit(1)
+
+    # Configure the OpenAI library for Azure
+    openai.api_type = "azure"
+    openai.api_key = AZURE_OPENAI_API_KEY
+    openai.api_base = AZURE_OPENAI_ENDPOINT
+    openai.api_version = API_VERSION
+else:
+    # OpenAI configuration
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY environment variable is not set.")
+        sys.exit(1)
+
+    openai.api_key = OPENAI_API_KEY
 
 # ----------------------------
 # Language and File Utilities
@@ -77,7 +114,7 @@ def is_binary(file_path: str) -> bool:
         with open(file_path, "rb") as file:
             return b"\0" in file.read(1024)
     except Exception as e:
-        logger.error(f"Error checking binary file '{file_path}': {e}")
+        logger.error(f"Error checking if file is binary '{file_path}': {e}")
         return True
 
 def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
@@ -180,96 +217,9 @@ def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[s
         logger.error(f"Unexpected error loading config file '{config_path}': {e}")
         return "", ""
 
-def extract_json_from_response(response: str) -> Optional[dict]:
-    """Extracts JSON content from the model's response.
-
-    Attempts multiple methods to extract JSON:
-    1. Function calling format.
-    2. JSON enclosed in triple backticks.
-    3. Entire response as JSON.
-
-    Args:
-        response (str): The raw response string from the model.
-
-    Returns:
-        Optional[dict]: The extracted JSON as a dictionary, or None if extraction fails.
-    """
-    try:
-        response_json = json.loads(response)
-        if (
-            "function_call" in response_json
-            and "arguments" in response_json["function_call"]
-        ):
-            return json.loads(response_json["function_call"]["arguments"])
-    except json.JSONDecodeError:
-        pass
-    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group(1))
-        except json.JSONDecodeError:
-            pass
-    try:
-        return json.loads(response)
-    except json.JSONDecodeError:
-        return None
-
 # ----------------------------
 # OpenAI API Interaction
 # ----------------------------
-
-def call_openai_api(prompt: str, model: str, functions: List[dict], function_call: Optional[dict] = None, use_azure: bool = False) -> Optional[dict]:
-    """
-    Centralized function to call the OpenAI API or Azure OpenAI API.
-
-    Args:
-        prompt (str): The prompt to send.
-        model (str): The OpenAI model to use, or deployment ID for Azure.
-        functions (List[dict]): List of function schemas.
-        function_call (Optional[dict]): Function call parameters.
-        use_azure (bool): Whether to use Azure OpenAI API instead of regular OpenAI API.
-
-    Returns:
-        Optional[dict]: The API response or None if failed.
-    """
-    if not check_api_keys(use_azure):
-        return None
-
-    try:
-        messages = [
-            {"role": "system", "content": "You are an assistant that generates documentation."},
-            {"role": "user", "content": prompt},
-        ]
-
-        if use_azure:
-            # Use 'engine' parameter for Azure OpenAI
-            response = openai.ChatCompletion.create(
-                engine=model,  # 'model' is the deployment ID in Azure
-                messages=messages,
-                functions=functions,
-                function_call=function_call,
-            )
-        else:
-            # Use 'model' parameter for OpenAI API
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=messages,
-                functions=functions,
-                function_call=function_call,
-            )
-
-        logger.debug("API call successful.")
-        return response
-    except openai.error.OpenAIError as e:
-        logger.error(f"OpenAI API Error: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error calling API: {e}")
-        return None
-
-
-
-logger = logging.getLogger(__name__)
 
 async def fetch_documentation(
     session: aiohttp.ClientSession,
@@ -304,16 +254,16 @@ async def fetch_documentation(
                 ]
 
                 if use_azure:
-                    # Use 'engine' parameter for Azure OpenAI
-                    response = openai.ChatCompletion.create(
-                        engine=model_name,  # model_name is your deployment ID
+                    # Use 'deployment_id' parameter for Azure OpenAI
+                    response = await openai.ChatCompletion.acreate(
+                        deployment_id=model_name,  # model_name is your deployment ID
                         messages=messages,
                         functions=[function_schema],
                         function_call="auto",
                     )
                 else:
                     # Use 'model' parameter for OpenAI API
-                    response = openai.ChatCompletion.create(
+                    response = await openai.ChatCompletion.acreate(
                         model=model_name,
                         messages=messages,
                         functions=[function_schema],
@@ -424,46 +374,6 @@ def clean_unused_imports(code: str) -> str:
         logger.error(f"Error cleaning imports with autoflake: {e}")
         return code
 
-def check_with_flake8(file_path: str) -> bool:
-    """
-    Checks Python code compliance using flake8 and attempts to fix issues if found.
-
-    Args:
-        file_path (str): Path to the Python file to check.
-
-    Returns:
-        bool: True if the code passes flake8 checks after fixes, False otherwise.
-    """
-    logger.debug(f"Entering check_with_flake8 with file_path={file_path}")
-    result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
-    if result.returncode == 0:
-        logger.debug(f"No flake8 issues in {file_path}")
-        return True
-    else:
-        logger.error(f"flake8 issues in {file_path}:\n{result.stdout}")
-        # Attempt to auto-fix with autoflake and black
-        try:
-            logger.info(f"Attempting to auto-fix flake8 issues in {file_path}")
-            subprocess.run(["autoflake", "--remove-all-unused-imports", "--in-place", file_path], check=True)
-            subprocess.run(["black", "--quiet", file_path], check=True)
-            # Re-run flake8 to confirm
-            result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
-            if result.returncode == 0:
-                logger.debug(f"No flake8 issues after auto-fix in {file_path}")
-                return True
-            else:
-                logger.error(f"flake8 issues remain after auto-fix in {file_path}:\n{result.stdout}")
-                return False
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Auto-fix failed for {file_path}: {e}", exc_info=True)
-            return False
-        except FileNotFoundError as e:
-            logger.error(f"Required tool not found: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Error auto-fixing flake8 issues for {file_path}: {e}", exc_info=True)
-            return False
-
 def run_flake8(file_path: str) -> Optional[str]:
     """
     Runs flake8 on the specified file and returns the output.
@@ -488,54 +398,84 @@ def run_flake8(file_path: str) -> Optional[str]:
         logger.error(f"Error running flake8 on '{file_path}': {e}", exc_info=True)
         return None
 
-import os
+# ----------------------------
+# JavaScript/TypeScript Utilities
+# ----------------------------
 
-def run_node_script(script_path: str, input_code: str) -> Optional[Dict[str, Any]]:
+def run_node_script(script_name: str, input_data: dict) -> Optional[dict]:
+    """
+    Runs a Node.js script and returns the output.
+
+    Parameters:
+        script_name (str): Name of the script to run.
+        input_data (dict): Input data to pass to the script.
+
+    Returns:
+        Optional[dict]: The output from the script if successful, None otherwise.
+    """
     try:
-        # Adjust the path to point to 'scripts/acorn_parser.js'
-        script_full_path = os.path.join(os.path.dirname(__file__), 'scripts', 'acorn_parser.js')
-        logger.debug(f"Running Node.js script: {script_full_path}")
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
+        logger.debug(f"Running Node.js script: {script_path}")
+
+        input_json = json.dumps(input_data)
         result = subprocess.run(
-            ["node", script_full_path],
-            input=input_code,
+            ["node", script_path],
+            input=input_json,
             capture_output=True,
             text=True,
             check=True
         )
-        logger.debug(f"Successfully ran {script_full_path}")
-        output_json = json.loads(result.stdout)
-        return output_json
+        logger.debug(f"Successfully ran {script_path}")
+        output = json.loads(result.stdout)
+        return output
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error running {script_full_path}: {e.stderr}")
+        logger.error(f"Error running {script_name}: {e.stderr}")
         return None
-    # ... rest of the code remains unchanged
+    except FileNotFoundError:
+        logger.error(f"Node.js script {script_name} not found.")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error running {script_name}: {e}")
+        return None
 
-
-def run_node_insert_docstrings(script_path: str, input_code: str) -> Optional[str]:
+def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[str]:
     """
     Runs a Node.js script to insert docstrings and returns the modified code.
 
     Parameters:
-        script_path (str): Path to the Node.js script.
-        input_code (str): JSON string containing the code and documentation.
+        script_name (str): Name of the script to run.
+        input_data (dict): Input data to pass to the script.
 
     Returns:
         Optional[str]: The modified code if successful, None otherwise.
     """
     try:
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
         logger.debug(f"Running Node.js script: {script_path}")
-        result = subprocess.run(["node", script_path], input=input_code, capture_output=True, text=True, check=True)
+
+        input_json = json.dumps(input_data)
+        result = subprocess.run(
+            ["node", script_path],
+            input=input_json,
+            capture_output=True,
+            text=True,
+            check=True
+        )
         logger.debug(f"Successfully ran {script_path}")
         return result.stdout
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error running {script_path}: {e.stderr}")
+        logger.error(f"Error running {script_name}: {e.stderr}")
         return None
     except FileNotFoundError:
-        logger.error(f"Node.js script {script_path} not found.")
+        logger.error(f"Node.js script {script_name} not found.")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error running {script_path}: {e}")
+        logger.error(f"Unexpected error running {script_name}: {e}")
         return None
+
+# ----------------------------
+# Documentation Generation
+# ----------------------------
 
 def generate_documentation_prompt(
     file_name: str,
@@ -566,39 +506,18 @@ def generate_documentation_prompt(
     prompt += f"\n\n**Language:** {language}"
     prompt += f"\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```"
     prompt += """
-    **Instructions:** Based on the above code structure, generate the following documentation sections specifically for this file:
-    1. **Overview:** A high-level overview of the module or class, explaining its purpose, responsibilities, and integration within the project.
-    2. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
-    3. **Changes Made:** A comprehensive list of changes or updates made to this file.
-    4. **Functions:** Provide a JSDoc (for JavaScript/TypeScript) or Javadoc (for Java) comment for each function, including its purpose, parameters (`@param`), return values (`@returns` or `@return`), and whether it is asynchronous.
-    5. **Classes:** Provide a JSDoc/Javadoc comment for each class, including its purpose, methods, inheritance details (`@extends` or `@implements`), and any interfaces it implements. Also, provide JSDoc/Javadoc comments for each method within the class.
-    """
+**Instructions:** Based on the above code structure, generate the following documentation sections specifically for this file:
+1. **Overview:** A high-level overview of the module or class, explaining its purpose, responsibilities, and integration within the project.
+2. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.
+3. **Changes Made:** A comprehensive list of changes or updates made to this file.
+4. **Functions:** Provide detailed documentation for each function, including its purpose, parameters (`@param`), return values (`@returns` or `@return`), and whether it is asynchronous.
+5. **Classes:** Provide detailed documentation for each class, including its purpose, methods, inheritance details (`@extends` or `@implements`), and any interfaces it implements. Also, provide documentation for each method within the class.
+"""
     return prompt
 
 # ----------------------------
-# Schema Validation (Optional)
+# Documentation Report Generation
 # ----------------------------
-
-def validate_schema(schema: dict):
-    """Validates the loaded schema against a predefined schema."""
-    predefined_schema = {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "description": {"type": "string"},
-                "parameters": {"type": "object"}
-            },
-            "required": ["name", "description", "parameters"]
-        }
-    }
-    try:
-        validate(instance=schema, schema=predefined_schema)
-        logger.debug("Function schema is valid.")
-    except ValidationError as ve:
-        logger.critical(f"Schema validation error: {ve.message}")
-        sys.exit(1)
 
 async def write_documentation_report(
     documentation: Optional[Dict[str, Any]],
@@ -642,7 +561,8 @@ async def write_documentation_report(
                 func_args = ", ".join(func.get("args", []))
                 func_doc = sanitize_text(func.get("docstring", ""))
                 first_line_doc = (
-                    func_doc.splitlines()[0] if func_doc else "No description provided."
+                    func_doc.splitlines()[0] if func_doc
+                    else "No description provided."
                 )
                 func_async = "Yes" if func.get("async", False) else "No"
                 functions_section += f"| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n"
@@ -659,12 +579,8 @@ async def write_documentation_report(
                     classes_section += f"### Class: `{cls_name}`\n\n"
                 methods = cls.get("methods", [])
                 if methods:
-                    classes_section += (
-                        "| Method | Arguments | Description | Async | Type |\n"
-                    )
-                    classes_section += (
-                        "|--------|-----------|-------------|-------|------|\n"
-                    )
+                    classes_section += "| Method | Arguments | Description | Async | Type |\n"
+                    classes_section += "|--------|-----------|-------------|-------|------|\n"
                     for method in methods:
                         method_name = method.get("name", "N/A")
                         method_args = ", ".join(method.get("args", []))
@@ -689,7 +605,6 @@ async def write_documentation_report(
         )
         return ""
 
-
 def generate_table_of_contents(content: str) -> str:
     """Generates a table of contents from markdown headings."""
     toc = []
@@ -701,17 +616,65 @@ def generate_table_of_contents(content: str) -> str:
             toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
     return "\n".join(toc)
 
-
 # ----------------------------
-# Initialize function_schema.json
+# Schema Validation (Optional)
 # ----------------------------
 
-if __name__ == "__main__":
+def validate_schema(schema: dict):
+    """Validates the loaded schema against a predefined schema."""
+    predefined_schema = {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "changes_made": {"type": "array", "items": {"type": "string"}},
+            "functions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "args": {"type": "array", "items": {"type": "string"}},
+                        "docstring": {"type": "string"},
+                        "async": {"type": "boolean"}
+                    },
+                    "required": ["name", "args", "docstring", "async"]
+                }
+            },
+            "classes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "docstring": {"type": "string"},
+                        "methods": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "args": {"type": "array", "items": {"type": "string"}},
+                                    "docstring": {"type": "string"},
+                                    "async": {"type": "boolean"},
+                                    "type": {"type": "string"}
+                                },
+                                "required": ["name", "args", "docstring", "async", "type"]
+                            }
+                        }
+                    },
+                    "required": ["name", "docstring", "methods"]
+                }
+            }
+        },
+        "required": ["summary", "changes_made", "functions", "classes"]
+    }
     try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.warning("Documentation generation interrupted by user.")
+        validate(instance=schema, schema=predefined_schema)
+        logger.debug("Documentation schema is valid.")
+    except ValidationError as ve:
+        logger.critical(f"Schema validation error: {ve.message}")
         sys.exit(1)
-    except Exception as e:
-        logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
-        sys.exit(1)
+
+# ----------------------------
+# EOF
+# ----------------------------

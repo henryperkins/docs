@@ -22,20 +22,24 @@ from utils import (
     is_valid_extension,
     generate_documentation_prompt,
     fetch_documentation,
-    extract_code_structure,
-    backup_and_write_new_content,
     write_documentation_report,
     generate_table_of_contents,
 )
 
-# Initialize Sentry
-import sentry_sdk
-sentry_sdk.init(
-    dsn="YOUR_SENTRY_DSN",  # Replace with your actual Sentry DSN
-    traces_sample_rate=1.0,
-)
-
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+
+if SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        traces_sample_rate=1.0,
+    )
+    logger.info("Sentry SDK initialized.")
+else:
+    logger.info("Sentry DSN not provided. Sentry SDK will not be initialized.")
 
 async def extract_code_structure(
     content: str, file_path: str, language: str, handler: BaseHandler
