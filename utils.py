@@ -581,10 +581,28 @@ def generate_documentation_prompt(file_name: str, code_structure: Dict[str, Any]
     return prompt
 
 async def write_documentation_report(documentation: Optional[Dict[str, Any]], language: str, file_path: str, repo_root: str, new_content: str) -> str:
-    """Writes a documentation report for a file in the specified language."""
+    """Asynchronously writes a documentation report to a specified file path.
+
+    Args:
+        documentation (Optional[Dict[str, Any]]): The documentation content to write.
+        language (str): The language in which documentation is written.
+        file_path (str): File path to write the report to.
+        repo_root (str): Root path of the repository.
+        new_content (str): New content to include in the report.
+
+    Returns:
+        str: Path where the documentation report was written."""
+    'Writes a documentation report for a file in the specified language.'
     try:
         def sanitize_text(text: str) -> str:
-            """Sanitizes and normalizes a string of text for safe processing."""
+            """Sanitizes the given text for usage in documentation or logging.
+
+            Args:
+                text (str): The text to sanitize.
+
+            Returns:
+                str: Sanitized version of the input text."""
+            'Sanitizes and normalizes a string of text for safe processing.'
             if not text:
                 return ''
             lines = text.strip().splitlines()
@@ -612,8 +630,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
             functions_section += '|----------|-----------|-------------|-------|\n'
             for func in functions:
                 func_name = func.get('name', 'N/A')
-                # Simplified argument details
-                func_args = ', '.join(f"{arg['name']} ({arg.get('type', 'N/A')})" for arg in func.get('parameters', []))
+                func_args = ', '.join((f'{arg["name"]} ({arg.get("type", "N/A")})' for arg in func.get('parameters', [])))
                 func_doc = sanitize_text(func.get('docstring', ''))
                 first_line_doc = func_doc.splitlines()[0] if func_doc else 'No description provided.'
                 func_async = 'Yes' if func.get('async', False) else 'No'
@@ -635,7 +652,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                     classes_section += '|--------|-----------|-------------|-------|------|\n'
                     for method in methods:
                         method_name = method.get('name', 'N/A')
-                        method_args = ', '.join(f"{arg['name']} ({arg.get('type', 'N/A')})" for arg in method.get('parameters', []))
+                        method_args = ', '.join((f'{arg["name"]} ({arg.get("type", "N/A")})' for arg in method.get('parameters', [])))
                         method_doc = sanitize_text(method.get('docstring', ''))
                         first_line_method_doc = method_doc.splitlines()[0] if method_doc else 'No description provided.'
                         method_async = 'Yes' if method.get('async', False) else 'No'
@@ -650,7 +667,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
     except Exception as e:
         logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
         return ''
-    
+
 def generate_table_of_contents(content: str) -> str:
     """
     Generates a table of contents from markdown headings.
