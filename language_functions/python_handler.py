@@ -30,6 +30,14 @@ class PythonHandler(BaseHandler):
 
             class CodeVisitor(ast.NodeVisitor):
                 def visit_FunctionDef(self, node):
+                    self._process_function(node, is_async=False)
+                    self.generic_visit(node)
+
+                def visit_AsyncFunctionDef(self, node):
+                    self._process_function(node, is_async=True)
+                    self.generic_visit(node)
+
+                def _process_function(self, node, is_async: bool):
                     function_info = {
                         "name": node.name,
                         "description": "",  # Placeholder for AI to fill
@@ -41,7 +49,7 @@ class PythonHandler(BaseHandler):
                         "raises": self._extract_exceptions(node),
                         "examples": [],
                         "decorators": [ast.unparse(dec) for dec in node.decorator_list],
-                        "async": isinstance(node, ast.AsyncFunctionDef),
+                        "async": is_async,
                         "static": False,  # Top-level functions are not static
                         "visibility": "public" if not node.name.startswith("_") else "private"
                     }
@@ -64,7 +72,6 @@ class PythonHandler(BaseHandler):
                         function_info["parameters"].append(param_info)
                     
                     code_structure["functions"].append(function_info)
-                    self.generic_visit(node)
 
                 def visit_ClassDef(self, node):
                     class_info = {
@@ -89,7 +96,10 @@ class PythonHandler(BaseHandler):
                                 "examples": [],
                                 "decorators": [ast.unparse(dec) for dec in body_item.decorator_list],
                                 "async": isinstance(body_item, ast.AsyncFunctionDef),
-                                "static": any(isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list),
+                                "static": any(
+                                    isinstance(dec, ast.Name) and dec.id == 'staticmethod' 
+                                    for dec in body_item.decorator_list
+                                ),
                                 "visibility": "public" if not body_item.name.startswith("_") else "private"
                             }
                             # Extract parameters, excluding 'self'

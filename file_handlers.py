@@ -6,19 +6,10 @@ import shutil
 import aiofiles
 import aiohttp
 import asyncio
-from typing import Any, Set, Optional, Dict, List
+from typing import Optional, Set, List, Dict, Any
 from tqdm.asyncio import tqdm
+from language_functions import get_handler  # Only import get_handler
 from language_functions.base_handler import BaseHandler
-from language_functions import (
-    PythonHandler,
-    JSTsHandler,
-    GoHandler,
-    CppHandler,
-    HTMLHandler,
-    CSSHandler,
-    JavaHandler,
-    get_handler
-)
 from utils import (
     is_binary,
     get_language,
@@ -48,7 +39,7 @@ async def extract_code_structure(
     file_path: str,
     language: str,
     handler: BaseHandler
-) -> Optional[dict]:
+) -> Optional[Dict[str, Any]]:
     """Extracts code structure based on language using the appropriate handler."""
     logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
     try:
@@ -83,7 +74,7 @@ async def process_file(
     skip_types: Set[str],
     semaphore: asyncio.Semaphore,
     model_name: str,
-    function_schema: dict,
+    function_schema: Dict[str, Any],
     repo_root: str,
     project_info: str,
     style_guidelines: str,
@@ -99,7 +90,7 @@ async def process_file(
         skip_types (Set[str]): Set of file extensions to skip.
         semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
         model_name (str): Model name for OpenAI or deployment name for Azure OpenAI.
-        function_schema (dict): Schema defining functions for structured responses.
+        function_schema (Dict[str, Any]): Schema defining functions for structured responses.
         repo_root (str): Root path of the repository.
         project_info (str): Information about the project.
         style_guidelines (str): Style guidelines to follow.
@@ -174,7 +165,7 @@ async def process_file(
                 new_content = await loop.run_in_executor(None, handler.insert_docstrings, content, documentation)
                 
                 # Step 1: Clean unused imports and variables
-                new_content = clean_unused_imports(new_content)
+                new_content = clean_unused_imports(new_content, file_path)
                 
                 # Step 2: Format code with Black
                 new_content = format_with_black(new_content)
@@ -214,7 +205,7 @@ async def process_all_files(
     skip_types: Set[str],
     semaphore: asyncio.Semaphore,
     model_name: str,
-    function_schema: dict,
+    function_schema: Dict[str, Any],
     repo_root: str,
     project_info: Optional[str],
     style_guidelines: Optional[str],
@@ -231,7 +222,7 @@ async def process_all_files(
         skip_types (Set[str]): Set of file extensions to skip.
         semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
         model_name (str): Model name for OpenAI or deployment name for Azure OpenAI.
-        function_schema (dict): Schema defining functions for structured responses.
+        function_schema (Dict[str, Any]): Schema defining functions for structured responses.
         repo_root (str): Root path of the repository.
         project_info (Optional[str]): Information about the project.
         style_guidelines (Optional[str]): Style guidelines to follow.
@@ -267,7 +258,8 @@ async def process_all_files(
                 documentation_contents.append(file_content)
         except Exception as e:
             logger.error(f'Error processing a file: {e}', exc_info=True)
-            sentry_sdk.capture_exception(e)
+            if 'sentry_sdk' in globals():
+                sentry_sdk.capture_exception(e)
 
     logger.info('Completed processing all files.')
 
@@ -287,7 +279,8 @@ async def process_all_files(
         logger.info(f"Documentation report written to '{output_file}'")
     except Exception as e:
         logger.error(f"Error writing final documentation to '{output_file}': {e}", exc_info=True)
-        sentry_sdk.capture_exception(e)
+        if 'sentry_sdk' in globals():
+            sentry_sdk.capture_exception(e)
 
     # Optional: Run Flake8 on all processed Python files to capture any remaining issues
     logger.info('Running Flake8 on processed files for final linting.')
