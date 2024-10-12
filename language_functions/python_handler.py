@@ -10,8 +10,7 @@ logger = logging.getLogger(__name__)
 class PythonHandler(BaseHandler):
     """Handler for Python language."""
 
-    def __init__(self, function_schema: Dict[str, Any]):
-        """Initializes the PythonHandler with a function schema."""
+    def __init__(self, function_schema):
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
@@ -37,42 +36,6 @@ class PythonHandler(BaseHandler):
                     self._process_function(node, is_async=True)
                     self.generic_visit(node)
 
-                def _process_function(self, node, is_async: bool):
-                    function_info = {
-                        "name": node.name,
-                        "description": "",  # Placeholder for AI to fill
-                        "parameters": [],
-                        "returns": {
-                            "type": self._get_type_annotation(node.returns),
-                            "description": ""
-                        },
-                        "raises": self._extract_exceptions(node),
-                        "examples": [],
-                        "decorators": [ast.unparse(dec) for dec in node.decorator_list],
-                        "async": is_async,
-                        "static": False,  # Top-level functions are not static
-                        "visibility": "public" if not node.name.startswith("_") else "private"
-                    }
-                    # Extract parameters
-                    defaults = node.args.defaults
-                    default_values = [self._get_constant_value(d) for d in defaults]
-                    start = len(node.args.args) - len(default_values) if len(default_values) < len(node.args.args) else 0
-
-                    for i, arg in enumerate(node.args.args):
-                        param_info = {
-                            "name": arg.arg,
-                            "type": self._get_type_annotation(arg.annotation),
-                            "description": "",
-                            "default": None,
-                            "optional": False
-                        }
-                        if i >= start:
-                            param_info["default"] = default_values[i - start]
-                            param_info["optional"] = True
-                        function_info["parameters"].append(param_info)
-                    
-                    code_structure["functions"].append(function_info)
-
                 def visit_ClassDef(self, node):
                     class_info = {
                         "name": node.name,
@@ -96,10 +59,7 @@ class PythonHandler(BaseHandler):
                                 "examples": [],
                                 "decorators": [ast.unparse(dec) for dec in body_item.decorator_list],
                                 "async": isinstance(body_item, ast.AsyncFunctionDef),
-                                "static": any(
-                                    isinstance(dec, ast.Name) and dec.id == 'staticmethod' 
-                                    for dec in body_item.decorator_list
-                                ),
+                                "static": any(isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list),
                                 "visibility": "public" if not body_item.name.startswith("_") else "private"
                             }
                             # Extract parameters, excluding 'self'
@@ -115,7 +75,7 @@ class PythonHandler(BaseHandler):
                                     "type": self._get_type_annotation(arg.annotation),
                                     "description": "",
                                     "default": None,
-                                    "optional": False
+                                    'optional': False  # Ensure there's a value here
                                 }
                                 if i >= start:
                                     param_info["default"] = default_values[i - start]
@@ -155,6 +115,47 @@ class PythonHandler(BaseHandler):
                                 }
                                 code_structure["variables"].append(variable_info)
                     self.generic_visit(node)
+
+                def _process_function(self, node, is_async: bool):
+                    """Processes a function node, extracting relevant information."""
+                    function_info = {
+                        'name': node.name,
+                        'description': '',
+                        'parameters': [],
+                        'returns': {
+                            'type': self._get_type_annotation(node.returns),
+                            'description': ''
+                        },
+                        'raises': self._extract_exceptions(node),
+                        'examples': [],
+                        'decorators': [ast.unparse(dec) for dec in node.decorator_list],
+                        'async': is_async,
+                        'static': False,
+                        'visibility': 'public' if not node.name.startswith('_') else 'private'
+                    }
+
+                    # Extract default values
+                    defaults = node.args.defaults
+                    default_values = [self._get_constant_value(d) for d in defaults]
+                    start = len(node.args.args) - len(default_values)
+
+                    for i, arg in enumerate(node.args.args):
+                        param_info = {
+                            'name': arg.arg,
+                            'type': self._get_type_annotation(arg.annotation),
+                            'description': '',
+                            'default': None,
+                            'optional': False
+                        }
+                        if i >= start:
+                            param_info['default'] = default_values[i - start]
+                            param_info['optional'] = True
+                        function_info['parameters'].append(param_info)
+
+                    # Log extracted parameters for debugging
+                    logger.debug(f"Extracted parameters for function '{node.name}': {function_info['parameters']}")
+
+                    code_structure['functions'].append(function_info)
 
                 def _get_type_annotation(self, annotation) -> str:
                     if annotation:
@@ -215,51 +216,41 @@ class PythonHandler(BaseHandler):
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """
-        Inserts Python docstrings based on the provided structured documentation.
-        """
-        logger.debug("Starting insert_docstrings")
+        """Inserts provided docstrings into the specified Python code."""
+        logger.debug('Starting insert_docstrings')
         try:
             tree = ast.parse(code)
             docstrings_mapping = {}
 
-            # Prepare docstrings mapping for functions
-            for func_doc in documentation.get("functions", []):
-                name = func_doc.get("name")
+            # Map function and class names to their docstrings
+            for func_doc in documentation.get('functions', []):
+                name = func_doc.get('name')
                 if name:
                     docstrings_mapping[name] = self.format_function_docstring(func_doc)
 
-            # Prepare docstrings mapping for classes and methods
-            for class_doc in documentation.get("classes", []):
-                class_name = class_doc.get("name")
+            for class_doc in documentation.get('classes', []):
+                class_name = class_doc.get('name')
                 if class_name:
-                    # Class docstring
-                    docstrings_mapping[class_name] = class_doc.get("description", "")
-                    # Methods
-                    for method_doc in class_doc.get("methods", []):
-                        method_name = method_doc.get("name")
+                    docstrings_mapping[class_name] = class_doc.get('description', '')
+                    for method_doc in class_doc.get('methods', []):
+                        method_name = method_doc.get('name')
                         if method_name:
-                            full_method_name = f"{class_name}.{method_name}"
+                            full_method_name = f'{class_name}.{method_name}'
                             docstrings_mapping[full_method_name] = self.format_function_docstring(method_doc)
 
-            # Assign parent attributes to nodes
-            for node in ast.walk(tree):
-                for child in ast.iter_child_nodes(node):
-                    child.parent = node
-
+            # Insert docstrings into the AST
             class DocstringInserter(ast.NodeTransformer):
                 def visit_FunctionDef(self, node):
-                    parent = getattr(node, "parent", None)
+                    parent = getattr(node, 'parent', None)
                     if isinstance(parent, ast.ClassDef):
-                        full_name = f"{parent.name}.{node.name}"
+                        full_name = f'{parent.name}.{node.name}'
                     else:
                         full_name = node.name
-
                     doc_content = docstrings_mapping.get(full_name)
                     if doc_content:
                         doc_node = ast.Expr(value=ast.Constant(value=doc_content))
                         node.body.insert(0, doc_node)
-                        logger.debug(f"Inserted docstring for function: {full_name}")
+                        logger.debug(f'Inserted docstring for function: {full_name}')
                     self.generic_visit(node)
                     return node
 
@@ -271,7 +262,7 @@ class PythonHandler(BaseHandler):
                     if doc_content:
                         doc_node = ast.Expr(value=ast.Constant(value=doc_content))
                         node.body.insert(0, doc_node)
-                        logger.debug(f"Inserted docstring for class: {node.name}")
+                        logger.debug(f'Inserted docstring for class: {node.name}')
                     self.generic_visit(node)
                     return node
 
@@ -279,44 +270,38 @@ class PythonHandler(BaseHandler):
             modified_tree = inserter.visit(tree)
             ast.fix_missing_locations(modified_tree)
             modified_code = ast.unparse(modified_tree)
-            logger.debug("Completed inserting Python docstrings")
+            logger.debug('Completed inserting Python docstrings')
             return modified_code
         except Exception as e:
-            logger.error(f"Error inserting Python docstrings: {e}")
+            logger.error(f'Error inserting Python docstrings: {e}')
             return code
-
+        
     def format_function_docstring(self, func: Dict[str, Any]) -> str:
-        """
-        Formats the function documentation into a Google-style docstring.
-        """
+        """Formats the function documentation into a Google-style docstring."""
         lines = [f"{func.get('description', '').strip()}"]
-
         params = func.get('parameters', [])
         if params:
-            lines.append("\nArgs:")
+            lines.append('\nArgs:')
             for param in params:
                 param_line = f"    {param['name']}"
                 if param.get('type'):
                     param_line += f" ({param['type']})"
                 param_line += f": {param.get('description', '').strip()}"
                 lines.append(param_line)
-
         returns = func.get('returns', {})
         if returns and returns.get('description'):
-            lines.append("\nReturns:")
-            ret_line = "    "
+            lines.append('\nReturns:')
+            ret_line = '    '
             if returns.get('type'):
                 ret_line += f"{returns.get('type')}: "
             ret_line += returns.get('description', '').strip()
             lines.append(ret_line)
-
         raises = func.get('raises', [])
         if raises:
-            lines.append("\nRaises:")
+            lines.append('\nRaises:')
             for exc in raises:
                 exc_line = f"    {exc.get('type', '')}: {exc.get('description', '').strip()}"
                 lines.append(exc_line)
-
         return '\n'.join(lines)
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
