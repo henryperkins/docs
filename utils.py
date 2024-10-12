@@ -206,20 +206,27 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
 
 def load_function_schema(schema_path: str) -> dict:
     """
-    Loads the function schema.
-
+    Loads the function schema from the specified JSON file.
+    
     Args:
         schema_path (str): Path to the function schema JSON file.
-
+    
     Returns:
-        dict: Function schema.
+        dict: The function schema containing 'functions' and 'definitions'.
     """
     logger.debug(f"Attempting to load function schema from '{schema_path}'.")
     schema = load_json_schema(schema_path)
-    if not schema:
-        logger.critical(f"Failed to load function schema from '{schema_path}'. Exiting.")
+    if not isinstance(schema, dict):
+        logger.critical(f"Function schema should be a JSON object with 'functions' and 'definitions'. Found type: {type(schema)}")
+        sys.exit(1)
+    if "functions" not in schema:
+        logger.critical(f"Function schema missing 'functions' key.")
+        sys.exit(1)
+    if "definitions" not in schema:
+        logger.critical(f"Function schema missing 'definitions' key.")
         sys.exit(1)
     return schema
+
 
 def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
     """
@@ -304,7 +311,7 @@ async def fetch_documentation(
     prompt: str,
     semaphore: asyncio.Semaphore,
     model_name: str,
-    function_schema: dict,
+    function_schema: Dict[str, Any],
     retry: int = 3,
     use_azure: bool = False
 ) -> Optional[dict]:
@@ -321,22 +328,22 @@ async def fetch_documentation(
                     response = await aclient.chat.completions.create(
                         model=model_name,
                         messages=messages,
-                        functions=[function_schema],
+                        functions=function_schema["functions"],  # Corrected line
                         function_call="auto"
                     )
                 else:
                     response = await aclient.chat.completions.create(
                         model=model_name,
                         messages=messages,
-                        functions=[function_schema],
+                        functions=function_schema["functions"],  # Corrected line
                         function_call="auto"
                     )
 
                 logger.debug(f"API Response: {response}")
                 choice = response.choices[0]
                 message = choice.message
-                if message.get("function_call"):
-                    arguments = message["function_call"].get("arguments")
+                if message.function_call:
+                    arguments = message.function_call.arguments
                     try:
                         documentation = json.loads(arguments)
                         logger.debug("Received documentation via function_call.")
@@ -382,7 +389,6 @@ async def fetch_documentation(
                 logger.error(f"An unexpected error occurred: {e}", exc_info=True)
                 return None
     return None
-
 # ----------------------------
 # Code Formatting and Cleanup
 # ----------------------------

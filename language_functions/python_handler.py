@@ -45,7 +45,11 @@ class PythonHandler(BaseHandler):
                         "visibility": "public" if not node.name.startswith("_") else "private"
                     }
                     # Extract parameters
-                    for arg in node.args.args:
+                    defaults = node.args.defaults
+                    default_values = [self._get_constant_value(d) for d in defaults]
+                    start = len(node.args.args) - len(default_values) if len(default_values) < len(node.args.args) else 0
+
+                    for i, arg in enumerate(node.args.args):
                         param_info = {
                             "name": arg.arg,
                             "type": self._get_type_annotation(arg.annotation),
@@ -53,13 +57,11 @@ class PythonHandler(BaseHandler):
                             "default": None,
                             "optional": False
                         }
-                        # Determine if parameter has a default value
-                        defaults = node.args.defaults
-                        default_values = [self._get_constant_value(d) for d in defaults]
-                        if arg in node.args.args[-len(defaults):]:
-                            param_info["default"] = default_values[node.args.args.index(arg) - (len(node.args.args) - len(defaults))]
+                        if i >= start:
+                            param_info["default"] = default_values[i - start]
                             param_info["optional"] = True
                         function_info["parameters"].append(param_info)
+                    
                     code_structure["functions"].append(function_info)
                     self.generic_visit(node)
 
@@ -90,22 +92,24 @@ class PythonHandler(BaseHandler):
                                 "visibility": "public" if not body_item.name.startswith("_") else "private"
                             }
                             # Extract parameters, excluding 'self'
-                            for arg in body_item.args.args:
-                                if arg.arg != 'self':
-                                    param_info = {
-                                        "name": arg.arg,
-                                        "type": self._get_type_annotation(arg.annotation),
-                                        "description": "",
-                                        "default": None,
-                                        "optional": False
-                                    }
-                                    # Determine if parameter has a default value
-                                    defaults = body_item.args.defaults
-                                    default_values = [self._get_constant_value(d) for d in defaults]
-                                    if arg in body_item.args.args[-len(defaults):]:
-                                        param_info["default"] = default_values[body_item.args.args.index(arg) - (len(body_item.args.args) - len(defaults))]
-                                        param_info["optional"] = True
-                                    method_info["parameters"].append(param_info)
+                            defaults = body_item.args.defaults
+                            default_values = [self._get_constant_value(d) for d in defaults]
+                            start = len(body_item.args.args) - len(default_values) if len(default_values) < len(body_item.args.args) else 0
+                            
+                            for i, arg in enumerate(body_item.args.args):
+                                if arg.arg == 'self':
+                                    continue  # Skip 'self'
+                                param_info = {
+                                    "name": arg.arg,
+                                    "type": self._get_type_annotation(arg.annotation),
+                                    "description": "",
+                                    "default": None,
+                                    "optional": False
+                                }
+                                if i >= start:
+                                    param_info["default"] = default_values[i - start]
+                                    param_info["optional"] = True
+                                method_info["parameters"].append(param_info)
                             class_info["methods"].append(method_info)
                         elif isinstance(body_item, ast.Assign):
                             # Handle attributes
