@@ -298,7 +298,9 @@ class PythonHandler(BaseHandler):
                 process = subprocess.run(['flake8', temp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 os.remove(temp_file)
                 if process.returncode != 0:
-                    logger.error(f'Flake8 validation failed for {file_path}:\n{process.stdout}')
+                    flake8_output = process.stdout + process.stderr
+                    logger.error(f'Flake8 validation failed for {file_path}:\n{flake8_output}')
+
                     return False
                 else:
                     logger.debug('Flake8 validation successful.')

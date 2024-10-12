@@ -16,7 +16,7 @@ from typing import Any, Set, List, Optional, Dict, Tuple
 from bs4 import BeautifulSoup, Comment
 from jsonschema import validate, ValidationError
 from logging.handlers import RotatingFileHandler
-from openai import AsyncAzureOpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError
+from openai import OpenAIError, RateLimitError, APIConnectionError, APIError, AsyncAzureOpenAI
 
 # Load environment variables
 load_dotenv()
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ----------------------------
 
-DEFAULT_EXCLUDED_DIRS = {".git", "__pycache__", "node_modules", ".venv", ".idea"}
+DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea', 'scripts'}
 DEFAULT_EXCLUDED_FILES = {".DS_Store"}
 DEFAULT_SKIP_TYPES = {".json", ".md", ".txt", ".csv", ".lock"}
 
@@ -308,7 +308,6 @@ def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
 # ----------------------------
 
 async def fetch_documentation(
-    session: aiohttp.ClientSession,
     prompt: str,
     semaphore: asyncio.Semaphore,
     model_name: str,
@@ -316,79 +315,96 @@ async def fetch_documentation(
     retry: int = 3,
     use_azure: bool = False
 ) -> Optional[dict]:
-    logger.debug(f"Fetching documentation for model: {model_name}, use_azure: {use_azure}")
+    logger.debug(f'Fetching documentation for model: {model_name}, use_azure: {use_azure}')
+    
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
                 messages = [
-                    {"role": "system", "content": "You are a helpful assistant that generates code documentation."},
-                    {"role": "user", "content": prompt},
+                    {
+                        'role': 'system',
+                        'content': 'You are an AI assistant that generates code documentation in JSON format based on provided code structure.'
+                    },
+                    {
+                        'role': 'user',
+                        'content': prompt
+                    }
                 ]
 
                 if use_azure:
-                    response = await aclient.chat.completions.create(
-                        model=model_name,
+                    # Set Azure-specific credentials
+                    openai.api_type = 'azure'
+                    openai.api_key = AZURE_OPENAI_API_KEY
+                    openai.api_base = AZURE_OPENAI_ENDPOINT
+                    openai.api_version = API_VERSION
+                    response = await openai.ChatCompletion.acreate(
+                        engine=model_name,  # Use 'engine' instead of 'model' for Azure
                         messages=messages,
-                        functions=function_schema["functions"],  # Corrected line
-                        function_call="auto"
+                        functions=function_schema['functions'],
+                        function_call={'name': 'generate_documentation'}
                     )
                 else:
-                    response = await aclient.chat.completions.create(
+                    response = await openai.ChatCompletion.acreate(
                         model=model_name,
                         messages=messages,
-                        functions=function_schema["functions"],  # Corrected line
-                        function_call="auto"
+                        functions=function_schema['functions'],
+                        function_call={'name': 'generate_documentation'}
                     )
 
-                logger.debug(f"API Response: {response}")
+                logger.debug(f'API Response: {response}')
                 choice = response.choices[0]
                 message = choice.message
-                if message.function_call:
-                    arguments = message.function_call.arguments
-                    try:
-                        documentation = json.loads(arguments)
-                        logger.debug("Received documentation via function_call.")
-                        return documentation
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Error decoding JSON from function_call arguments: {e}")
-                        logger.error(f"Arguments Content: {arguments}")
+
+                if hasattr(message, 'function_call'):
+                    function_call = message.function_call
+                    if function_call.name == 'generate_documentation':
+                        arguments = function_call.arguments
+                        try:
+                            documentation = json.loads(arguments)
+                            logger.debug('Received documentation via function_call.')
+                            return documentation
+                        except json.JSONDecodeError as e:
+                            logger.error(f'Error decoding JSON from function_call arguments: {e}')
+                            logger.error(f'Arguments Content: {arguments}')
+                            return None
+                    else:
+                        logger.error('Unexpected function called in the response.')
                         return None
                 else:
-                    logger.error("No function_call found in the response.")
+                    logger.error('No function_call found in the response.')
                     return None
+
             except RateLimitError as e:
-                logger.error(f"OpenAI API rate limit exceeded: {e}")
+                logger.error(f'OpenAI API rate limit exceeded: {e}')
                 if attempt < retry:
                     wait_time = 2 ** attempt
-                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    logger.info(f'Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})')
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error("All retry attempts failed due to rate limiting.")
+                    logger.error('All retry attempts failed due to rate limiting.')
                     return None
             except APIConnectionError as e:
-                logger.error(f"Failed to connect to OpenAI API: {e}")
+                logger.error(f'Failed to connect to OpenAI API: {e}')
                 if attempt < retry:
                     wait_time = 2 ** attempt
-                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    logger.info(f'Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})')
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error("All retry attempts failed due to connection errors.")
+                    logger.error('All retry attempts failed due to connection errors.')
                     return None
             except APIError as e:
-                logger.error(f"OpenAI API returned an API Error: {e}")
+                logger.error(f'OpenAI API returned an API Error: {e}')
                 if attempt < retry:
                     wait_time = 2 ** attempt
-                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    logger.info(f'Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})')
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error("All retry attempts failed due to API errors.")
+                    logger.error('All retry attempts failed due to API errors.')
                     return None
-            except OpenAIError as e:
-                logger.error(f"An OpenAI error occurred: {e}")
-                return None
             except Exception as e:
-                logger.error(f"An unexpected error occurred: {e}", exc_info=True)
+                logger.error(f'An unexpected error occurred: {e}', exc_info=True)
                 return None
+
     return None
 # ----------------------------
 # Code Formatting and Cleanup
@@ -429,28 +445,32 @@ def validate_code(file_path: str) -> bool:
         return False
 
 def clean_unused_imports(code: str, file_path: str) -> str:
-    """Cleans up unused imports in the given code."""
-    try:
-        if not file_path:
-            logger.error("Invalid file path provided.")
-            return code
+    """Cleans unused imports from the given code string.
 
+    Args:
+        code (str): The code from which to remove unused imports.
+        file_path (str): The path to the file whose imports are being cleaned.
+
+    Returns:
+        str: The cleaned code with unused imports removed."""
+    logger.debug('Cleaning unused imports in the given code.')
+    try:
         command = [
             'autoflake',
             '--remove-all-unused-imports',
             '--remove-unused-variables',
-            '--stdin-display-name', file_path,
-            '--stdin',
-            '--stdout'
+            '--stdin-display-name',
+            file_path,
+            # '-' needs to be placed after the options
+            '-',
         ]
-        logger.debug(f"Running command: {' '.join(command)} with file_path: {file_path}")
-
+        logger.debug(f'Running command: {" ".join(command)}')
         process = subprocess.run(
             command,
             input=code.encode('utf-8'),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            check=True
+            check=True,
         )
         cleaned_code = process.stdout.decode('utf-8')
         logger.debug('Successfully cleaned code with Autoflake.')
@@ -461,6 +481,8 @@ def clean_unused_imports(code: str, file_path: str) -> str:
     except Exception as e:
         logger.error(f'Unexpected error during Autoflake processing: {e}')
         return code
+
+
 
 async def update_markdown_with_code(cleaned_code: str, markdown_path: str) -> None:
     """Updates the markdown file with the cleaned code."""
@@ -605,7 +627,17 @@ def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[s
 # ----------------------------
 
 def generate_documentation_prompt(file_name: str, code_structure: Dict[str, Any], project_info: Optional[str], style_guidelines: Optional[str], language: str) -> str:
-    """Generates a prompt for documentation generation based on file details and guidelines."""
+    """Generates a prompt for documentation generation based on file and project details.
+
+    Args:
+        file_name (str): The name of the file for which documentation is needed.
+        code_structure (Dict[str, Any]): The structure of the code to document.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Style guidelines to adhere to.
+        language (str): The language of the code to document.
+
+    Returns:
+        str: The generated documentation prompt."""
     prompt = 'You are an experienced software developer tasked with generating comprehensive documentation for a specific file in a codebase.'
     if project_info:
         prompt += f'\n\n**Project Information:**\n{project_info}'
@@ -614,13 +646,48 @@ def generate_documentation_prompt(file_name: str, code_structure: Dict[str, Any]
     prompt += f'\n\n**File Name:** {file_name}'
     prompt += f'\n\n**Language:** {language}'
     prompt += f'\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```'
-    prompt += '\n**Instructions:** Based on the above code structure, generate the following documentation sections specifically for this file:\n'
-    prompt += '1. **Overview:** A high-level overview of the module or class, explaining its purpose, responsibilities, and integration within the project.\n'
-    prompt += '2. **Summary:** A detailed summary of this file, including its purpose, key components, and how it integrates with the overall project.\n'
-    prompt += '3. **Changes Made:** A comprehensive list of changes or updates made to this file.\n'
-    prompt += '4. **Functions:** Provide detailed documentation for each function, including its purpose, parameters (`@param`), return values (`@returns` or `@return`), and whether it is asynchronous. Include argument types and descriptions.\n'
-    prompt += '5. **Classes:** Provide detailed documentation for each class, including its purpose, methods, inheritance details (`@extends` or `@implements`), and any interfaces it implements. Also, provide documentation for each method within the class, including argument types and descriptions.\n'
+
+    prompt += '''
+    **Instructions:**
+    Based on the above code structure, generate comprehensive documentation in JSON format that matches the following schema:
+
+    {
+      "summary": "A detailed summary of the file.",
+      "changes_made": ["List of changes made to the file."],
+      "functions": [
+        {
+          "name": "Function name",
+          "docstring": "Detailed description of the function, including its purpose and any important details.",
+          "args": ["List of argument names"],
+          "async": true or false
+        },
+        ...
+      ],
+      "classes": [
+        {
+          "name": "Class name",
+          "docstring": "Detailed description of the class.",
+          "methods": [
+            {
+              "name": "Method name",
+              "docstring": "Detailed description of the method.",
+              "args": ["List of argument names"],
+              "async": true or false,
+              "type": "Method type (e.g., 'instance', 'class', 'static')"
+            },
+            ...
+          ]
+        },
+        ...
+      ]
+    }
+
+    Ensure that all 'docstring' fields are filled with detailed descriptions.
+    The final output should be a JSON object that strictly follows the schema, without any additional commentary or explanations.
+    '''
+
     return prompt
+
 
 async def write_documentation_report(documentation: Optional[Dict[str, Any]], language: str, file_path: str, repo_root: str, new_content: str) -> str:
     """Asynchronously writes a documentation report to a specified file path.

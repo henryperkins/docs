@@ -48,7 +48,7 @@ class JSTsHandler(BaseHandler):
         """Inserts JSDoc comments into JS/TS code based on the provided documentation."""
         logger.debug("Inserting JSDoc docstrings into JS/TS code.")
         try:
-            script_path = "scripts/acorn_inserter.js"
+            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "acorn_inserter.js")
             input_data = {
                 "code": code,
                 "documentation": documentation,

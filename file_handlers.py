@@ -69,18 +69,20 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
 async def process_file(
-    session: aiohttp.ClientSession,
     file_path: str,
+    repo_root: str,
+    excluded_dirs: Set[str],
+    excluded_files: Set[str],
     skip_types: Set[str],
     semaphore: asyncio.Semaphore,
     model_name: str,
     function_schema: Dict[str, Any],
-    repo_root: str,
+    retry: int,
+    use_azure: bool,
+    language: str,
     project_info: str,
-    style_guidelines: str,
-    safe_mode: bool,
-    use_azure: bool = False
-) -> Optional[str]:
+    style_guidelines: str
+) -> None:
     """
     Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content.
     
@@ -143,13 +145,14 @@ async def process_file(
                     language=language
                 )
                 documentation = await fetch_documentation(
-                    session=session,
                     prompt=prompt,
                     semaphore=semaphore,
                     model_name=model_name,
                     function_schema=function_schema,
+                    retry=retry,
                     use_azure=use_azure
                 )
+
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
         except Exception as e:
@@ -158,17 +161,16 @@ async def process_file(
         new_content = content
 
         if documentation:
+            logger.debug(f"Documentation received for '{file_path}': {documentation}")
             try:
                 loop = asyncio.get_event_loop()
                 
                 # Insert docstrings using the handler
                 new_content = await loop.run_in_executor(None, handler.insert_docstrings, content, documentation)
                 
-                # Step 1: Clean unused imports and variables
-                new_content = clean_unused_imports(new_content, file_path)
-                
-                # Step 2: Format code with Black
-                new_content = format_with_black(new_content)
+                if language.lower() == 'python':
+                    new_content = clean_unused_imports(new_content, file_path)
+                    new_content = format_with_black(new_content)
                 
                 if not safe_mode:
                     # Step 3: Validate code
@@ -235,7 +237,6 @@ async def process_all_files(
     for file_path in file_paths:
         task = asyncio.create_task(
             process_file(
-                session=session,
                 file_path=file_path,
                 skip_types=skip_types,
                 semaphore=semaphore,
@@ -244,7 +245,6 @@ async def process_all_files(
                 repo_root=repo_root,
                 project_info=project_info,
                 style_guidelines=style_guidelines,
-                safe_mode=safe_mode,
                 use_azure=use_azure
             )
         )
