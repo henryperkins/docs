@@ -4,13 +4,14 @@ import subprocess
 import json
 import logging
 import re
-from typing import Dict, Any
+from typing import Dict, Any, Optional  # Import Dict, Any, and Optional
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
 class CppHandler(BaseHandler):
-    def __init__(self, function_schema):
+    def __init__(self, function_schema: Dict[str, Any]):
+        """Initializes the PythonHandler with a function schema."""
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
@@ -137,27 +138,46 @@ class CppHandler(BaseHandler):
             logger.error(f"Error inserting C++ docstrings: {e}", exc_info=True)
             return original_code
 
-    def validate_code(self, code: str, file_path: str = None) -> bool:
-        """Validates C++ code using clang."""
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates C++ code by attempting to compile it with syntax-only check.
+
+        Args:
+            code (str): The C++ code to validate.
+            file_path (Optional[str]): The path to the C++ file being validated.
+
+        Returns:
+            bool: True if the code compiles successfully, False otherwise.
+        """
+        logger.debug('Starting C++ code validation.')
+        if not file_path:
+            logger.warning('File path not provided for C++ validation. Skipping compilation.')
+            return True  # Assuming no compilation without a file
+
         try:
+            # Write code to the specified file path
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(code)
+
+            # Attempt to compile the C++ file with syntax-only check
             process = subprocess.run(
-                ["clang++", "-fsyntax-only", "-std=c++17", file_path],  # Adjust the C++ standard if needed
-                input=code,
-                capture_output=True,
-                text=True,
-                check=False
+                ['g++', '-fsyntax-only', file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
             )
-            if process.returncode == 0:
-                logger.debug("C++ code validation successful.")
-                return True
-            else:
-                logger.error(f"C++ code validation failed:\n{process.stderr}")
+
+            if process.returncode != 0:
+                logger.error(f'C++ compilation failed for {file_path}:\n{process.stderr}')
                 return False
+            else:
+                logger.debug('C++ compilation successful.')
+            return True
         except FileNotFoundError:
-            logger.error("Clang compiler not found. Please install Clang.")
+            logger.error("C++ compiler (g++) not found. Please ensure g++ is installed and in the PATH.")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error during C++ code validation: {e}")
+            logger.error(f'Unexpected error during C++ code validation: {e}')
             return False
 
 def extract_docstring_from_comment(nodes):

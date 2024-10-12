@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 class PythonHandler(BaseHandler):
     """Handler for Python language."""
 
-    def __init__(self, function_schema):
+    def __init__(self, function_schema: Dict[str, Any]):
+        """Initializes the PythonHandler with a function schema."""
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
@@ -308,27 +309,52 @@ class PythonHandler(BaseHandler):
 
         return '\n'.join(lines)
 
-    def validate_code(self, code: str, file_path: str = None) -> bool:
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates the modified Python code for syntax correctness.
-        """
-        try:
-            ast.parse(code)
-            logger.debug("Python syntax validation successful.")
+        Validates Python code for syntax correctness and style compliance.
 
-            # Optionally, validate using external tools like flake8 if file_path is available
+        Args:
+            code (str): The Python code to validate.
+            file_path (Optional[str]): The path to the file being validated.
+
+        Returns:
+            bool: True if the code is valid, False otherwise.
+        """
+        logger.debug('Starting Python code validation.')
+        try:
+            # Step 1: Syntax Validation using ast.parse
+            ast.parse(code)
+            logger.debug('Python syntax validation successful.')
+
+            # Step 2: Style Linting using flake8
             if file_path:
-                with open(file_path, 'w', encoding='utf-8') as f:
+                # Write code to a temporary file for flake8
+                temp_file = f"{file_path}.temp"
+                with open(temp_file, 'w', encoding='utf-8') as f:
                     f.write(code)
-                result = subprocess.run(["flake8", file_path], capture_output=True, text=True)
-                if result.returncode != 0:
-                    logger.error(f"flake8 validation failed:\n{result.stdout}")
+                
+                process = subprocess.run(
+                    ['flake8', temp_file],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+
+                # Remove temporary file
+                os.remove(temp_file)
+
+                if process.returncode != 0:
+                    logger.error(f'Flake8 validation failed for {file_path}:\n{process.stdout}')
                     return False
+                else:
+                    logger.debug('Flake8 validation successful.')
+            else:
+                logger.warning('File path not provided for flake8 validation. Skipping flake8.')
 
             return True
         except SyntaxError as e:
-            logger.error(f"Python syntax validation failed: {e}")
+            logger.error(f'Python syntax error: {e}')
             return False
         except Exception as e:
-            logger.error(f"Unexpected error during Python code validation: {e}")
+            logger.error(f'Unexpected error during Python code validation: {e}')
             return False

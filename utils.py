@@ -402,24 +402,25 @@ def format_with_black(code: str) -> str:
 
     Returns:
         str: The formatted Python code.
-
-    Raises:
-        Exception: If Black cannot format the code.
     """
     try:
-        formatted_code = black.format_str(code, mode=black.Mode())
+        process = subprocess.run(
+            ['black', '--quiet', '-'],
+            input=code.encode('utf-8'),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        formatted_code = process.stdout.decode('utf-8')
         logger.debug('Successfully formatted code with Black.')
         return formatted_code
-    except black.NothingChanged:
-        logger.debug('No changes made by Black; code is already formatted.')
-        return code
-    except Exception as e:
-        logger.error(f'Error formatting code with Black: {e}')
-        raise e  # Raise exception to be handled by the caller
+    except subprocess.CalledProcessError as e:
+        logger.error(f'Black formatting failed: {e.stderr.decode("utf-8")}')
+        return code  # Return unformatted code if Black fails
 
 def clean_unused_imports(code: str) -> str:
     """
-    Removes unused imports from Python code using autoflake.
+    Removes unused imports and variables from Python code using Autoflake.
 
     Args:
         code (str): The Python code to clean.
@@ -428,45 +429,44 @@ def clean_unused_imports(code: str) -> str:
         str: The cleaned Python code.
     """
     try:
-        cleaned_code = subprocess.check_output(
-            ["autoflake", "--remove-all-unused-imports", "--stdout", "-"],
-            input=code.encode("utf-8"),
-            stderr=subprocess.STDOUT,
+        process = subprocess.run(
+            ['autoflake', '--remove-all-unused-imports', '--remove-unused-variables', '--in-place', '--stdin', '--stdout'],
+            input=code.encode('utf-8'),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
         )
-        logger.debug("Successfully removed unused imports with autoflake.")
-        return cleaned_code.decode("utf-8")
+        cleaned_code = process.stdout.decode('utf-8')
+        logger.debug('Successfully cleaned code with Autoflake.')
+        return cleaned_code
     except subprocess.CalledProcessError as e:
-        logger.error(f"Autoflake failed: {e.output.decode('utf-8')}")
-        return code  # Return original code if autoflake fails
-    except FileNotFoundError:
-        logger.error("Autoflake is not installed. Please install it using 'pip install autoflake'.")
-        return code
-    except Exception as e:
-        logger.error(f"Error cleaning imports with autoflake: {e}")
-        return code
+        logger.error(f'Autoflake failed: {e.stderr.decode("utf-8")}')
+        return code  # Return original code if Autoflake fails
 
 def run_flake8(file_path: str) -> Optional[str]:
     """
-    Runs flake8 on the specified file and returns the output.
+    Runs Flake8 on the specified file and returns the output if there are linting issues.
 
     Args:
-        file_path (str): Path to the Python file to check.
+        file_path (str): The path to the file to lint.
 
     Returns:
-        Optional[str]: The flake8 output if any issues are found, else None.
+        Optional[str]: The Flake8 output if issues are found, else None.
     """
     try:
-        result = subprocess.run(
-            ["flake8", file_path],
-            capture_output=True,
+        process = subprocess.run(
+            ['flake8', file_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,  # Do not raise exception on non-zero exit
+            check=False  # Do not raise exception on linting errors
         )
-        if result.stdout:
-            return result.stdout.strip()
+        if process.stdout:
+            logger.debug(f'Flake8 issues found in {file_path}:\n{process.stdout}')
+            return process.stdout.strip()
         return None
     except Exception as e:
-        logger.error(f"Error running flake8 on '{file_path}': {e}", exc_info=True)
+        logger.error(f'Error running Flake8 on {file_path}: {e}')
         return None
 
 # ----------------------------

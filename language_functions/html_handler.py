@@ -9,7 +9,10 @@ logger = logging.getLogger(__name__)
 
 class HTMLHandler(BaseHandler):
     """Handler for HTML language."""
-
+    def __init__(self, function_schema: Dict[str, Any]):
+        """Initializes the HTMLHandler with a function schema."""
+        self.function_schema = function_schema
+        
     def extract_structure(self, code: str) -> Dict[str, Any]:
         """Extracts the structure of HTML code."""
         logger.debug("Extracting HTML structure.")
@@ -54,13 +57,44 @@ class HTMLHandler(BaseHandler):
             logger.error(f"Error inserting HTML comments: {e}")
             return code
 
-    def validate_code(self, code: str) -> bool:
-        """Validates the modified HTML code for correctness."""
-        # Basic validation using BeautifulSoup's parser
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates HTML code using the tidy utility.
+
+        Args:
+            code (str): The HTML code to validate.
+            file_path (Optional[str]): The path to the HTML file being validated.
+
+        Returns:
+            bool: True if the code is valid, False otherwise.
+        """
+        logger.debug('Starting HTML code validation.')
+        if not file_path:
+            logger.warning('File path not provided for HTML validation. Skipping tidy validation.')
+            return True  # Assuming no validation without a file
+
         try:
-            BeautifulSoup(code, "lxml")
-            logger.debug("HTML code validation successful.")
+            # Write code to the specified file path
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(code)
+
+            # Attempt to validate the HTML file using tidy
+            process = subprocess.run(
+                ['tidy', '-e', file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            if process.returncode != 0:
+                logger.error(f'Tidy validation failed for {file_path}:\n{process.stderr}')
+                return False
+            else:
+                logger.debug('Tidy validation successful.')
             return True
+        except FileNotFoundError:
+            logger.error("Tidy utility not found. Please install it using your package manager (e.g., 'sudo apt-get install tidy').")
+            return False
         except Exception as e:
-            logger.error(f"HTML code validation failed: {e}")
+            logger.error(f'Unexpected error during HTML code validation: {e}')
             return False

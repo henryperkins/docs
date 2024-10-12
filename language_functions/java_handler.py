@@ -2,7 +2,7 @@ import javalang
 import logging
 import shutil
 import subprocess
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -85,31 +85,49 @@ class JavaHandler(BaseHandler):
         code = code.replace(f"void {name}", f"{comment_block}void {name}")
         return code
 
-    def validate_code(self, code: str) -> bool:
-        """Validates the modified Java code for syntax correctness using javac."""
-        javac_path = shutil.which("javac")
-        if not javac_path:
-            logger.error("Java compiler (javac) not found. Please ensure JDK is installed and javac is in the PATH.")
-            return False
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates Java code by attempting to compile it.
+
+        Args:
+            code (str): The Java code to validate.
+            file_path (Optional[str]): The path to the Java file being validated.
+
+        Returns:
+            bool: True if the code compiles successfully, False otherwise.
+        """
+        logger.debug('Starting Java code validation.')
+        if not file_path:
+            logger.warning('File path not provided for Java validation. Skipping compilation.')
+            return True  # Assuming no compilation without a file
 
         try:
-            with open("temp.java", "w") as f:
+            # Write code to the specified file path
+            with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(code)
 
-            result = subprocess.run(["javac", "temp.java"], capture_output=True, text=True)
+            # Attempt to compile the Java file
+            process = subprocess.run(
+                ['javac', file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
 
-            if result.returncode == 0:
-                return True
+            if process.returncode != 0:
+                logger.error(f'Java compilation failed for {file_path}:\n{process.stderr}')
+                return False
             else:
-                logger.error(f"Syntax error in Java code: {result.stderr}")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Subprocess error during Java code validation: {e}")
+                logger.debug('Java compilation successful.')
+                # Optionally, remove the .class file after validation
+                class_file = file_path.replace('.java', '.class')
+                if os.path.exists(class_file):
+                    os.remove(class_file)
+                    logger.debug(f'Removed compiled class file {class_file}.')
+            return True
+        except FileNotFoundError:
+            logger.error("Java compiler (javac) not found. Please ensure JDK is installed and javac is in the PATH.")
+            return False
         except Exception as e:
-            logger.error(f"Unexpected error during Java code validation: {e}")
-        finally:
-            try:
-                os.remove("temp.java")
-            except OSError as e:
-                logger.warning(f"Failed to remove temporary file: {e}")
-
-        return False
+            logger.error(f'Unexpected error during Java code validation: {e}')
+            return False

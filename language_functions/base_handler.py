@@ -4,7 +4,7 @@ import abc
 import logging
 import subprocess
 import shutil
-from typing import Dict, Any
+from typing import Dict, Any, Optional  # Import Dict, Any, and Optional
 
 logger = logging.getLogger(__name__)
 
