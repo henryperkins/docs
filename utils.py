@@ -393,27 +393,59 @@ async def fetch_documentation(
 # Code Formatting and Cleanup
 # ----------------------------
 
-def clean_unused_imports(code: str, file_path: str) -> str:
-    """
-    Removes unused imports and variables from Python code using Autoflake.
-
-    Args:
-        code (str): The Python code to clean.
-        file_path (str): The path to the file being cleaned (used for display name).
-
-    Returns:
-        str: The cleaned Python code.
-    """
+async def process_code_and_update_markdown(code: str, markdown_path: str) -> None:
+    """Processes code with Autoflake and updates the markdown file."""
     try:
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.py') as temp_file:
+            temp_file.write(code.encode('utf-8'))
+            temp_file_path = temp_file.name
+
+        # Validate and clean code
+        if validate_code(temp_file_path):
+            cleaned_code = clean_unused_imports(temp_file_path)
+
+            # Update markdown
+            await update_markdown_with_code(cleaned_code, markdown_path)
+
+    finally:
+        # Clean up the temporary file
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+def validate_code(file_path: str) -> bool:
+    """Validates Python code for syntax correctness and style compliance."""
+    logger.debug('Starting Python code validation.')
+    try:
+        process = subprocess.run(['flake8', file_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if process.returncode != 0:
+            logger.error(f'Flake8 validation failed:\n{process.stdout}')
+            return False
+        logger.debug('Flake8 validation successful.')
+        return True
+    except Exception as e:
+        logger.error(f'Unexpected error during Python code validation: {e}')
+        return False
+
+def clean_unused_imports(code: str, file_path: str) -> str:
+    """Cleans up unused imports in the given code."""
+    try:
+        if not file_path:
+            logger.error("Invalid file path provided.")
+            return code
+
+        command = [
+            'autoflake',
+            '--remove-all-unused-imports',
+            '--remove-unused-variables',
+            '--stdin-display-name', file_path,
+            '--stdin',
+            '--stdout'
+        ]
+        logger.debug(f"Running command: {' '.join(command)} with file_path: {file_path}")
+
         process = subprocess.run(
-            [
-                'autoflake',
-                '--remove-all-unused-imports',
-                '--remove-unused-variables',
-                '--stdin-display-name', file_path,  # Provide the filename here
-                '--stdin',
-                '--stdout'
-            ],
+            command,
             input=code.encode('utf-8'),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -424,11 +456,20 @@ def clean_unused_imports(code: str, file_path: str) -> str:
         return cleaned_code
     except subprocess.CalledProcessError as e:
         logger.error(f'Autoflake failed: {e.stderr.decode("utf-8")}')
-        return code  # Return original code if Autoflake fails
+        return code
     except Exception as e:
         logger.error(f'Unexpected error during Autoflake processing: {e}')
-        return code  # Return original code if any other error occurs
+        return code
 
+async def update_markdown_with_code(cleaned_code: str, markdown_path: str) -> None:
+    """Updates the markdown file with the cleaned code."""
+    try:
+        async with aiofiles.open(markdown_path, 'a', encoding='utf-8') as f:
+            await f.write(f"```python\n{cleaned_code}\n```\n")
+        logger.debug(f"Updated markdown file: {markdown_path}")
+    except Exception as e:
+        logger.error(f"Error updating markdown file: {e}")
+    
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
