@@ -5,6 +5,7 @@ import logging
 import shutil
 import aiofiles
 import aiohttp
+import json
 import asyncio
 from typing import Optional, Set, List, Dict, Any
 from tqdm.asyncio import tqdm
@@ -15,7 +16,6 @@ from utils import (
     get_language,
     is_valid_extension,
     generate_documentation_prompt,
-    fetch_documentation,
     write_documentation_report,
     generate_table_of_contents,
     clean_unused_imports,
@@ -68,37 +68,108 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             os.remove(backup_path)
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
+async def fetch_documentation_rest(
+    session: aiohttp.ClientSession,
+    prompt: str,
+    semaphore: asyncio.Semaphore,
+    deployment_name: str,
+    function_schema: Dict[str, Any],
+    azure_api_key: str,
+    azure_endpoint: str,
+    azure_api_version: str,
+    retry: int = 3
+) -> Optional[Dict[str, Any]]:
+    """Fetches documentation using Azure OpenAI REST API with function calling."""
+    logger.debug(f"Fetching documentation using REST API for deployment: {deployment_name}")
+
+    url = f"{azure_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version={azure_api_version}"
+    headers = {
+        "Content-Type": "application/json",
+        "api-key": azure_api_key,
+    }
+
+    for attempt in range(1, retry + 1):
+        async with semaphore:
+            try:
+                payload = {
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "functions": function_schema["functions"],
+                    "function_call": {"name": "generate_documentation"},
+                }
+
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        logger.debug(f"API Response: {data}")
+
+                        if "choices" in data and len(data["choices"]) > 0:
+                            choice = data["choices"][0]
+                            message = choice["message"]
+
+                            if "function_call" in message:
+                                function_call = message["function_call"]
+                                if function_call["name"] == "generate_documentation":
+                                    arguments = function_call["arguments"]
+                                    try:
+                                        documentation = json.loads(arguments)
+                                        logger.debug("Received documentation via function_call.")
+                                        return documentation
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"Error decoding JSON from function_call arguments: {e}")
+                                        logger.error(f"Arguments Content: {arguments}")
+                                        return None
+                                else:
+                                    logger.error(f"Unexpected function called: {function_call['name']}")
+                                    return None
+                            else:
+                                logger.error("No function_call found in the response.")
+                                return None
+                        else:
+                            logger.error("No choices found in the response.")
+                            return None
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Request failed with status {response.status}: {error_text}")
+                        if attempt < retry:
+                            wait_time = 2 ** attempt
+                            logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            logger.error("All retry attempts failed.")
+                            return None
+
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}", exc_info=True)
+                if attempt < retry:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error("All retry attempts failed.")
+                    return None
+
+    logger.error("All retry attempts failed.")
+    return None
+
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
     skip_types: Set[str],
     semaphore: asyncio.Semaphore,
-    model_name: str,
+    deployment_name: str,
     function_schema: Dict[str, Any],
     repo_root: str,
     project_info: str,
     style_guidelines: str,
     safe_mode: bool,
-    use_azure: bool = False
+    azure_api_key: str,
+    azure_endpoint: str,
+    azure_api_version: str
 ) -> Optional[str]:
     """
     Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content.
-    
-    Args:
-        session (aiohttp.ClientSession): The HTTP session.
-        file_path (str): Path to the file to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): Model name for OpenAI or deployment name for Azure OpenAI.
-        function_schema (Dict[str, Any]): Schema defining functions for structured responses.
-        repo_root (str): Root path of the repository.
-        project_info (str): Information about the project.
-        style_guidelines (str): Style guidelines to follow.
-        safe_mode (bool): Whether to run in safe mode (no file modifications).
-        use_azure (bool): Whether to use Azure OpenAI API.
-    
-    Returns:
-        Optional[str]: Markdown-formatted documentation for the file, or None if skipped or failed.
     """
     logger.debug(f'Processing file: {file_path}')
     try:
@@ -142,13 +213,15 @@ async def process_file(
                     style_guidelines=style_guidelines,
                     language=language
                 )
-                documentation = await fetch_documentation(
+                documentation = await fetch_documentation_rest(
                     session=session,
                     prompt=prompt,
                     semaphore=semaphore,
-                    model_name=model_name,
+                    deployment_name=deployment_name,
                     function_schema=function_schema,
-                    use_azure=use_azure
+                    azure_api_key=azure_api_key,
+                    azure_endpoint=azure_endpoint,
+                    azure_api_version=azure_api_version
                 )
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
@@ -160,20 +233,19 @@ async def process_file(
         if documentation:
             try:
                 loop = asyncio.get_event_loop()
-                
+
                 # Insert docstrings using the handler
                 new_content = await loop.run_in_executor(None, handler.insert_docstrings, content, documentation)
-                
+
                 if language.lower() == 'python':
                     new_content = clean_unused_imports(new_content, file_path)
                     new_content = format_with_black(new_content)
 
-                
                 if not safe_mode:
-                    # Step 3: Validate code
+                    # Validate code
                     is_valid = await loop.run_in_executor(None, handler.validate_code, new_content, file_path)
                     if is_valid:
-                        # Step 4: Backup original file and write new content
+                        # Backup original file and write new content
                         await backup_and_write_new_content(file_path, new_content)
                         logger.info(f"Documentation inserted into '{file_path}'")
                     else:
@@ -203,31 +275,19 @@ async def process_all_files(
     file_paths: List[str],
     skip_types: Set[str],
     semaphore: asyncio.Semaphore,
-    model_name: str,
+    deployment_name: str,
     function_schema: Dict[str, Any],
     repo_root: str,
     project_info: Optional[str],
     style_guidelines: Optional[str],
     safe_mode: bool = False,
     output_file: str = 'output.md',
-    use_azure: bool = False
+    azure_api_key: str = '',
+    azure_endpoint: str = '',
+    azure_api_version: str = ''
 ) -> None:
     """
     Processes multiple files for documentation.
-    
-    Args:
-        session (aiohttp.ClientSession): The HTTP session.
-        file_paths (List[str]): List of file paths to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        model_name (str): Model name for OpenAI or deployment name for Azure OpenAI.
-        function_schema (Dict[str, Any]): Schema defining functions for structured responses.
-        repo_root (str): Root path of the repository.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Style guidelines to follow.
-        safe_mode (bool, optional): Whether to run in safe mode (no file modifications). Defaults to False.
-        output_file (str, optional): The output markdown file. Defaults to "output.md".
-        use_azure (bool, optional): Whether to use Azure OpenAI API. Defaults to False.
     """
     logger.info('Starting process of all files.')
     tasks = []
@@ -238,17 +298,19 @@ async def process_all_files(
                 file_path=file_path,
                 skip_types=skip_types,
                 semaphore=semaphore,
-                model_name=model_name,
+                deployment_name=deployment_name,
                 function_schema=function_schema,
                 repo_root=repo_root,
                 project_info=project_info,
                 style_guidelines=style_guidelines,
                 safe_mode=safe_mode,
-                use_azure=use_azure
+                azure_api_key=azure_api_key,
+                azure_endpoint=azure_endpoint,
+                azure_api_version=azure_api_version
             )
         )
         tasks.append(task)
-    
+
     documentation_contents = []
     for f in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc='Processing Files'):
         try:
@@ -265,21 +327,24 @@ async def process_all_files(
     # Combine all documentation contents
     final_content = '\n\n'.join(documentation_contents)
 
-    # Generate Table of Contents
-    toc = generate_table_of_contents(final_content)
+    if final_content:
+        # Generate Table of Contents
+        toc = generate_table_of_contents(final_content)
 
-    # Create the final report content
-    report_content = '# Documentation Generation Report\n\n## Table of Contents\n\n' + toc + '\n\n' + final_content
+        # Create the final report content
+        report_content = '# Documentation Generation Report\n\n## Table of Contents\n\n' + toc + '\n\n' + final_content
 
-    # Write the report to the output file
-    try:
-        async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
-            await f.write(report_content)
-        logger.info(f"Documentation report written to '{output_file}'")
-    except Exception as e:
-        logger.error(f"Error writing final documentation to '{output_file}': {e}", exc_info=True)
-        if 'sentry_sdk' in globals():
-            sentry_sdk.capture_exception(e)
+        # Write the report to the output file
+        try:
+            async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+                await f.write(report_content)
+            logger.info(f"Documentation report written to '{output_file}'")
+        except Exception as e:
+            logger.error(f"Error writing final documentation to '{output_file}': {e}", exc_info=True)
+            if 'sentry_sdk' in globals():
+                sentry_sdk.capture_exception(e)
+    else:
+        logger.warning("No documentation was generated.")
 
     # Optional: Run Flake8 on all processed Python files to capture any remaining issues
     logger.info('Running Flake8 on processed files for final linting.')

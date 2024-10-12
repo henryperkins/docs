@@ -8,24 +8,17 @@ import aiohttp
 import asyncio
 import re
 import subprocess
-import black
-import openai
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
-from bs4 import BeautifulSoup, Comment
 from jsonschema import validate, ValidationError
-from logging.handlers import RotatingFileHandler
-from openai import AsyncAzureOpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError
+import aiofiles
 
 # Load environment variables
 load_dotenv()
 
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 API_VERSION = os.getenv("API_VERSION")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-aclient = None
 
 # Configure logging
 logging.basicConfig(
@@ -61,37 +54,6 @@ LANGUAGE_MAPPING = {
     ".java": "java",
 }
 
-# ----------------------------
-# OpenAI API Configuration
-# ----------------------------
-
-def configure_openai(use_azure: bool, deployment_name: str):
-    global aclient
-    if use_azure:
-        if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, deployment_name]):
-            logger.critical(
-                "Azure OpenAI environment variables are not set properly. "
-                "Please set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, and DEPLOYMENT_NAME."
-            )
-            sys.exit(1)
-
-        aclient = AsyncAzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_version=API_VERSION,
-        )
-        logger.debug("Configured Azure OpenAI client.")
-    else:
-        if not OPENAI_API_KEY:
-            logger.critical(
-                "OPENAI_API_KEY environment variable is not set. "
-                "Please set it in your environment or .env file."
-            )
-            sys.exit(1)
-
-        openai.api_key = OPENAI_API_KEY
-        aclient = openai  # Use the openai module directly
-        logger.debug("Configured standard OpenAI client.")
 # ----------------------------
 # Language and File Utilities
 # ----------------------------
@@ -220,9 +182,7 @@ def load_function_schema(schema_path: str) -> dict:
     if 'functions' not in schema:
         logger.critical(f"Function schema missing 'functions' key.")
         sys.exit(1)
-    # Removed the check for 'definitions' key
     return schema
-
 
 def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
     """
@@ -258,139 +218,94 @@ def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[s
         return "", ""
 
 # ----------------------------
-# Model Validation
-# ----------------------------
-
-def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
-    """
-    Validates the provided model name against a list of supported OpenAI models.
-
-    Args:
-        model_name (str): The name of the OpenAI model to validate.
-        use_azure (bool, optional): Flag indicating whether Azure OpenAI is being used.
-                                     Defaults to False.
-
-    Returns:
-        bool: True if the model name is valid and supported, False otherwise.
-    """
-    # Define a list of supported models for the standard OpenAI API
-    supported_models = [
-        "gpt-3.5-turbo",
-        "gpt-4",
-        "gpt-4-32k",
-        "gpt-4o",
-        # Add other supported models as needed
-    ]
-
-    if use_azure:
-        # When using Azure OpenAI, model validation is different because
-        # deployment names are used instead of model names.
-        # Here, we assume that deployment names are correctly configured
-        # and skip model name validation.
-        logger.debug("Azure OpenAI is enabled; skipping model name validation.")
-        return True
-    else:
-        # Validate the model name against the supported models list
-        if model_name in supported_models:
-            logger.debug(f"Model name '{model_name}' is valid and supported.")
-            return True
-        else:
-            logger.error(f"Model name '{model_name}' is not supported.")
-            return False
-
-# ----------------------------
-# OpenAI API Interaction
+# OpenAI REST API Interaction
 # ----------------------------
 
 async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
     semaphore: asyncio.Semaphore,
-    model_name: str,
+    deployment_name: str,
     function_schema: Dict[str, Any],
-    retry: int = 3,
-    use_azure: bool = False,
-) -> Optional[dict]:
-    """Asynchronously fetches documentation based on a provided prompt."""
-    logger.debug(f"Fetching documentation for model: {model_name}, use_azure: {use_azure}")
+    azure_api_key: str,
+    azure_endpoint: str,
+    azure_api_version: str,
+    retry: int = 3
+) -> Optional[Dict[str, Any]]:
+    """Fetches documentation using Azure OpenAI REST API with function calling."""
+    logger.debug(f"Fetching documentation using REST API for deployment: {deployment_name}")
+
+    url = f"{azure_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version={azure_api_version}"
+    headers = {
+        "Content-Type": "application/json",
+        "api-key": azure_api_key,
+    }
 
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
-                messages = [
-                    {"role": "user", "content": prompt}
-                ]
-
-                # Prepare function parameters for OpenAI API
-                function_params = {
-                    "model": model_name,
-                    "messages": messages,
+                payload = {
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
                     "functions": function_schema["functions"],
                     "function_call": {"name": "generate_documentation"},
                 }
 
-                # If using Azure OpenAI Service, set the appropriate API type and version
-                if use_azure:
-                    openai.api_type = "azure"
-                    openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
-                    openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
-                    openai.api_version = os.getenv("API_VERSION")
-                    # Add 'deployment_id' for Azure
-                    function_params["deployment_id"] = model_name
+                async with session.post(url, headers=headers, json=payload) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        logger.debug(f"API Response: {json.dumps(data, indent=2)}")
 
-                # Asynchronous API call
-                response = await openai.ChatCompletion.acreate(**function_params)
+                        if "choices" in data and len(data["choices"]) > 0:
+                            choice = data["choices"][0]
+                            message = choice["message"]
 
-                logger.debug(f"API Response: {response}")
-                choice = response.choices[0]
-                message = choice.message
-
-                if "function_call" in message:
-                    function_call = message["function_call"]
-                    if function_call["name"] == "generate_documentation":
-                        arguments = function_call["arguments"]
-                        try:
-                            documentation = json.loads(arguments)
-                            logger.debug("Received documentation via function_call.")
-                            return documentation
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Error decoding JSON from function_call arguments: {e}")
-                            logger.error(f"Arguments Content: {arguments}")
+                            if "function_call" in message:
+                                function_call = message["function_call"]
+                                if function_call["name"] == "generate_documentation":
+                                    arguments = function_call["arguments"]
+                                    try:
+                                        documentation = json.loads(arguments)
+                                        logger.debug("Received documentation via function_call.")
+                                        return documentation
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"Error decoding JSON from function_call arguments: {e}")
+                                        logger.error(f"Arguments Content: {arguments}")
+                                        return None
+                                else:
+                                    logger.error(f"Unexpected function called: {function_call['name']}")
+                                    return None
+                            else:
+                                logger.error("No function_call found in the response.")
+                                return None
+                        else:
+                            logger.error("No choices found in the response.")
                             return None
                     else:
-                        logger.error(f"Unexpected function called: {function_call['name']}")
-                        return None
-                else:
-                    logger.error("No function_call found in the response.")
-                    return None
+                        error_text = await response.text()
+                        logger.error(f"Request failed with status {response.status}: {error_text}")
+                        if attempt < retry:
+                            wait_time = 2 ** attempt
+                            logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            logger.error("All retry attempts failed.")
+                            return None
 
-            except openai.RateLimitError as e:
-                logger.error(f"OpenAI API rate limit exceeded: {e}")
-                if attempt < retry:
-                    wait_time = 2 ** attempt
-                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(wait_time)
-                else:
-                    logger.error("All retry attempts failed due to rate limiting.")
-                    return None
-            except openai.APIError as e:
-                logger.error(f"OpenAI API returned an API Error: {e}")
-                if attempt < retry:
-                    wait_time = 2 ** attempt
-                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(wait_time)
-                else:
-                    logger.error("All retry attempts failed due to API errors.")
-                    return None
-            except openai.OpenAIError as e:
-                logger.error(f"An OpenAI error occurred: {e}")
-                return None
             except Exception as e:
                 logger.error(f"An unexpected error occurred: {e}", exc_info=True)
-                return None
+                if attempt < retry:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error("All retry attempts failed.")
+                    return None
 
     logger.error("All retry attempts failed.")
     return None
+
 # ----------------------------
 # Code Formatting and Cleanup
 # ----------------------------
@@ -486,7 +401,7 @@ def run_flake8(file_path: str) -> Optional[str]:
     except Exception as e:
         logger.error(f'Error running Flake8 on {file_path}: {e}')
         return None
-    
+
 # ----------------------------
 # JavaScript/TypeScript Utilities
 # ----------------------------
@@ -573,18 +488,6 @@ def generate_documentation_prompt(
     style_guidelines: Optional[str],
     language: str,
 ) -> str:
-    """Generates a prompt for documentation generation based on file and project details.
-
-    Args:
-        file_name (str): The name of the file for which documentation is needed.
-        code_structure (Dict[str, Any]): The structure of the code to document.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Style guidelines to adhere to.
-        language (str): The programming language of the code.
-
-    Returns:
-        str: The generated documentation prompt.
-    """
     prompt = (
         "You are an expert software engineer tasked with generating comprehensive documentation for the following code structure."
     )
@@ -632,7 +535,7 @@ Using the code structure provided, generate detailed documentation in JSON forma
 }
 
 Ensure that:
-- All 'docstring' fields contain comprehensive descriptions.
+- **All 'docstring' fields contain comprehensive descriptions.**
 - The 'args' lists contain the argument names of each function or method.
 - The 'async' fields correctly indicate whether the function or method is asynchronous.
 - The 'type' field for methods specifies if it's an 'instance', 'class', or 'static' method.
@@ -653,7 +556,8 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
         new_content (str): New content to include in the report.
 
     Returns:
-        str: Path where the documentation report was written."""
+        str: The documentation content as a string.
+    """
     'Writes a documentation report for a file in the specified language.'
     try:
         def sanitize_text(text: str) -> str:
@@ -692,7 +596,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
             functions_section += '|----------|-----------|-------------|-------|\n'
             for func in functions:
                 func_name = func.get('name', 'N/A')
-                func_args = ', '.join((f'{arg["name"]} ({arg.get("type", "N/A")})' for arg in func.get('parameters', [])))
+                func_args = ', '.join(func.get('args', []))
                 func_doc = sanitize_text(func.get('docstring', 'No description provided.'))
                 first_line_doc = func_doc.splitlines()[0]
                 func_async = 'Yes' if func.get('async', False) else 'No'
@@ -714,7 +618,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                     classes_section += '|--------|-----------|-------------|-------|------|\n'
                     for method in methods:
                         method_name = method.get('name', 'N/A')
-                        method_args = ', '.join((f'{arg["name"]} ({arg.get("type", "N/A")})' for arg in method.get('parameters', [])))
+                        method_args = ', '.join(method.get('args', []))
                         method_doc = sanitize_text(method.get('docstring', 'No description provided.'))
                         first_line_method_doc = method_doc.splitlines()[0] if method_doc else 'No description provided.'
                         method_async = 'Yes' if method.get('async', False) else 'No'

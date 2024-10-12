@@ -13,8 +13,6 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     load_function_schema,
-    validate_model_name,
-    configure_openai,
 )
 
 # Load environment variables from .env file
@@ -25,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Generate and insert comments/docstrings using OpenAI's GPT-4 API."
+        description="Generate and insert comments/docstrings using Azure OpenAI's REST API."
     )
     parser.add_argument("repo_path", help="Path to the code repository")
     parser.add_argument("-c", "--config", help="Path to config.json", default="config.json")
@@ -39,13 +37,12 @@ def parse_arguments():
     parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
     parser.add_argument("--schema", help="Path to function_schema.json", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "schemas", "function_schema.json"))
-    parser.add_argument("--use-azure", help="Use Azure OpenAI instead of regular OpenAI API", action="store_true")
     return parser.parse_args()
 
 def configure_logging(log_level):
     logger.setLevel(log_level)
     formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s:%(module)s:%(funcName)s:%(lineno)d: %(message)s"
+        "%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d: %(message)s"
     )
 
     file_handler = logging.FileHandler("docs_generation.log")
@@ -77,35 +74,25 @@ async def main():
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
     schema_path = args.schema
-    use_azure = args.use_azure
 
-    if use_azure:
-        AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
-        AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT') or os.getenv('ENDPOINT_URL')
-        API_VERSION = os.getenv('API_VERSION')
+    # Ensure necessary environment variables are set for Azure OpenAI Service
+    AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
+    AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT')
+    AZURE_OPENAI_API_VERSION = os.getenv('API_VERSION')
 
-        if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, deployment_name]):
-            logger.critical(
-                "AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, or DEPLOYMENT_NAME not set. "
-                "Please set them in your environment or .env file."
-            )
-            sys.exit(1)
-
-        logger.info("Using Azure OpenAI with Deployment ID: %s", deployment_name)
-    else:
-        OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-        if not OPENAI_API_KEY:
-            logger.critical(
-                "OPENAI_API_KEY not set. Please set it in your environment or .env file."
-            )
-            sys.exit(1)
-        logger.info("Using standard OpenAI API.")
+    if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION, deployment_name]):
+        logger.critical(
+            "AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, or DEPLOYMENT_NAME not set. "
+            "Please set them in your environment or .env file."
+        )
+        sys.exit(1)
+    logger.info("Using Azure OpenAI with Deployment ID: %s", deployment_name)
 
     logger.info(f"Repository Path: {repo_path}")
     logger.info(f"Configuration File: {config_path}")
     logger.info(f"Concurrency Level: {concurrency}")
     logger.info(f"Output Markdown File: {output_file}")
-    logger.info(f"Deployment Name: {deployment_name if use_azure else 'N/A'}")
+    logger.info(f"Deployment Name: {deployment_name}")
     logger.info(f"Safe Mode: {'Enabled' if safe_mode else 'Disabled'}")
     logger.info(f"Function Schema Path: {schema_path}")
 
@@ -155,14 +142,8 @@ async def main():
     if style_guidelines:
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
+    # Load function schema
     function_schema = load_function_schema(schema_path)
-
-    if not use_azure:
-        if not validate_model_name(deployment_name, use_azure):
-            logger.error(f"Invalid model name '{deployment_name}'. Exiting.")
-            sys.exit(1)
-
-    configure_openai(use_azure, deployment_name)
 
     try:
         file_paths = get_all_file_paths(
@@ -173,8 +154,6 @@ async def main():
         logger.error(f"Error getting file paths: {e}")
         sys.exit(1)
 
-    model_name = deployment_name
-
     async with aiohttp.ClientSession(raise_for_status=True) as session:
         semaphore = asyncio.Semaphore(concurrency)
         await process_all_files(
@@ -182,14 +161,16 @@ async def main():
             file_paths=file_paths,
             skip_types=skip_types_set,
             semaphore=semaphore,
-            model_name=model_name,
+            deployment_name=deployment_name,
             function_schema=function_schema,
             repo_root=repo_path,
             project_info=project_info,
             style_guidelines=style_guidelines,
             safe_mode=safe_mode,
             output_file=output_file,
-            use_azure=use_azure,
+            azure_api_key=AZURE_OPENAI_API_KEY,
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            azure_api_version=AZURE_OPENAI_API_VERSION,
         )
 
     logger.info("Documentation generation completed successfully.")
