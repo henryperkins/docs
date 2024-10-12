@@ -1,17 +1,18 @@
 # language_functions/css_handler.py
 
 import logging
+import subprocess  # Ensure subprocess is imported
 from typing import Dict, Any, Optional
 import tinycss2
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
-class CSSHandler(BaseHandler):
+class CSSHandler:
     """Handler for CSS language."""
 
     def __init__(self, function_schema: Dict[str, Any]):
-        """Initializes the HTMLHandler with a function schema."""
+        """Initializes the CSSHandler with a function schema."""
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
@@ -49,7 +50,7 @@ class CSSHandler(BaseHandler):
             logger.error("Parse error while extracting CSS structure: %s", e)
             return {}
         except Exception as e:
-            logger.error("Unexpected error: %s", e)
+            logger.error("Unexpected error while extracting CSS structure: %s", e)
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -72,7 +73,7 @@ class CSSHandler(BaseHandler):
             logger.debug("Completed inserting CSS docstrings.")
             return modified_code
         except Exception as e:
-            logger.error(f"Error inserting CSS docstrings: {e}")
+            logger.error("Error inserting CSS docstrings: %s", e)
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
@@ -86,7 +87,7 @@ class CSSHandler(BaseHandler):
         Returns:
             bool: True if the code is valid, False otherwise.
         """
-        logger.debug('Starting CSS code validation.')
+        logger.debug('Starting CSS code validation for file: %s', file_path)
         if not file_path:
             logger.warning('File path not provided for Stylelint validation. Skipping validation.')
             return True  # Assuming no validation without a file
@@ -105,14 +106,14 @@ class CSSHandler(BaseHandler):
             )
 
             if process.returncode != 0:
-                logger.error(f'Stylelint validation failed for {file_path}:\n{process.stdout}')
+                logger.error('Stylelint validation failed for %s:\n%s', file_path, process.stdout)
                 return False
             else:
-                logger.debug('Stylelint validation successful.')
+                logger.debug('Stylelint validation successful for %s.', file_path)
             return True
         except FileNotFoundError:
             logger.error("Stylelint not found. Please install it using 'npm install -g stylelint'.")
             return False
         except Exception as e:
-            logger.error(f'Unexpected error during Stylelint validation: {e}')
+            logger.error('Unexpected error during Stylelint validation for %s: %s', file_path, e)
             return False

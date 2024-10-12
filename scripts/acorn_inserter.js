@@ -1,4 +1,4 @@
-// acorn_inserter.js
+// jsdoc_inserter.js
 
 const fs = require('fs');
 const { parse } = require('@typescript-eslint/typescript-estree');
@@ -24,9 +24,19 @@ process.stdin.on('end', () => {
       tokens: true,
       errorOnUnknownASTType: false,
       jsx: true,
+      useJSXTextNode: true,
+      ecmaVersion: 2020,
+      sourceType: 'module',
+      project: './tsconfig.json', // Ensure this points to your tsconfig.json if using TypeScript
+      tsconfigRootDir: __dirname,
     });
   } catch (e) {
-    console.error(`Parsing error: ${e.message}`);
+    console.error('Parsing error: %s', e.message);
+    process.exit(1);
+  }
+
+  if (!ast || ast.type !== 'Program') {
+    console.error('Error traversing AST: Couldn\'t find a Program');
     process.exit(1);
   }
 
@@ -120,11 +130,17 @@ process.stdin.on('end', () => {
               }
             });
           }
+        } else if (node.type === 'Literal') {
+          // Handle Literal node type
+          console.log('Literal node found:', node);
+        } else if (node.type === 'Property') {
+          // Handle Property node type
+          console.log('Property node found:', node);
         }
       },
     });
   } catch (e) {
-    console.error(`Error traversing AST: ${e.message}`);
+    console.error('Error traversing AST: %s', e.message);
     process.exit(1);
   }
 
@@ -134,7 +150,7 @@ process.stdin.on('end', () => {
     const result = generate(ast, { comments: true });
     modifiedCode = result.code;
   } catch (e) {
-    console.error(`Error generating code from AST: ${e.message}`);
+    console.error('Error generating code from AST: %s', e.message);
     process.exit(1);
   }
 

@@ -16,8 +16,8 @@ class JSTsHandler(BaseHandler):
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+        logger.debug("Extracting JS/TS structure from file: %s", file_path)
         try:
-            # You might need to adjust the script path
             script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'acorn_parser.js')
             input_data = {
                 "code": code,
@@ -32,16 +32,16 @@ class JSTsHandler(BaseHandler):
                 check=True
             )
             structure = json.loads(result.stdout)
-            logger.debug("Extracted JS/TS code structure successfully.")
+            logger.debug("Extracted JS/TS code structure successfully from file: %s", file_path)
             return structure
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running acorn_parser.js: {e.stderr}")
+            logger.error("Error running acorn_parser.js for file %s: %s", file_path, e.stderr)
             return {}
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing output from acorn_parser.js: {e}")
+            logger.error("Error parsing output from acorn_parser.js for file %s: %s", file_path, e)
             return {}
         except Exception as e:
-            logger.error(f"Unexpected error extracting JS/TS structure: {e}")
+            logger.error("Unexpected error extracting JS/TS structure from file %s: %s", file_path, e)
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -63,13 +63,13 @@ class JSTsHandler(BaseHandler):
                 check=True
             )
             modified_code = result.stdout
-            logger.debug("Completed inserting JSDoc docstrings.")
+            logger.debug("Completed inserting JSDoc docstrings into JS/TS code.")
             return modified_code
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running acorn_inserter.js: {e.stderr}")
+            logger.error("Error running acorn_inserter.js: %s", e.stderr)
             return code
         except Exception as e:
-            logger.error(f"Unexpected error inserting JSDoc docstrings: {e}")
+            logger.error("Unexpected error inserting JSDoc docstrings: %s", e)
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
@@ -83,7 +83,7 @@ class JSTsHandler(BaseHandler):
         Returns:
             bool: True if the code is valid, False otherwise.
         """
-        logger.debug('Starting JavaScript/TypeScript code validation.')
+        logger.debug('Starting JavaScript/TypeScript code validation for file: %s', file_path)
         if not file_path:
             logger.warning('File path not provided for ESLint validation. Skipping ESLint.')
             return True  # Assuming no linting without a file
@@ -102,17 +102,17 @@ class JSTsHandler(BaseHandler):
             )
 
             # Remove temporary file
-            subprocess.run(['rm', temp_file])
+            os.remove(temp_file)
 
             if process.returncode != 0:
-                logger.error(f'ESLint validation failed for {file_path}:\n{process.stdout}')
+                logger.error('ESLint validation failed for %s:\n%s', file_path, process.stdout)
                 return False
             else:
-                logger.debug('ESLint validation successful.')
+                logger.debug('ESLint validation successful for %s.', file_path)
             return True
         except FileNotFoundError:
             logger.error("ESLint is not installed. Please install it using 'npm install eslint'.")
             return False
         except Exception as e:
-            logger.error(f'Unexpected error during ESLint validation: {e}')
+            logger.error('Unexpected error during ESLint validation for %s: %s', file_path, e)
             return False

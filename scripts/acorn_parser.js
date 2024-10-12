@@ -25,8 +25,8 @@ process.stdin.on('end', () => {
   try {
     parsedInput = JSON.parse(sanitizedInput);
   } catch (e) {
-    console.error(`Error parsing input JSON: ${e.message}`);
-    console.error(`Input JSON: ${sanitizedInput}`);
+    console.error('Error parsing input JSON: %s', e.message);
+    console.error('Input JSON: %s', sanitizedInput);
     process.exit(1);
   }
 
@@ -44,7 +44,7 @@ process.stdin.on('end', () => {
       jsx: true,
     });
   } catch (e) {
-    console.error(`Parsing error: ${e.message}`);
+    console.error('Parsing error: %s', e.message);
     process.exit(1);
   }
 
@@ -127,14 +127,11 @@ process.stdin.on('end', () => {
     const valid = validate(structure);
 
     if (!valid) {
-      console.error(
-        'Validation errors:',
-        JSON.stringify(validate.errors, null, 2)
-      );
+      console.error('Validation errors: %s', JSON.stringify(validate.errors, null, 2));
       process.exit(1);
     }
   } catch (e) {
-    console.error(`Schema validation error: ${e.message}`);
+    console.error('Schema validation error: %s', e.message);
     process.exit(1);
   }
 
