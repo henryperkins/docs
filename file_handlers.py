@@ -143,14 +143,13 @@ async def process_file(
                     language=language
                 )
                 documentation = await fetch_documentation(
+                    session=session,
                     prompt=prompt,
                     semaphore=semaphore,
                     model_name=model_name,
                     function_schema=function_schema,
-                    retry=retry,
                     use_azure=use_azure
                 )
-
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
         except Exception as e:
@@ -159,7 +158,6 @@ async def process_file(
         new_content = content
 
         if documentation:
-            logger.debug(f"Documentation received for '{file_path}': {documentation}")
             try:
                 loop = asyncio.get_event_loop()
                 
@@ -169,6 +167,7 @@ async def process_file(
                 if language.lower() == 'python':
                     new_content = clean_unused_imports(new_content, file_path)
                     new_content = format_with_black(new_content)
+
                 
                 if not safe_mode:
                     # Step 3: Validate code

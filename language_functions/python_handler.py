@@ -300,7 +300,6 @@ class PythonHandler(BaseHandler):
                 if process.returncode != 0:
                     flake8_output = process.stdout + process.stderr
                     logger.error(f'Flake8 validation failed for {file_path}:\n{flake8_output}')
-
                     return False
                 else:
                     logger.debug('Flake8 validation successful.')

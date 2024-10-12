@@ -17,58 +17,56 @@
           },
           "functions": {
             "type": "array",
-            "items": { "$ref": "#/definitions/function" },
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "Function name." },
+                "docstring": { "type": "string", "description": "Function description." },
+                "args": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "List of argument names."
+                },
+                "async": { "type": "boolean", "description": "Is the function asynchronous?" }
+              },
+              "required": ["name", "docstring", "args", "async"]
+            },
             "description": "List of documented functions."
           },
           "classes": {
             "type": "array",
-            "items": { "$ref": "#/definitions/class" },
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "Class name." },
+                "docstring": { "type": "string", "description": "Class description." },
+                "methods": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": { "type": "string", "description": "Method name." },
+                      "docstring": { "type": "string", "description": "Method description." },
+                      "args": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "List of argument names."
+                      },
+                      "async": { "type": "boolean", "description": "Is the method asynchronous?" },
+                      "type": { "type": "string", "description": "Method type (e.g., 'instance', 'class', 'static')." }
+                    },
+                    "required": ["name", "docstring", "args", "async", "type"]
+                  },
+                  "description": "List of documented methods."
+                }
+              },
+              "required": ["name", "docstring", "methods"]
+            },
             "description": "List of documented classes."
           }
         },
         "required": ["summary"]
       }
     }
-  ],
-  "definitions": {
-    "function": {
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "docstring": { "type": "string" },
-        "args": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "async": { "type": "boolean" }
-      },
-      "required": ["name", "docstring", "args", "async"]
-    },
-    "class": {
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "docstring": { "type": "string" },
-        "methods": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/method" }
-        }
-      },
-      "required": ["name", "docstring", "methods"]
-    },
-    "method": {
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "docstring": { "type": "string" },
-        "args": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "async": { "type": "boolean" },
-        "type": { "type": "string" }
-      },
-      "required": ["name", "docstring", "args", "async", "type"]
-    }
-  }
+  ]
 }

@@ -10,13 +10,12 @@ import re
 import subprocess
 import black
 import openai
-import tempfile
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
 from bs4 import BeautifulSoup, Comment
 from jsonschema import validate, ValidationError
 from logging.handlers import RotatingFileHandler
-from openai import OpenAIError, RateLimitError, APIConnectionError, APIError, AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError
 
 # Load environment variables
 load_dotenv()
@@ -206,26 +205,22 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
         return None
 
 def load_function_schema(schema_path: str) -> dict:
-    """
-    Loads the function schema from the specified JSON file.
-    
+    """Loads a function schema from a specified path.
+
     Args:
-        schema_path (str): Path to the function schema JSON file.
-    
+        schema_path (str): Path to the schema file.
+
     Returns:
-        dict: The function schema containing 'functions' and 'definitions'.
-    """
+        dict: The function schema loaded from the file."""
     logger.debug(f"Attempting to load function schema from '{schema_path}'.")
     schema = load_json_schema(schema_path)
     if not isinstance(schema, dict):
-        logger.critical(f"Function schema should be a JSON object with 'functions' and 'definitions'. Found type: {type(schema)}")
+        logger.critical(f"Function schema should be a JSON object with a 'functions' key. Found type: {type(schema)}")
         sys.exit(1)
-    if "functions" not in schema:
+    if 'functions' not in schema:
         logger.critical(f"Function schema missing 'functions' key.")
         sys.exit(1)
-    if "definitions" not in schema:
-        logger.critical(f"Function schema missing 'definitions' key.")
-        sys.exit(1)
+    # Removed the check for 'definitions' key
     return schema
 
 
@@ -308,141 +303,97 @@ def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
 # ----------------------------
 
 async def fetch_documentation(
+    session: aiohttp.ClientSession,
     prompt: str,
     semaphore: asyncio.Semaphore,
     model_name: str,
     function_schema: Dict[str, Any],
     retry: int = 3,
-    use_azure: bool = False
+    use_azure: bool = False,
 ) -> Optional[dict]:
-    logger.debug(f'Fetching documentation for model: {model_name}, use_azure: {use_azure}')
-    
+    """Asynchronously fetches documentation based on a provided prompt."""
+    logger.debug(f"Fetching documentation for model: {model_name}, use_azure: {use_azure}")
+
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
                 messages = [
-                    {
-                        'role': 'system',
-                        'content': 'You are an AI assistant that generates code documentation in JSON format based on provided code structure.'
-                    },
-                    {
-                        'role': 'user',
-                        'content': prompt
-                    }
+                    {"role": "user", "content": prompt}
                 ]
 
-                if use_azure:
-                    # Set Azure-specific credentials
-                    openai.api_type = 'azure'
-                    openai.api_key = AZURE_OPENAI_API_KEY
-                    openai.api_base = AZURE_OPENAI_ENDPOINT
-                    openai.api_version = API_VERSION
-                    response = await openai.ChatCompletion.acreate(
-                        engine=model_name,  # Use 'engine' instead of 'model' for Azure
-                        messages=messages,
-                        functions=function_schema['functions'],
-                        function_call={'name': 'generate_documentation'}
-                    )
-                else:
-                    response = await openai.ChatCompletion.acreate(
-                        model=model_name,
-                        messages=messages,
-                        functions=function_schema['functions'],
-                        function_call={'name': 'generate_documentation'}
-                    )
+                # Prepare function parameters for OpenAI API
+                function_params = {
+                    "model": model_name,
+                    "messages": messages,
+                    "functions": function_schema["functions"],
+                    "function_call": {"name": "generate_documentation"},
+                }
 
-                logger.debug(f'API Response: {response}')
+                # If using Azure OpenAI Service, set the appropriate API type and version
+                if use_azure:
+                    openai.api_type = "azure"
+                    openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
+                    openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
+                    openai.api_version = os.getenv("API_VERSION")
+                    # Add 'deployment_id' for Azure
+                    function_params["deployment_id"] = model_name
+
+                # Asynchronous API call
+                response = await openai.ChatCompletion.acreate(**function_params)
+
+                logger.debug(f"API Response: {response}")
                 choice = response.choices[0]
                 message = choice.message
 
-                if hasattr(message, 'function_call'):
-                    function_call = message.function_call
-                    if function_call.name == 'generate_documentation':
-                        arguments = function_call.arguments
+                if "function_call" in message:
+                    function_call = message["function_call"]
+                    if function_call["name"] == "generate_documentation":
+                        arguments = function_call["arguments"]
                         try:
                             documentation = json.loads(arguments)
-                            logger.debug('Received documentation via function_call.')
+                            logger.debug("Received documentation via function_call.")
                             return documentation
                         except json.JSONDecodeError as e:
-                            logger.error(f'Error decoding JSON from function_call arguments: {e}')
-                            logger.error(f'Arguments Content: {arguments}')
+                            logger.error(f"Error decoding JSON from function_call arguments: {e}")
+                            logger.error(f"Arguments Content: {arguments}")
                             return None
                     else:
-                        logger.error('Unexpected function called in the response.')
+                        logger.error(f"Unexpected function called: {function_call['name']}")
                         return None
                 else:
-                    logger.error('No function_call found in the response.')
+                    logger.error("No function_call found in the response.")
                     return None
 
-            except RateLimitError as e:
-                logger.error(f'OpenAI API rate limit exceeded: {e}')
+            except openai.RateLimitError as e:
+                logger.error(f"OpenAI API rate limit exceeded: {e}")
                 if attempt < retry:
                     wait_time = 2 ** attempt
-                    logger.info(f'Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})')
+                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error('All retry attempts failed due to rate limiting.')
+                    logger.error("All retry attempts failed due to rate limiting.")
                     return None
-            except APIConnectionError as e:
-                logger.error(f'Failed to connect to OpenAI API: {e}')
+            except openai.APIError as e:
+                logger.error(f"OpenAI API returned an API Error: {e}")
                 if attempt < retry:
                     wait_time = 2 ** attempt
-                    logger.info(f'Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})')
+                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error('All retry attempts failed due to connection errors.')
+                    logger.error("All retry attempts failed due to API errors.")
                     return None
-            except APIError as e:
-                logger.error(f'OpenAI API returned an API Error: {e}')
-                if attempt < retry:
-                    wait_time = 2 ** attempt
-                    logger.info(f'Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})')
-                    await asyncio.sleep(wait_time)
-                else:
-                    logger.error('All retry attempts failed due to API errors.')
-                    return None
+            except openai.OpenAIError as e:
+                logger.error(f"An OpenAI error occurred: {e}")
+                return None
             except Exception as e:
-                logger.error(f'An unexpected error occurred: {e}', exc_info=True)
+                logger.error(f"An unexpected error occurred: {e}", exc_info=True)
                 return None
 
+    logger.error("All retry attempts failed.")
     return None
 # ----------------------------
 # Code Formatting and Cleanup
 # ----------------------------
-
-async def process_code_and_update_markdown(code: str, markdown_path: str) -> None:
-    """Processes code with Autoflake and updates the markdown file."""
-    try:
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.py') as temp_file:
-            temp_file.write(code.encode('utf-8'))
-            temp_file_path = temp_file.name
-
-        # Validate and clean code
-        if validate_code(temp_file_path):
-            cleaned_code = clean_unused_imports(temp_file_path)
-
-            # Update markdown
-            await update_markdown_with_code(cleaned_code, markdown_path)
-
-    finally:
-        # Clean up the temporary file
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-
-def validate_code(file_path: str) -> bool:
-    """Validates Python code for syntax correctness and style compliance."""
-    logger.debug('Starting Python code validation.')
-    try:
-        process = subprocess.run(['flake8', file_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if process.returncode != 0:
-            logger.error(f'Flake8 validation failed:\n{process.stdout}')
-            return False
-        logger.debug('Flake8 validation successful.')
-        return True
-    except Exception as e:
-        logger.error(f'Unexpected error during Python code validation: {e}')
-        return False
 
 def clean_unused_imports(code: str, file_path: str) -> str:
     """Cleans unused imports from the given code string.
@@ -461,38 +412,27 @@ def clean_unused_imports(code: str, file_path: str) -> str:
             '--remove-unused-variables',
             '--stdin-display-name',
             file_path,
-            # '-' needs to be placed after the options
             '-',
         ]
         logger.debug(f'Running command: {" ".join(command)}')
         process = subprocess.run(
             command,
-            input=code.encode('utf-8'),
+            input=code,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            check=True,
+            text=True,
+            check=True
         )
-        cleaned_code = process.stdout.decode('utf-8')
+        cleaned_code = process.stdout
         logger.debug('Successfully cleaned code with Autoflake.')
         return cleaned_code
     except subprocess.CalledProcessError as e:
-        logger.error(f'Autoflake failed: {e.stderr.decode("utf-8")}')
+        logger.error(f'Autoflake failed: {e.stderr}')
         return code
     except Exception as e:
         logger.error(f'Unexpected error during Autoflake processing: {e}')
         return code
 
-
-
-async def update_markdown_with_code(cleaned_code: str, markdown_path: str) -> None:
-    """Updates the markdown file with the cleaned code."""
-    try:
-        async with aiofiles.open(markdown_path, 'a', encoding='utf-8') as f:
-            await f.write(f"```python\n{cleaned_code}\n```\n")
-        logger.debug(f"Updated markdown file: {markdown_path}")
-    except Exception as e:
-        logger.error(f"Error updating markdown file: {e}")
-    
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
@@ -626,7 +566,13 @@ def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[s
 # Documentation Generation
 # ----------------------------
 
-def generate_documentation_prompt(file_name: str, code_structure: Dict[str, Any], project_info: Optional[str], style_guidelines: Optional[str], language: str) -> str:
+def generate_documentation_prompt(
+    file_name: str,
+    code_structure: Dict[str, Any],
+    project_info: Optional[str],
+    style_guidelines: Optional[str],
+    language: str,
+) -> str:
     """Generates a prompt for documentation generation based on file and project details.
 
     Args:
@@ -634,58 +580,65 @@ def generate_documentation_prompt(file_name: str, code_structure: Dict[str, Any]
         code_structure (Dict[str, Any]): The structure of the code to document.
         project_info (Optional[str]): Information about the project.
         style_guidelines (Optional[str]): Style guidelines to adhere to.
-        language (str): The language of the code to document.
+        language (str): The programming language of the code.
 
     Returns:
-        str: The generated documentation prompt."""
-    prompt = 'You are an experienced software developer tasked with generating comprehensive documentation for a specific file in a codebase.'
+        str: The generated documentation prompt.
+    """
+    prompt = (
+        "You are an expert software engineer tasked with generating comprehensive documentation for the following code structure."
+    )
     if project_info:
-        prompt += f'\n\n**Project Information:**\n{project_info}'
+        prompt += f"\n\nProject Information:\n{project_info}"
     if style_guidelines:
-        prompt += f'\n\n**Style Guidelines:**\n{style_guidelines}'
-    prompt += f'\n\n**File Name:** {file_name}'
-    prompt += f'\n\n**Language:** {language}'
-    prompt += f'\n\n**Code Structure:**\n```json\n{json.dumps(code_structure, indent=2)}\n```'
+        prompt += f"\n\nStyle Guidelines:\n{style_guidelines}"
+    prompt += f"\n\nFile Name: {file_name}"
+    prompt += f"\nLanguage: {language}"
+    prompt += f"\n\nCode Structure:\n{json.dumps(code_structure, indent=2)}"
+    prompt += """
+    
+Instructions:
+Using the code structure provided, generate detailed documentation in JSON format that matches the following schema:
 
-    prompt += '''
-    **Instructions:**
-    Based on the above code structure, generate comprehensive documentation in JSON format that matches the following schema:
-
+{
+  "summary": "A detailed summary of the file.",
+  "changes_made": ["List of changes made to the file."],
+  "functions": [
     {
-      "summary": "A detailed summary of the file.",
-      "changes_made": ["List of changes made to the file."],
-      "functions": [
+      "name": "Function name",
+      "docstring": "Detailed description of the function, including its purpose and any important details.",
+      "args": ["List of argument names"],
+      "async": true or false
+    }
+    // More functions...
+  ],
+  "classes": [
+    {
+      "name": "Class name",
+      "docstring": "Detailed description of the class.",
+      "methods": [
         {
-          "name": "Function name",
-          "docstring": "Detailed description of the function, including its purpose and any important details.",
+          "name": "Method name",
+          "docstring": "Detailed description of the method.",
           "args": ["List of argument names"],
-          "async": true or false
-        },
-        ...
-      ],
-      "classes": [
-        {
-          "name": "Class name",
-          "docstring": "Detailed description of the class.",
-          "methods": [
-            {
-              "name": "Method name",
-              "docstring": "Detailed description of the method.",
-              "args": ["List of argument names"],
-              "async": true or false,
-              "type": "Method type (e.g., 'instance', 'class', 'static')"
-            },
-            ...
-          ]
-        },
-        ...
+          "async": true or false,
+          "type": "Method type (e.g., 'instance', 'class', 'static')"
+        }
+        // More methods...
       ]
     }
+    // More classes...
+  ]
+}
 
-    Ensure that all 'docstring' fields are filled with detailed descriptions.
-    The final output should be a JSON object that strictly follows the schema, without any additional commentary or explanations.
-    '''
+Ensure that:
+- All 'docstring' fields contain comprehensive descriptions.
+- The 'args' lists contain the argument names of each function or method.
+- The 'async' fields correctly indicate whether the function or method is asynchronous.
+- The 'type' field for methods specifies if it's an 'instance', 'class', or 'static' method.
 
+Please output only the JSON object that strictly follows the above schema, without any additional commentary or explanations.
+"""
     return prompt
 
 
@@ -740,8 +693,8 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
             for func in functions:
                 func_name = func.get('name', 'N/A')
                 func_args = ', '.join((f'{arg["name"]} ({arg.get("type", "N/A")})' for arg in func.get('parameters', [])))
-                func_doc = sanitize_text(func.get('docstring', ''))
-                first_line_doc = func_doc.splitlines()[0] if func_doc else 'No description provided.'
+                func_doc = sanitize_text(func.get('docstring', 'No description provided.'))
+                first_line_doc = func_doc.splitlines()[0]
                 func_async = 'Yes' if func.get('async', False) else 'No'
                 functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n'
             documentation_content += functions_section + '\n'
@@ -750,7 +703,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
             classes_section = '## Classes\n\n'
             for cls in classes:
                 cls_name = cls.get('name', 'N/A')
-                cls_doc = sanitize_text(cls.get('docstring', ''))
+                cls_doc = sanitize_text(cls.get('docstring', 'No description provided.'))
                 if cls_doc:
                     classes_section += f'### Class: `{cls_name}`\n\n{cls_doc}\n\n'
                 else:
@@ -762,7 +715,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                     for method in methods:
                         method_name = method.get('name', 'N/A')
                         method_args = ', '.join((f'{arg["name"]} ({arg.get("type", "N/A")})' for arg in method.get('parameters', [])))
-                        method_doc = sanitize_text(method.get('docstring', ''))
+                        method_doc = sanitize_text(method.get('docstring', 'No description provided.'))
                         first_line_method_doc = method_doc.splitlines()[0] if method_doc else 'No description provided.'
                         method_async = 'Yes' if method.get('async', False) else 'No'
                         method_type = method.get('type', 'N/A')
