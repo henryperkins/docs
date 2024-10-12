@@ -69,20 +69,18 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
 async def process_file(
+    session: aiohttp.ClientSession,
     file_path: str,
-    repo_root: str,
-    excluded_dirs: Set[str],
-    excluded_files: Set[str],
     skip_types: Set[str],
     semaphore: asyncio.Semaphore,
     model_name: str,
     function_schema: Dict[str, Any],
-    retry: int,
-    use_azure: bool,
-    language: str,
+    repo_root: str,
     project_info: str,
-    style_guidelines: str
-) -> None:
+    style_guidelines: str,
+    safe_mode: bool,
+    use_azure: bool = False
+) -> Optional[str]:
     """
     Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content.
     
@@ -237,6 +235,7 @@ async def process_all_files(
     for file_path in file_paths:
         task = asyncio.create_task(
             process_file(
+                session=session,
                 file_path=file_path,
                 skip_types=skip_types,
                 semaphore=semaphore,
@@ -245,6 +244,7 @@ async def process_all_files(
                 repo_root=repo_root,
                 project_info=project_info,
                 style_guidelines=style_guidelines,
+                safe_mode=safe_mode,
                 use_azure=use_azure
             )
         )
