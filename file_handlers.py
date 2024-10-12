@@ -203,7 +203,23 @@ async def process_all_files(
     output_file: str = "output.md",
     use_azure: bool = False,
 ) -> None:
-    """Processes multiple files for documentation."""
+    """
+    Processes multiple files for documentation.
+
+    Args:
+        session (aiohttp.ClientSession): The HTTP session.
+        file_paths (List[str]): List of file paths to process.
+        skip_types (Set[str]): Set of file types to skip.
+        semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
+        model_name (str): Model name for standard OpenAI or deployment name for Azure OpenAI.
+        function_schema (dict): The function schema for structured responses.
+        repo_root (str): The root directory of the repository.
+        project_info (Optional[str]): Information about the project.
+        style_guidelines (Optional[str]): Style guidelines to follow.
+        safe_mode (bool, optional): Whether to use safe mode. Defaults to False.
+        output_file (str, optional): The output markdown file. Defaults to "output.md".
+        use_azure (bool, optional): Whether to use Azure OpenAI API. Defaults to False.
+    """
     logger.info("Starting process of all files.")
     tasks = []
     for file_path in file_paths:
