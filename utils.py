@@ -499,7 +499,7 @@ def generate_documentation_prompt(
     prompt += f"\nLanguage: {language}"
     prompt += f"\n\nCode Structure:\n{json.dumps(code_structure, indent=2)}"
     prompt += """
-    
+
 Instructions:
 Using the code structure provided, generate detailed documentation in JSON format that matches the following schema:
 
@@ -535,14 +535,17 @@ Using the code structure provided, generate detailed documentation in JSON forma
 }
 
 Ensure that:
-- **All 'docstring' fields contain comprehensive descriptions.**
+- **All 'docstring' fields contain comprehensive and meaningful descriptions.**
 - The 'args' lists contain the argument names of each function or method.
 - The 'async' fields correctly indicate whether the function or method is asynchronous.
 - The 'type' field for methods specifies if it's an 'instance', 'class', or 'static' method.
 
+**Do not omit any 'docstring' fields. Provide detailed descriptions for each.**
+
 Please output only the JSON object that strictly follows the above schema, without any additional commentary or explanations.
 """
     return prompt
+
 
 
 async def write_documentation_report(documentation: Optional[Dict[str, Any]], language: str, file_path: str, repo_root: str, new_content: str) -> str:
