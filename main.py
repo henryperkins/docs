@@ -1,15 +1,10 @@
-# main.py
-
 import os
 import sys
 import logging
 import argparse
 import asyncio
-from logging.handlers import RotatingFileHandler
-
 import aiohttp
 from dotenv import load_dotenv
-
 from file_handlers import process_all_files
 from utils import (
     load_config,
@@ -19,7 +14,7 @@ from utils import (
     DEFAULT_SKIP_TYPES,
     load_function_schema,
     validate_model_name,
-    configure_openai,  # Ensure this import is present
+    configure_openai,
 )
 
 # Load environment variables from .env file
@@ -29,86 +24,31 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 def parse_arguments():
-    """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Generate and insert comments/docstrings using OpenAI's GPT-4 API."
     )
     parser.add_argument("repo_path", help="Path to the code repository")
-    parser.add_argument(
-        "-c",
-        "--config",
-        help="Path to config.json",
-        default="config.json"
-    )
-    parser.add_argument(
-        "--concurrency",
-        help="Number of concurrent requests",
-        type=int,
-        default=5
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        help="Output Markdown file",
-        default="output.md"
-    )
-    parser.add_argument(
-        "--deployment-name",
-        help="Deployment name for Azure OpenAI",
-        required=True
-    )
-    parser.add_argument(
-        "--skip-types",
-        help="Comma-separated list of file extensions to skip",
-        default=""
-    )
-    parser.add_argument(
-        "--project-info",
-        help="Information about the project",
-        default=""
-    )
-    parser.add_argument(
-        "--style-guidelines",
-        help="Documentation style guidelines to follow",
-        default=""
-    )
-    parser.add_argument(
-        "--safe-mode",
-        help="Run in safe mode (no files will be modified)",
-        action="store_true"
-    )
-    parser.add_argument(
-        "--log-level",
-        help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
-        default="INFO"
-    )
-    parser.add_argument(
-        "--schema",
-        help="Path to function_schema.json",
-        default=os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "schemas",
-            "function_schema.json"
-        )
-    )
-    parser.add_argument(
-        "--use-azure",
-        help="Use Azure OpenAI instead of regular OpenAI API",
-        action="store_true"
-    )
+    parser.add_argument("-c", "--config", help="Path to config.json", default="config.json")
+    parser.add_argument("--concurrency", help="Number of concurrent requests", type=int, default=5)
+    parser.add_argument("-o", "--output", help="Output Markdown file", default="output.md")
+    parser.add_argument("--deployment-name", help="Deployment name for Azure OpenAI", required=True)
+    parser.add_argument("--skip-types", help="Comma-separated list of file extensions to skip", default="")
+    parser.add_argument("--project-info", help="Information about the project", default="")
+    parser.add_argument("--style-guidelines", help="Documentation style guidelines to follow", default="")
+    parser.add_argument("--safe-mode", help="Run in safe mode (no files will be modified)", action="store_true")
+    parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
+    parser.add_argument("--schema", help="Path to function_schema.json", default=os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "schemas", "function_schema.json"))
+    parser.add_argument("--use-azure", help="Use Azure OpenAI instead of regular OpenAI API", action="store_true")
     return parser.parse_args()
 
 def configure_logging(log_level):
-    """Configures logging based on the provided log level."""
     logger.setLevel(log_level)
     formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s:%(module)s:%(funcName)s:"
-        "%(lineno)d: %(message)s"
+        "%(asctime)s [%(levelname)s] %(name)s:%(module)s:%(funcName)s:%(lineno)d: %(message)s"
     )
 
-    file_handler = RotatingFileHandler(
-        "docs_generation.log", maxBytes=5 * 1024 * 1024, backupCount=5
-    )
+    file_handler = logging.FileHandler("docs_generation.log")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
@@ -120,16 +60,13 @@ def configure_logging(log_level):
     logger.addHandler(console_handler)
 
 async def main():
-    """Main function to orchestrate documentation generation."""
     args = parse_arguments()
 
-    # Configure logging based on the parsed log level
     configure_logging(getattr(logging, args.log_level.upper(), logging.INFO))
 
     logger.info("Starting Documentation Generation Tool.")
     logger.debug(f"Parsed arguments: {args}")
 
-    # Assign arguments to variables for easier access
     repo_path = args.repo_path
     config_path = args.config
     concurrency = args.concurrency
@@ -173,9 +110,7 @@ async def main():
     logger.info(f"Function Schema Path: {schema_path}")
 
     if not os.path.isdir(repo_path):
-        logger.critical(
-            f"Invalid repository path: '{repo_path}' is not a directory."
-        )
+        logger.critical(f"Invalid repository path: '{repo_path}' is not a directory.")
         sys.exit(1)
     else:
         logger.debug(f"Repository path '{repo_path}' is valid.")
@@ -190,7 +125,6 @@ async def main():
         )
         logger.debug(f"Updated skip_types: {skip_types_set}")
 
-    # Load configuration
     project_info_config = ""
     style_guidelines_config = ""
 
@@ -221,19 +155,15 @@ async def main():
     if style_guidelines:
         logger.debug(f"Style Guidelines: {style_guidelines}")
 
-    # Load and validate function schema
     function_schema = load_function_schema(schema_path)
 
-    # Validate model name if not using Azure OpenAI
     if not use_azure:
         if not validate_model_name(deployment_name, use_azure):
             logger.error(f"Invalid model name '{deployment_name}'. Exiting.")
             sys.exit(1)
 
-    # Configure OpenAI API
     configure_openai(use_azure, deployment_name)
 
-    # Get all file paths to process
     try:
         file_paths = get_all_file_paths(
             repo_path, excluded_dirs, excluded_files, skip_types_set
@@ -243,10 +173,8 @@ async def main():
         logger.error(f"Error getting file paths: {e}")
         sys.exit(1)
 
-    # Set model_name to deployment_name
     model_name = deployment_name
 
-    # Create async HTTP session
     async with aiohttp.ClientSession(raise_for_status=True) as session:
         semaphore = asyncio.Semaphore(concurrency)
         await process_all_files(
@@ -254,14 +182,14 @@ async def main():
             file_paths=file_paths,
             skip_types=skip_types_set,
             semaphore=semaphore,
-            model_name=model_name,  # Correct parameter
+            model_name=model_name,
             function_schema=function_schema,
             repo_root=repo_path,
             project_info=project_info,
             style_guidelines=style_guidelines,
             safe_mode=safe_mode,
             output_file=output_file,
-            use_azure=use_azure,  # Pass use_azure to process_all_files
+            use_azure=use_azure,
         )
 
     logger.info("Documentation generation completed successfully.")

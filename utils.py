@@ -18,20 +18,14 @@ from logging.handlers import RotatingFileHandler
 from openai import AsyncAzureOpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError
 
 # Load environment variables
-load_dotenv()  # This ensures environment variables are loaded
+load_dotenv()
 
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL")
 API_VERSION = os.getenv("API_VERSION")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Define aclient as None initially; it will be configured in the `configure_openai()` function.
 aclient = None
-
-# ----------------------------
-# Configuration and Setup
-# ----------------------------
-
 
 # Configure logging
 logging.basicConfig(
@@ -72,20 +66,8 @@ LANGUAGE_MAPPING = {
 # ----------------------------
 
 def configure_openai(use_azure: bool, deployment_name: str):
-    """
-    Configures the OpenAI client for either Azure OpenAI or standard OpenAI API.
-
-    Args:
-        use_azure (bool): Flag indicating whether to use Azure OpenAI.
-        deployment_name (str): Deployment name for Azure OpenAI or model name for standard OpenAI.
-    """
     global aclient
     if use_azure:
-        # Azure OpenAI configuration
-        AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
-        AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT') or os.getenv('ENDPOINT_URL')
-        API_VERSION = os.getenv('API_VERSION')
-
         if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, deployment_name]):
             logger.critical(
                 "Azure OpenAI environment variables are not set properly. "
@@ -100,8 +82,6 @@ def configure_openai(use_azure: bool, deployment_name: str):
         )
         logger.debug("Configured Azure OpenAI client.")
     else:
-        # Standard OpenAI configuration
-        OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
         if not OPENAI_API_KEY:
             logger.critical(
                 "OPENAI_API_KEY environment variable is not set. "
@@ -110,11 +90,8 @@ def configure_openai(use_azure: bool, deployment_name: str):
             sys.exit(1)
 
         openai.api_key = OPENAI_API_KEY
-        openai.api_base = 'https://api.openai.com'  # Optional: Only if you need to set a custom base
-
         aclient = openai  # Use the openai module directly
         logger.debug("Configured standard OpenAI client.")
-
 # ----------------------------
 # Language and File Utilities
 # ----------------------------
@@ -322,8 +299,6 @@ def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
 # OpenAI API Interaction
 # ----------------------------
 
-# file_handlers.py
-
 async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -333,15 +308,6 @@ async def fetch_documentation(
     retry: int = 3,
     use_azure: bool = False
 ) -> Optional[dict]:
-    """
-    Fetches documentation from the OpenAI or Azure OpenAI API based on the provided prompt.
-
-    Args:
-        ... (existing docstring)
-
-    Returns:
-        Optional[dict]: The documentation as a dictionary if successful, else None.
-    """
     logger.debug(f"Fetching documentation for model: {model_name}, use_azure: {use_azure}")
     for attempt in range(1, retry + 1):
         async with semaphore:
@@ -352,18 +318,14 @@ async def fetch_documentation(
                 ]
 
                 if use_azure:
-                    # Use 'deployment_id' parameter for Azure OpenAI
-                    logger.debug("Using Azure OpenAI deployment.")
                     response = await aclient.chat.completions.create(
-                        deployment_id=model_name,
+                        model=model_name,
                         messages=messages,
                         functions=[function_schema],
                         function_call="auto"
                     )
                 else:
-                    # Use 'model' parameter for standard OpenAI API
-                    logger.debug("Using standard OpenAI model.")
-                    response = await aclient.ChatCompletion.acreate(
+                    response = await aclient.chat.completions.create(
                         model=model_name,
                         messages=messages,
                         functions=[function_schema],
@@ -420,7 +382,6 @@ async def fetch_documentation(
                 logger.error(f"An unexpected error occurred: {e}", exc_info=True)
                 return None
     return None
-
 
 # ----------------------------
 # Code Formatting and Cleanup

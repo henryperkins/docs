@@ -1,4 +1,5 @@
 # language_functions/js_ts_handler.py
+import os
 import logging
 import subprocess
 import json
