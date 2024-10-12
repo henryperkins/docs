@@ -393,6 +393,42 @@ async def fetch_documentation(
 # Code Formatting and Cleanup
 # ----------------------------
 
+def clean_unused_imports(code: str, file_path: str) -> str:
+    """
+    Removes unused imports and variables from Python code using Autoflake.
+
+    Args:
+        code (str): The Python code to clean.
+        file_path (str): The path to the file being cleaned (used for display name).
+
+    Returns:
+        str: The cleaned Python code.
+    """
+    try:
+        process = subprocess.run(
+            [
+                'autoflake',
+                '--remove-all-unused-imports',
+                '--remove-unused-variables',
+                '--stdin-display-name', file_path,  # Provide the filename here
+                '--stdin',
+                '--stdout'
+            ],
+            input=code.encode('utf-8'),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        cleaned_code = process.stdout.decode('utf-8')
+        logger.debug('Successfully cleaned code with Autoflake.')
+        return cleaned_code
+    except subprocess.CalledProcessError as e:
+        logger.error(f'Autoflake failed: {e.stderr.decode("utf-8")}')
+        return code  # Return original code if Autoflake fails
+    except Exception as e:
+        logger.error(f'Unexpected error during Autoflake processing: {e}')
+        return code  # Return original code if any other error occurs
+
 def format_with_black(code: str) -> str:
     """
     Formats the given Python code using Black.
@@ -417,31 +453,9 @@ def format_with_black(code: str) -> str:
     except subprocess.CalledProcessError as e:
         logger.error(f'Black formatting failed: {e.stderr.decode("utf-8")}')
         return code  # Return unformatted code if Black fails
-
-def clean_unused_imports(code: str) -> str:
-    """
-    Removes unused imports and variables from Python code using Autoflake.
-
-    Args:
-        code (str): The Python code to clean.
-
-    Returns:
-        str: The cleaned Python code.
-    """
-    try:
-        process = subprocess.run(
-            ['autoflake', '--remove-all-unused-imports', '--remove-unused-variables', '--in-place', '--stdin', '--stdout'],
-            input=code.encode('utf-8'),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-        cleaned_code = process.stdout.decode('utf-8')
-        logger.debug('Successfully cleaned code with Autoflake.')
-        return cleaned_code
-    except subprocess.CalledProcessError as e:
-        logger.error(f'Autoflake failed: {e.stderr.decode("utf-8")}')
-        return code  # Return original code if Autoflake fails
+    except Exception as e:
+        logger.error(f'Unexpected error during Black formatting: {e}')
+        return code  # Return unformatted code if any other error occurs
 
 def run_flake8(file_path: str) -> Optional[str]:
     """
@@ -468,7 +482,7 @@ def run_flake8(file_path: str) -> Optional[str]:
     except Exception as e:
         logger.error(f'Error running Flake8 on {file_path}: {e}')
         return None
-
+    
 # ----------------------------
 # JavaScript/TypeScript Utilities
 # ----------------------------
