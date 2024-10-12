@@ -243,6 +243,9 @@ async def main():
         logger.error(f"Error getting file paths: {e}")
         sys.exit(1)
 
+    # Set model_name to deployment_name
+    model_name = deployment_name
+
     # Create async HTTP session
     async with aiohttp.ClientSession(raise_for_status=True) as session:
         semaphore = asyncio.Semaphore(concurrency)
@@ -251,7 +254,7 @@ async def main():
             file_paths=file_paths,
             skip_types=skip_types_set,
             semaphore=semaphore,
-            deployment_name=deployment_name,
+            model_name=model_name,  # Correct parameter
             function_schema=function_schema,
             repo_root=repo_path,
             project_info=project_info,

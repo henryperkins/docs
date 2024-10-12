@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup, Comment
 from jsonschema import validate, ValidationError
 from logging.handlers import RotatingFileHandler
 import openai
-from openai.error import OpenAIError, APIError, APIConnectionError, RateLimitError
+from openai import OpenAIError, APIError, APIConnectionError, RateLimitError
 
 # ----------------------------
 # Configuration and Setup
@@ -289,6 +289,7 @@ def validate_model_name(model_name: str, use_azure: bool = False) -> bool:
         "gpt-3.5-turbo",
         "gpt-4",
         "gpt-4-32k",
+        "gpt-4o",
         # Add other supported models as needed
     ]
     
@@ -316,7 +317,7 @@ async def fetch_documentation(
     session: aiohttp.ClientSession,
     prompt: str,
     semaphore: asyncio.Semaphore,
-    deployment_name: str,
+    model_name: str,
     function_schema: dict,
     retry: int = 3,
     use_azure: bool = False
@@ -328,7 +329,7 @@ async def fetch_documentation(
         session (aiohttp.ClientSession): The HTTP session.
         prompt (str): The prompt to send to the API.
         semaphore (asyncio.Semaphore): Semaphore to limit concurrency.
-        deployment_name (str): Deployment name for Azure OpenAI or model name for standard OpenAI.
+        model_name (str): Model name for standard OpenAI or deployment name for Azure OpenAI.
         function_schema (dict): The function schema for structured responses.
         retry (int, optional): Number of retry attempts on failure. Defaults to 3.
         use_azure (bool, optional): Whether to use Azure OpenAI API. Defaults to False.
@@ -336,7 +337,7 @@ async def fetch_documentation(
     Returns:
         Optional[dict]: The documentation as a dictionary if successful, else None.
     """
-    logger.debug(f"Fetching documentation for deployment/model: {deployment_name}, use_azure: {use_azure}")
+    logger.debug(f"Fetching documentation for model: {model_name}, use_azure: {use_azure}")
     for attempt in range(1, retry + 1):
         async with semaphore:
             try:
@@ -349,7 +350,7 @@ async def fetch_documentation(
                     # Use 'deployment_id' parameter for Azure OpenAI
                     logger.debug("Using Azure OpenAI deployment.")
                     response = await openai.ChatCompletion.acreate(
-                        deployment_id=deployment_name,  # deployment_name is your deployment ID
+                        deployment_id=model_name,  # model_name is your deployment ID
                         messages=messages,
                         functions=[function_schema],
                         function_call="auto",
@@ -358,7 +359,7 @@ async def fetch_documentation(
                     # Use 'model' parameter for OpenAI API
                     logger.debug("Using standard OpenAI model.")
                     response = await openai.ChatCompletion.acreate(
-                        model=deployment_name,  # For standard OpenAI, 'deployment_name' acts as 'model'
+                        model=model_name,  # For standard OpenAI, 'model_name' acts as 'model'
                         messages=messages,
                         functions=[function_schema],
                         function_call="auto",
