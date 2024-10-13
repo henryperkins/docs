@@ -310,42 +310,33 @@ async def fetch_documentation(
 # Code Formatting and Cleanup
 # ----------------------------
 
-def clean_unused_imports(code: str, file_path: str) -> str:
-    """Cleans unused imports from the given code string.
+async def clean_unused_imports_async(code: str, file_path: str) -> str:
+    """
+    Asynchronously removes unused imports and variables from the provided code using autoflake.
 
     Args:
-        code (str): The code from which to remove unused imports.
-        file_path (str): The path to the file whose imports are being cleaned.
+        code (str): The source code to clean.
+        file_path (str): The file path used for display purposes in autoflake.
 
     Returns:
-        str: The cleaned code with unused imports removed."""
-    logger.debug('Cleaning unused imports in the given code.')
+        str: The cleaned code with unused imports and variables removed.
+    """
     try:
-        command = [
-            'autoflake',
-            '--remove-all-unused-imports',
-            '--remove-unused-variables',
-            '--stdin-display-name',
-            file_path,
-            '-',
-        ]
-        logger.debug(f'Running command: {" ".join(command)}')
-        process = subprocess.run(
-            command,
-            input=code,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True
+        process = await asyncio.create_subprocess_exec(
+            'autoflake', '--remove-all-unused-imports', '--remove-unused-variables', '--stdin-display-name', file_path, '-',
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        cleaned_code = process.stdout
-        logger.debug('Successfully cleaned code with Autoflake.')
-        return cleaned_code
-    except subprocess.CalledProcessError as e:
-        logger.error(f'Autoflake failed: {e.stderr}')
-        return code
+        stdout, stderr = await process.communicate(input=code.encode())
+        
+        if process.returncode != 0:
+            logger.error(f"Autoflake failed:\n{stderr.decode()}")
+            return code
+        
+        return stdout.decode()
     except Exception as e:
-        logger.error(f'Unexpected error during Autoflake processing: {e}')
+        logger.error(f'Error running Autoflake: {e}')
         return code
 
 def format_with_black(code: str) -> str:
@@ -376,70 +367,51 @@ def format_with_black(code: str) -> str:
         logger.error(f'Unexpected error during Black formatting: {e}')
         return code  # Return unformatted code if any other error occurs
 
-def run_flake8(file_path: str) -> Optional[str]:
+async def run_flake8_async(file_path: str) -> Optional[str]:
     """
-    Runs Flake8 on the specified file and returns the output if there are linting issues.
+    Asynchronously runs Flake8 on the specified file to check for style violations.
 
     Args:
-        file_path (str): The path to the file to lint.
+        file_path (str): The path to the file to be checked.
 
     Returns:
-        Optional[str]: The Flake8 output if issues are found, else None.
+        Optional[str]: The output from Flake8 if there are violations, otherwise None.
     """
     try:
-        process = subprocess.run(
-            ['flake8', file_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False  # Do not raise exception on linting errors
+        process = await asyncio.create_subprocess_exec(
+            'flake8', file_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        if process.stdout:
-            logger.debug(f'Flake8 issues found in {file_path}:\n{process.stdout}')
-            return process.stdout.strip()
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            return stdout.decode() + stderr.decode()
+        
         return None
     except Exception as e:
-        logger.error(f'Error running Flake8 on {file_path}: {e}')
+        logger.error(f'Error running Flake8: {e}')
         return None
 
 # ----------------------------
 # JavaScript/TypeScript Utilities
 # ----------------------------
 
-def run_node_script(script_name: str, input_data: dict) -> Optional[dict]:
-    """
-    Runs a Node.js script and returns the output.
-
-    Args:
-        script_name (str): Name of the script to run.
-        input_data (dict): Input data to pass to the script.
-
-    Returns:
-        Optional[dict]: The output from the script if successful, None otherwise.
-    """
+async def run_node_script_async(script_path: str, input_json: str) -> Optional[str]:
     try:
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
-        logger.debug(f"Running Node.js script: {script_path}")
-
-        input_json = json.dumps(input_data)
-        result = subprocess.run(
-            ["node", script_path],
-            input=input_json,
-            capture_output=True,
-            text=True,
-            check=True
+        process = await asyncio.create_subprocess_exec(
+            'node', script_path,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        logger.debug(f"Successfully ran {script_path}")
-        output = json.loads(result.stdout)
-        return output
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error running {script_name}: {e.stderr}")
-        return None
-    except FileNotFoundError:
-        logger.error(f"Node.js script {script_name} not found.")
-        return None
+        stdout, stderr = await process.communicate(input=input_json.encode())
+        if process.returncode != 0:
+            logger.error(f"Node script error:\n{stderr.decode()}")
+            return None
+        return stdout.decode()
     except Exception as e:
-        logger.error(f"Unexpected error running {script_name}: {e}")
+        logger.error(f'Error running Node script: {e}')
         return None
 
 def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[str]:
@@ -480,77 +452,61 @@ def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[s
 # ----------------------------
 # Documentation Generation
 # ----------------------------
-def generate_halstead_badge(halstead: Dict[str, Any]) -> str:
-    """
-    Generates a Shields.io badge for Halstead metrics.
+def get_threshold(metric: str, key: str, default: int) -> int:
+    return int(os.getenv(f"{metric.upper()}_{key.upper()}_THRESHOLD", default))
 
-    Args:
-        halstead (Dict[str, Any]): The Halstead metrics.
-
-    Returns:
-        str: Markdown image string for the Halstead badge.
-    """
-    try:
-        volume = halstead['volume']
-        difficulty = halstead['difficulty']
-        effort = halstead['effort']
-    except KeyError:
-        return ""
-
-    volume_color = "green" if volume < 100 else "yellow" if volume < 500 else "red"
-    difficulty_color = "green" if difficulty < 10 else "yellow" if difficulty < 20 else "red"
-    effort_color = "green" if effort < 500 else "yellow" if effort < 1000 else "red"
-
-    volume_badge = f'![Halstead Volume: {volume}](https://img.shields.io/badge/Volume-{volume}-{volume_color})'
-    difficulty_badge = f'![Halstead Difficulty: {difficulty}](https://img.shields.io/badge/Difficulty-{difficulty}-{difficulty_color})'
-    effort_badge = f'![Halstead Effort: {effort}](https://img.shields.io/badge/Effort-{effort}-{effort_color})'
-
-    return f"{volume_badge} {difficulty_badge} {effort_badge}"
-
-def generate_maintainability_badge(mi: float) -> str:
-    """
-    Generates a Shields.io badge for the Maintainability Index.
-
-    Args:
-        mi (float): The Maintainability Index.
-
-    Returns:
-        str: Markdown image string for the Maintainability Index badge.
-    """
-    color = "green" if mi > 80 else "yellow" if mi > 50 else "red"
-    return f'![Maintainability Index: {mi}](https://img.shields.io/badge/Maintainability-{mi}-{color})'
-
-def generate_complexity_badge(complexity: Any) -> str:
-    """
-    Generates a Shields.io badge for the given complexity score with a hover tooltip.
+def generate_all_badges(
+    complexity: Optional[int] = None, 
+    halstead: Optional[Dict[str, Any]] = None, 
+    mi: Optional[float] = None
+) -> str:
+    badges = []
     
-    Args:
-        complexity (Any): The cyclomatic complexity score.
+    # Cyclomatic Complexity
+    if complexity is not None:
+        low_threshold = get_threshold('complexity', 'low', 10)
+        medium_threshold = get_threshold('complexity', 'medium', 20)
+        color = "green" if complexity < low_threshold else "yellow" if complexity < medium_threshold else "red"
+        complexity_badge = f'![Complexity: {complexity}](https://img.shields.io/badge/Complexity-{complexity}-{color}?style=flat-square)'
+        badges.append(complexity_badge)
     
-    Returns:
-        str: Markdown image string for the complexity badge with tooltip.
-    """
-    try:
-        complexity = int(complexity)
-    except ValueError:
-        logger.error(f"Invalid complexity value: {complexity}")
-        return '![Invalid Complexity](https://img.shields.io/badge/Complexity-Invalid-red "Invalid Complexity")'
+    # Halstead Metrics
+    if halstead:
+        try:
+            volume = halstead['volume']
+            difficulty = halstead['difficulty']
+            effort = halstead['effort']
+            
+            volume_low = get_threshold('halstead_volume', 'low', 100)
+            volume_medium = get_threshold('halstead_volume', 'medium', 500)
+            volume_color = "green" if volume < volume_low else "yellow" if volume < volume_medium else "red"
+            
+            difficulty_low = get_threshold('halstead_difficulty', 'low', 10)
+            difficulty_medium = get_threshold('halstead_difficulty', 'medium', 20)
+            difficulty_color = "green" if difficulty < difficulty_low else "yellow" if difficulty < difficulty_medium else "red"
+            
+            effort_low = get_threshold('halstead_effort', 'low', 500)
+            effort_medium = get_threshold('halstead_effort', 'medium', 1000)
+            effort_color = "green" if effort < effort_low else "yellow" if effort < effort_medium else "red"
+            
+            volume_badge = f'![Halstead Volume: {volume}](https://img.shields.io/badge/Volume-{volume}-{volume_color}?style=flat-square)'
+            difficulty_badge = f'![Halstead Difficulty: {difficulty}](https://img.shields.io/badge/Difficulty-{difficulty}-{difficulty_color}?style=flat-square)'
+            effort_badge = f'![Halstead Effort: {effort}](https://img.shields.io/badge/Effort-{effort}-{effort_color}?style=flat-square)'
+            
+            badges.extend([volume_badge, difficulty_badge, effort_badge])
+        except KeyError as e:
+            print(f"Missing Halstead metric: {e}. Halstead badges will not be generated.")
     
-    if complexity <= 5:
-        color = 'green'
-        label = 'Low'
-    elif 6 <= complexity <= 10:
-        color = 'orange'
-        label = 'Medium'
-    else:
-        color = 'red'
-        label = 'High'
+    # Maintainability Index
+    if mi is not None:
+        high_threshold = get_threshold('maintainability_index', 'high', 80)
+        medium_threshold = get_threshold('maintainability_index', 'medium', 50)
+        color = "green" if mi > high_threshold else "yellow" if mi > medium_threshold else "red"
+        mi_badge = f'![Maintainability Index: {mi}](https://img.shields.io/badge/Maintainability-{mi}-{color}?style=flat-square)'
+        badges.append(mi_badge)
     
-    label_encoded = f"Complexity-{complexity}"
-    badge_url = f'https://img.shields.io/badge/{label_encoded}-{color}'
-    badge_markdown = f'![Cyclomatic Complexity: {complexity}]({badge_url} "Cyclomatic Complexity: {complexity}")'
-    
-    return badge_markdown
+    return ' '.join(badges)
+
 
 def generate_documentation_prompt(
     file_name: str,
@@ -620,28 +576,26 @@ Please output only the JSON object that strictly follows the above schema, witho
 """
     return prompt
 
-async def write_documentation_report(documentation: Optional[Dict[str, Any]], language: str, file_path: str, repo_root: str, new_content: str) -> str:
-    """Asynchronously writes a documentation report to a specified file path.
-
-    Args:
-        documentation (Optional[Dict[str, Any]]): The documentation content to write.
-        language (str): The language in which documentation is written.
-        file_path (str): File path to write the report to.
-        repo_root (str): Root path of the repository.
-        new_content (str): New content to include in the report.
-
-    Returns:
-        str: The documentation content as a string.
-    """
+async def write_documentation_report(
+    documentation: Optional[Dict[str, Any]], 
+    language: str, 
+    file_path: str, 
+    repo_root: str, 
+    new_content: str
+) -> str:
     try:
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f'# File: {relative_path}\n\n'
         documentation_content = file_header
+
+        # Summary Section
         summary = documentation.get('summary', '') if documentation else ''
         summary = sanitize_text(summary)
         if summary:
             summary_section = f'## Summary\n\n{summary}\n'
             documentation_content += summary_section
+
+        # Changes Made Section
         changes = documentation.get('changes_made', []) if documentation else []
         changes = [sanitize_text(change) for change in changes if change.strip()]
         if changes:
@@ -649,32 +603,19 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
             changes_section = f'## Changes Made\n\n{changes_formatted}\n'
             documentation_content += changes_section
 
-        # Add Halstead metrics section
-        if 'halstead' in documentation:
-            halstead = documentation['halstead']
-            halstead_section = (
-                "## Halstead Metrics\n\n"
-                f"- **Vocabulary:** {halstead['vocabulary']}\n"
-                f"- **Length:** {halstead['length']}\n"
-                f"- **Volume:** {halstead['volume']}\n"
-                f"- **Difficulty:** {halstead['difficulty']}\n"
-                f"- **Effort:** {halstead['effort']}\n"
-            )
-            documentation_content += halstead_section
-            halstead_badge = generate_halstead_badge(halstead)
-            documentation_content += f"\n{halstead_badge}\n"
+        # Generate overall badges
+        halstead = documentation.get('halstead') if documentation else {}
+        mi = documentation.get('maintainability_index') if documentation else None
+        complexity = max(
+            (func.get('complexity', 0) for func in documentation.get('functions', [])),
+            *(method.get('complexity', 0) for cls in documentation.get('classes', []) for method in cls.get('methods', [])),
+            default=0
+        )
+        overall_badges = generate_all_badges(complexity, halstead, mi)
+        if overall_badges:
+            documentation_content += f"{overall_badges}\n\n"
 
-        # Add Maintainability Index section
-        if 'maintainability_index' in documentation:
-            mi = documentation['maintainability_index']
-            mi_section = (
-                "## Maintainability Index\n\n"
-                f"- **Value:** {mi}\n"
-            )
-            documentation_content += mi_section
-            maintainability_badge = generate_maintainability_badge(mi)
-            documentation_content += f"\n{maintainability_badge}\n"
-
+        # Functions Section
         functions = documentation.get('functions', []) if documentation else []
         if functions:
             functions_section = '## Functions\n\n'
@@ -687,9 +628,11 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                 first_line_doc = func_doc.splitlines()[0]
                 func_async = 'Yes' if func.get('async', False) else 'No'
                 func_complexity = func.get('complexity', 0)
-                complexity_badge = generate_complexity_badge(func_complexity)
+                complexity_badge = generate_all_badges(func_complexity, {}, 0)
                 functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} | {complexity_badge} |\n'
             documentation_content += functions_section + '\n'
+
+        # Classes Section
         classes = documentation.get('classes', []) if documentation else []
         if classes:
             classes_section = '## Classes\n\n'
@@ -700,6 +643,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                     classes_section += f'### Class: `{cls_name}`\n\n{cls_doc}\n\n'
                 else:
                     classes_section += f'### Class: `{cls_name}`\n\n'
+
                 methods = cls.get('methods', [])
                 if methods:
                     classes_section += '| Method | Arguments | Description | Async | Type | Complexity |\n'
@@ -712,22 +656,29 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                         method_async = 'Yes' if method.get('async', False) else 'No'
                         method_type = method.get('type', 'N/A')
                         method_complexity = method.get('complexity', 0)
-                        complexity_badge = generate_complexity_badge(method_complexity)
-                        classes_section += f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} | {complexity_badge} |\n'
+                        complexity_badge = generate_all_badges(method_complexity, {}, 0)
+                        classes_section += (
+                            f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | '
+                            f'{method_async} | {method_type} | {complexity_badge} |\n'
+                        )
                     classes_section += '\n'
             documentation_content += classes_section
+
+        # Source Code Block
         code_content = new_content.strip()
         code_block = f'```{language}\n{code_content}\n```\n\n---\n'
         documentation_content += code_block
 
-        # Write to file
-        async with aiofiles.open(file_path, 'w') as f:
+        # Write to file asynchronously
+        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
             await f.write(documentation_content)
+        logger.info(f"Documentation written to '{file_path}' successfully.")
+        return documentation_content
+
     except Exception as e:
-        print(f"Error writing documentation report: {e}")
-
-    return documentation_content
-
+        logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
+        return ''
+    
 def sanitize_text(text: str) -> str:
         """
         Sanitizes text for Markdown formatting.

@@ -4,7 +4,7 @@ import logging
 import subprocess
 from typing import Dict, Any, Optional
 from radon.complexity import cc_visit
-from radon.metrics import h_visit, mi_visit  # Ensure these are imported
+from radon.metrics import h_visit, mi_visit
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -24,55 +24,58 @@ class PythonHandler(BaseHandler):
             None: This constructor does not return a value."""
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
-        """Analyzes the provided code and returns its structure in a dictionary form."""
+    def extract_structure(self, code: str, file_path: str=None) -> Dict[str, Any]:
+        """Analyzes the provided code and returns its structure in a dictionary form.
+
+        Args:
+            self (PythonHandler): The instance of the class.
+            code (str): The Python code to be processed.
+            file_path (str): The path to the file being analyzed.
+
+        Returns:
+            Dict[str, Any]: A structured representation of the analyzed code."""
         try:
+            module_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else 'module'
             tree = ast.parse(code)
             code_structure = {'modules': [], 'classes': [], 'functions': [], 'variables': [], 'constants': []}
-
-            # Calculate complexity scores
             complexity_scores = cc_visit(code)
-            function_complexity = {f"{score.classname}.{score.name}": score.complexity for score in complexity_scores if hasattr(score, 'classname')}
-            function_complexity.update({score.name: score.complexity for score in complexity_scores if not hasattr(score, 'classname')})
-
-            # Calculate Halstead metrics
+            function_complexity = {}
+            for score in complexity_scores:
+                if score.classname:
+                    full_name = f"{module_name}.{score.classname}.{score.name}"
+                else:
+                    full_name = f"{module_name}.{score.name}"
+                function_complexity[full_name] = score.complexity
             halstead_metrics = h_visit(code)
-            # Calculate Maintainability Index
             maintainability_index = mi_visit(code, True)
 
             class CodeVisitor(ast.NodeVisitor):
                 """`CodeVisitor` explores the AST to gather information about functions, classes, and assignments for further analysis."""
 
+                def __init__(self):
+                    self.scope_stack = []
+
                 def visit_FunctionDef(self, node):
                     """Processes a function definition within the AST."""
+                    self.scope_stack.append(node.name)
                     self._process_function(node, is_async=False)
                     self.generic_visit(node)
+                    self.scope_stack.pop()
 
                 def visit_AsyncFunctionDef(self, node):
                     """Processes an async function definition within the AST."""
+                    self.scope_stack.append(node.name)
                     self._process_function(node, is_async=True)
                     self.generic_visit(node)
+                    self.scope_stack.pop()
 
                 def visit_ClassDef(self, node):
                     """Processes a class definition within the AST."""
+                    self.scope_stack.append(node.name)
                     class_info = {'name': node.name, 'description': '', 'inherits': [self._get_class_name(base) for base in node.bases], 'methods': [], 'attributes': []}
                     for body_item in node.body:
                         if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            method_info = {
-                                'name': body_item.name,
-                                'description': '',
-                                'parameters': [],
-                                'returns': {'type': self._get_type_annotation(body_item.returns), 'description': ''},
-                                'raises': self._extract_exceptions(body_item),
-                                'examples': [],
-                                'decorators': [ast.unparse(dec) for dec in body_item.decorator_list],
-                                'async': isinstance(body_item, ast.AsyncFunctionDef),
-                                'static': any((isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list)),
-                                'visibility': 'public' if not body_item.name.startswith('_') else 'private',
-                                'complexity': function_complexity.get(f"{node.name}.{body_item.name}", 0),
-                                'halstead': halstead_metrics.get(body_item.name, {}),
-                                'maintainability': maintainability_index.get(body_item.name, 0.0)
-                            }
+                            method_info = {'name': body_item.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(body_item.returns), 'description': ''}, 'raises': self._extract_exceptions(body_item), 'examples': [], 'decorators': [ast.unparse(dec) for dec in body_item.decorator_list], 'async': isinstance(body_item, ast.AsyncFunctionDef), 'static': any((isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list)), 'visibility': 'public' if not body_item.name.startswith('_') else 'private', 'complexity': function_complexity.get(f"{module_name}.{'.'.join(self.scope_stack)}.{body_item.name}", 0)}
                             defaults = body_item.args.defaults
                             default_values = [self._get_constant_value(d) for d in defaults]
                             start = len(body_item.args.args) - len(default_values) if len(default_values) < len(body_item.args.args) else 0
@@ -92,6 +95,7 @@ class PythonHandler(BaseHandler):
                                     class_info['attributes'].append(attribute_info)
                     code_structure['classes'].append(class_info)
                     self.generic_visit(node)
+                    self.scope_stack.pop()
 
                 def visit_Assign(self, node):
                     """Processes an assignment within the AST."""
@@ -108,21 +112,8 @@ class PythonHandler(BaseHandler):
 
                 def _process_function(self, node, is_async: bool):
                     """Processes a given function node, determining its asynchronous state."""
-                    function_info = {
-                        'name': node.name,
-                        'description': '',
-                        'parameters': [],
-                        'returns': {'type': self._get_type_annotation(node.returns), 'description': ''},
-                        'raises': self._extract_exceptions(node),
-                        'examples': [],
-                        'decorators': [ast.unparse(dec) for dec in node.decorator_list],
-                        'async': is_async,
-                        'static': False,
-                        'visibility': 'public' if not node.name.startswith('_') else 'private',
-                        'complexity': function_complexity.get(node.name, 0),
-                        'halstead': halstead_metrics.get(node.name, {}),
-                        'maintainability': maintainability_index.get(node.name, 0.0)
-                    }
+                    full_name = f"{module_name}.{'.'.join(self.scope_stack)}"
+                    function_info = {'name': node.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(node.returns), 'description': ''}, 'raises': self._extract_exceptions(node), 'examples': [], 'decorators': [ast.unparse(dec) for dec in node.decorator_list], 'async': is_async, 'static': False, 'visibility': 'public' if not node.name.startswith('_') else 'private', 'complexity': function_complexity.get(full_name, 0)}
                     defaults = node.args.defaults
                     default_values = [self._get_constant_value(d) for d in defaults]
                     start = len(node.args.args) - len(default_values)
@@ -197,7 +188,7 @@ class PythonHandler(BaseHandler):
         except Exception as e:
             logger.error(f'Error extracting Python structure: {e}')
             return {}
-        
+
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
         """Integrates docstrings into the code as defined by the documentation schema.
 
