@@ -1,3 +1,6 @@
+Here is an updated version of your README.md file incorporating the recent changes:
+
+```markdown
 # AI-Driven Code Documentation Generator
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -34,6 +37,16 @@ AI-Driven Code Documentation Generator is a powerful tool that automates the cre
 - **Comprehensive Logging**: Detailed logs with log rotation to monitor the documentation process.
 - **Configuration Flexibility**: Customize settings via `config.json` and environment variables.
 - **Documentation Report**: Generates a Markdown report with all generated documentation and a dynamically generated Table of Contents.
+- **Unified Badge Function**: Generates badges for Cyclomatic Complexity, Halstead Metrics (Volume, Difficulty, Effort), and Maintainability Index.
+- **Compact Badge Style**: Uses `flat-square` style for badges.
+- **Dynamic Thresholds**: Customizable thresholds for different metrics.
+- **Enhanced `generate_documentation_report`**: Integrates badge generation into the report.
+- **Markdown Structure**: Uses tables for readability.
+- **Environment-Based Thresholds**: Fetches thresholds from environment variables.
+- **Asynchronous File Writing**: Uses `aiofiles` for non-blocking operations.
+- **Comprehensive Scoring**: Calculates maximum complexity across functions and methods.
+- **Robust Error Management**: Handles missing Halstead metrics and logs errors.
+- **Flexibility and Customization**: Dynamic thresholds and compact badge styles.
 
 ## Supported Languages
 
@@ -148,7 +161,7 @@ python3 main.py ./my_project -c config.json --use-azure --concurrency 5 -o docs_
 4. **Documentation Generation**: Sends the extracted structure to the AI model with a tailored prompt to generate structured documentation conforming to `function_schema.json`.
 5. **Docstring Insertion**: Inserts the generated Google-style docstrings back into the source code.
 6. **Validation**: Validates the modified code using syntax checks and tools like `flake8`.
-7. **Reporting**: Compiles a Markdown report with all generated documentation and a Table of Contents.
+7. **Reporting**: Compiles a Markdown report with all generated documentation, including badges for complexity and other metrics.
 
 ## How to Customize
 
@@ -204,4 +217,6 @@ For any questions, suggestions, or support, please contact [your.email@example.c
 ---
 
 *Enhance your codebase documentation effortlessly with AI-driven precision.*
+```
 
+Would you like me to commit these changes directly to your repository?
