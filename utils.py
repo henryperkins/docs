@@ -480,17 +480,62 @@ def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[s
 # ----------------------------
 # Documentation Generation
 # ----------------------------
+def generate_halstead_badge(halstead: Dict[str, Any]) -> str:
+    """
+    Generates a Shields.io badge for Halstead metrics.
 
-def generate_complexity_badge(complexity: int) -> str:
+    Args:
+        halstead (Dict[str, Any]): The Halstead metrics.
+
+    Returns:
+        str: Markdown image string for the Halstead badge.
+    """
+    try:
+        volume = halstead['volume']
+        difficulty = halstead['difficulty']
+        effort = halstead['effort']
+    except KeyError:
+        return ""
+
+    volume_color = "green" if volume < 100 else "yellow" if volume < 500 else "red"
+    difficulty_color = "green" if difficulty < 10 else "yellow" if difficulty < 20 else "red"
+    effort_color = "green" if effort < 500 else "yellow" if effort < 1000 else "red"
+
+    volume_badge = f'![Halstead Volume: {volume}](https://img.shields.io/badge/Volume-{volume}-{volume_color})'
+    difficulty_badge = f'![Halstead Difficulty: {difficulty}](https://img.shields.io/badge/Difficulty-{difficulty}-{difficulty_color})'
+    effort_badge = f'![Halstead Effort: {effort}](https://img.shields.io/badge/Effort-{effort}-{effort_color})'
+
+    return f"{volume_badge} {difficulty_badge} {effort_badge}"
+
+def generate_maintainability_badge(mi: float) -> str:
+    """
+    Generates a Shields.io badge for the Maintainability Index.
+
+    Args:
+        mi (float): The Maintainability Index.
+
+    Returns:
+        str: Markdown image string for the Maintainability Index badge.
+    """
+    color = "green" if mi > 80 else "yellow" if mi > 50 else "red"
+    return f'![Maintainability Index: {mi}](https://img.shields.io/badge/Maintainability-{mi}-{color})'
+
+def generate_complexity_badge(complexity: Any) -> str:
     """
     Generates a Shields.io badge for the given complexity score with a hover tooltip.
     
     Args:
-        complexity (int): The cyclomatic complexity score.
+        complexity (Any): The cyclomatic complexity score.
     
     Returns:
         str: Markdown image string for the complexity badge with tooltip.
     """
+    try:
+        complexity = int(complexity)
+    except ValueError:
+        logger.error(f"Invalid complexity value: {complexity}")
+        return '![Invalid Complexity](https://img.shields.io/badge/Complexity-Invalid-red "Invalid Complexity")'
+    
     if complexity <= 5:
         color = 'green'
         label = 'Low'
@@ -603,6 +648,33 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
             changes_formatted = '\n'.join((f'- {change}' for change in changes))
             changes_section = f'## Changes Made\n\n{changes_formatted}\n'
             documentation_content += changes_section
+
+        # Add Halstead metrics section
+        if 'halstead' in documentation:
+            halstead = documentation['halstead']
+            halstead_section = (
+                "## Halstead Metrics\n\n"
+                f"- **Vocabulary:** {halstead['vocabulary']}\n"
+                f"- **Length:** {halstead['length']}\n"
+                f"- **Volume:** {halstead['volume']}\n"
+                f"- **Difficulty:** {halstead['difficulty']}\n"
+                f"- **Effort:** {halstead['effort']}\n"
+            )
+            documentation_content += halstead_section
+            halstead_badge = generate_halstead_badge(halstead)
+            documentation_content += f"\n{halstead_badge}\n"
+
+        # Add Maintainability Index section
+        if 'maintainability_index' in documentation:
+            mi = documentation['maintainability_index']
+            mi_section = (
+                "## Maintainability Index\n\n"
+                f"- **Value:** {mi}\n"
+            )
+            documentation_content += mi_section
+            maintainability_badge = generate_maintainability_badge(mi)
+            documentation_content += f"\n{maintainability_badge}\n"
+
         functions = documentation.get('functions', []) if documentation else []
         if functions:
             functions_section = '## Functions\n\n'
@@ -647,22 +719,29 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
         code_content = new_content.strip()
         code_block = f'```{language}\n{code_content}\n```\n\n---\n'
         documentation_content += code_block
-        return documentation_content
+
+        # Write to file
+        async with aiofiles.open(file_path, 'w') as f:
+            await f.write(documentation_content)
     except Exception as e:
-        logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
-        return ''
+        print(f"Error writing documentation report: {e}")
+
+    return documentation_content
 
 def sanitize_text(text: str) -> str:
-    """
-    Sanitizes text for Markdown formatting.
+        """
+        Sanitizes text for Markdown formatting.
 
-    Args:
-        text (str): The text to sanitize.
+        Args:
+            text (str): The text to sanitize.
 
-    Returns:
-        str: Sanitized text.
-    """
-    return text.replace('|', '\\|').replace('\n', ' ').strip()
+        Returns:
+            str: Sanitized text.
+        """
+        markdown_special_chars = ['*', '_', '`', '~', '<', '>', '#']
+        for char in markdown_special_chars:
+            text = text.replace(char, f"\\{char}")
+        return text.replace('|', '\\|').replace('\n', ' ').strip()
 
 def generate_table_of_contents(content: str) -> str:
     """

@@ -4,6 +4,7 @@ import logging
 import subprocess
 from typing import Dict, Any, Optional
 from radon.complexity import cc_visit
+from radon.metrics import h_visit, mi_visit  # Ensure these are imported
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,13 @@ class PythonHandler(BaseHandler):
 
             # Calculate complexity scores
             complexity_scores = cc_visit(code)
-            function_complexity = {score.name: score.complexity for score in complexity_scores}
+            function_complexity = {f"{score.classname}.{score.name}": score.complexity for score in complexity_scores if hasattr(score, 'classname')}
+            function_complexity.update({score.name: score.complexity for score in complexity_scores if not hasattr(score, 'classname')})
+
+            # Calculate Halstead metrics
+            halstead_metrics = h_visit(code)
+            # Calculate Maintainability Index
+            maintainability_index = mi_visit(code, True)
 
             class CodeVisitor(ast.NodeVisitor):
                 """`CodeVisitor` explores the AST to gather information about functions, classes, and assignments for further analysis."""
@@ -59,7 +66,7 @@ class PythonHandler(BaseHandler):
                     class_info = {'name': node.name, 'description': '', 'inherits': [self._get_class_name(base) for base in node.bases], 'methods': [], 'attributes': []}
                     for body_item in node.body:
                         if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            method_info = {'name': body_item.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(body_item.returns), 'description': ''}, 'raises': self._extract_exceptions(body_item), 'examples': [], 'decorators': [ast.unparse(dec) for dec in body_item.decorator_list], 'async': isinstance(body_item, ast.AsyncFunctionDef), 'static': any((isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list)), 'visibility': 'public' if not body_item.name.startswith('_') else 'private', 'complexity': function_complexity.get(body_item.name, 0)}
+                            method_info = {'name': body_item.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(body_item.returns), 'description': ''}, 'raises': self._extract_exceptions(body_item), 'examples': [], 'decorators': [ast.unparse(dec) for dec in body_item.decorator_list], 'async': isinstance(body_item, ast.AsyncFunctionDef), 'static': any((isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list)), 'visibility': 'public' if not body_item.name.startswith('_') else 'private', 'complexity': function_complexity.get(f"{node.name}.{body_item.name}", 0)}
                             defaults = body_item.args.defaults
                             default_values = [self._get_constant_value(d) for d in defaults]
                             start = len(body_item.args.args) - len(default_values) if len(default_values) < len(body_item.args.args) else 0
@@ -164,11 +171,13 @@ class PythonHandler(BaseHandler):
 
             visitor = CodeVisitor()
             visitor.visit(tree)
+            code_structure['halstead'] = halstead_metrics
+            code_structure['maintainability_index'] = maintainability_index
             return code_structure
         except Exception as e:
             logger.error(f'Error extracting Python structure: {e}')
             return {}
-
+        
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
         """Integrates docstrings into the code as defined by the documentation schema.
 
