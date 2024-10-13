@@ -1,6 +1,3 @@
-Here is an updated version of your README.md file incorporating the recent changes:
-
-```markdown
 # AI-Driven Code Documentation Generator
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -212,11 +209,8 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Contact
 
-For any questions, suggestions, or support, please contact [your.email@example.com](mailto:your.email@example.com).
+For any questions, suggestions, or support, please contact [hperkin4@asu.edu](mailto:hperkin4@asu.edu).
 
 ---
 
 *Enhance your codebase documentation effortlessly with AI-driven precision.*
-```
-
-Would you like me to commit these changes directly to your repository?
