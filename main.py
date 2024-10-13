@@ -130,6 +130,12 @@ async def main():
                 f"Project Info='{project_info_config}', "
                 f"Style Guidelines='{style_guidelines_config}'"
             )
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decoding error: {e}")
+            sys.exit(1)
+        except FileNotFoundError as e:
+            logger.error(f"File not found: {e}")
+            sys.exit(1)
         except Exception as e:
             logger.error(f"Failed to load configuration from '{config_path}': {e}")
             sys.exit(1)

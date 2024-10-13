@@ -1,5 +1,3 @@
-# file_handlers.py
-
 import os
 import logging
 import shutil
@@ -18,9 +16,9 @@ from utils import (
     generate_documentation_prompt,
     write_documentation_report,
     generate_table_of_contents,
-    clean_unused_imports,
+    clean_unused_imports_async,
     format_with_black,
-    run_flake8
+    run_flake8_async
 )
 
 logger = logging.getLogger(__name__)
@@ -40,7 +38,6 @@ async def extract_code_structure(
     language: str,
     handler: BaseHandler
 ) -> Optional[Dict[str, Any]]:
-    """Extracts code structure based on language using the appropriate handler."""
     logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
     try:
         loop = asyncio.get_event_loop()
@@ -50,7 +47,6 @@ async def extract_code_structure(
         return None
 
 async def backup_and_write_new_content(file_path: str, new_content: str) -> None:
-    """Creates a backup of the file and writes the new content."""
     backup_path = f'{file_path}.bak'
     try:
         if os.path.exists(backup_path):
@@ -79,7 +75,6 @@ async def fetch_documentation_rest(
     azure_api_version: str,
     retry: int = 3
 ) -> Optional[Dict[str, Any]]:
-    """Fetches documentation using Azure OpenAI REST API with function calling."""
     logger.debug(f"Fetching documentation using REST API for deployment: {deployment_name}")
 
     url = f"{azure_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version={azure_api_version}"
@@ -168,9 +163,6 @@ async def process_file(
     azure_endpoint: str,
     azure_api_version: str
 ) -> Optional[str]:
-    """
-    Processes a single file: extracts structure, generates documentation, inserts documentation, validates, and returns the documentation content.
-    """
     logger.debug(f'Processing file: {file_path}')
     try:
         _, ext = os.path.splitext(file_path)
@@ -188,7 +180,6 @@ async def process_file(
 
         logger.info(f'Processing file: {file_path}')
 
-        # Read file content asynchronously
         try:
             async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                 content = await f.read()
@@ -199,7 +190,6 @@ async def process_file(
 
         documentation = None
 
-        # Extract code structure and generate documentation
         try:
             code_structure = await extract_code_structure(content, file_path, language, handler)
             if not code_structure:
@@ -234,18 +224,15 @@ async def process_file(
             try:
                 loop = asyncio.get_event_loop()
 
-                # Insert docstrings using the handler
                 new_content = await loop.run_in_executor(None, handler.insert_docstrings, content, documentation)
 
                 if language.lower() == 'python':
-                    new_content = clean_unused_imports(new_content, file_path)
+                    new_content = await clean_unused_imports_async(new_content, file_path)
                     new_content = format_with_black(new_content)
 
                 if not safe_mode:
-                    # Validate code
                     is_valid = await loop.run_in_executor(None, handler.validate_code, new_content, file_path)
                     if is_valid:
-                        # Backup original file and write new content
                         await backup_and_write_new_content(file_path, new_content)
                         logger.info(f"Documentation inserted into '{file_path}'")
                     else:
@@ -256,7 +243,6 @@ async def process_file(
                 logger.error(f"Error processing code documentation for '{file_path}': {e}", exc_info=True)
                 new_content = content
 
-        # Generate documentation report content for the file
         file_content = await write_documentation_report(
             documentation=documentation,
             language=language,
@@ -286,9 +272,6 @@ async def process_all_files(
     azure_endpoint: str = '',
     azure_api_version: str = ''
 ) -> None:
-    """
-    Processes multiple files for documentation.
-    """
     logger.info('Starting process of all files.')
     tasks = []
     for file_path in file_paths:
@@ -324,17 +307,12 @@ async def process_all_files(
 
     logger.info('Completed processing all files.')
 
-    # Combine all documentation contents
     final_content = '\n\n'.join(documentation_contents)
 
     if final_content:
-        # Generate Table of Contents
         toc = generate_table_of_contents(final_content)
-
-        # Create the final report content
         report_content = '# Documentation Generation Report\n\n## Table of Contents\n\n' + toc + '\n\n' + final_content
 
-        # Write the report to the output file
         try:
             async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
                 await f.write(report_content)
@@ -346,12 +324,11 @@ async def process_all_files(
     else:
         logger.warning("No documentation was generated.")
 
-    # Optional: Run Flake8 on all processed Python files to capture any remaining issues
     logger.info('Running Flake8 on processed files for final linting.')
     for file_path in file_paths:
         _, ext = os.path.splitext(file_path)
         if ext.lower() in {'.py'}:
-            flake8_output = run_flake8(file_path)
+            flake8_output = await run_flake8_async(file_path)
             if flake8_output:
                 logger.warning(f'Flake8 issues found in {file_path}:\n{flake8_output}')
     logger.info('Flake8 linting completed.')

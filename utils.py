@@ -339,33 +339,21 @@ async def clean_unused_imports_async(code: str, file_path: str) -> str:
         logger.error(f'Error running Autoflake: {e}')
         return code
 
-def format_with_black(code: str) -> str:
-    """
-    Formats the given Python code using Black.
+# Example using asyncio subprocesses
+async def format_with_black_async(code: str) -> str:
+    process = await asyncio.create_subprocess_exec(
+        'black', '--quiet', '-',
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate(input=code.encode())
+    if process.returncode == 0:
+        return stdout.decode()
+    else:
+        logger.error(f"Black formatting failed: {stderr.decode()}")
+        return code
 
-    Args:
-        code (str): The Python code to format.
-
-    Returns:
-        str: The formatted Python code.
-    """
-    try:
-        process = subprocess.run(
-            ['black', '--quiet', '-'],
-            input=code.encode('utf-8'),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-        formatted_code = process.stdout.decode('utf-8')
-        logger.debug('Successfully formatted code with Black.')
-        return formatted_code
-    except subprocess.CalledProcessError as e:
-        logger.error(f'Black formatting failed: {e.stderr.decode("utf-8")}')
-        return code  # Return unformatted code if Black fails
-    except Exception as e:
-        logger.error(f'Unexpected error during Black formatting: {e}')
-        return code  # Return unformatted code if any other error occurs
 
 async def run_flake8_async(file_path: str) -> Optional[str]:
     """
@@ -576,6 +564,13 @@ Please output only the JSON object that strictly follows the above schema, witho
 """
     return prompt
 
+def truncate_description(description: str, max_length: int = 100) -> str:
+    """Truncates the description to a specified maximum length."""
+    return (description[:max_length] + '...') if len(description) > max_length else description
+
+# Usage within write_documentation_report
+first_line_doc = truncate_description(func_doc)
+
 async def write_documentation_report(
     documentation: Optional[Dict[str, Any]], 
     language: str, 
@@ -625,7 +620,7 @@ async def write_documentation_report(
                 func_name = func.get('name', 'N/A')
                 func_args = ', '.join(func.get('args', []))
                 func_doc = sanitize_text(func.get('docstring', 'No description provided.'))
-                first_line_doc = func_doc.splitlines()[0]
+                first_line_doc = truncate_description(func_doc)
                 func_async = 'Yes' if func.get('async', False) else 'No'
                 func_complexity = func.get('complexity', 0)
                 complexity_badge = generate_all_badges(func_complexity, {}, 0)
@@ -652,7 +647,7 @@ async def write_documentation_report(
                         method_name = method.get('name', 'N/A')
                         method_args = ', '.join(method.get('args', []))
                         method_doc = sanitize_text(method.get('docstring', 'No description provided.'))
-                        first_line_method_doc = method_doc.splitlines()[0] if method_doc else 'No description provided.'
+                        first_line_method_doc = truncate_description(method_doc)
                         method_async = 'Yes' if method.get('async', False) else 'No'
                         method_type = method.get('type', 'N/A')
                         method_complexity = method.get('complexity', 0)
@@ -669,14 +664,24 @@ async def write_documentation_report(
         code_block = f'```{language}\n{code_content}\n```\n\n---\n'
         documentation_content += code_block
 
+        # Generate and prepend Table of Contents
+        toc = generate_table_of_contents(documentation_content)
+        documentation_content = toc + "\n\n" + documentation_content
+
         # Write to file asynchronously
         async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
             await f.write(documentation_content)
         logger.info(f"Documentation written to '{file_path}' successfully.")
         return documentation_content
 
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decoding error: {e}")
+        return ''
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        return ''
     except Exception as e:
-        logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
+        logger.error(f"Unexpected error: {e}")
         return ''
     
 def sanitize_text(text: str) -> str:
