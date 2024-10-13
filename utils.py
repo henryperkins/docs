@@ -481,6 +481,32 @@ def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[s
 # Documentation Generation
 # ----------------------------
 
+def generate_complexity_badge(complexity: int) -> str:
+    """
+    Generates a Shields.io badge for the given complexity score with a hover tooltip.
+    
+    Args:
+        complexity (int): The cyclomatic complexity score.
+    
+    Returns:
+        str: Markdown image string for the complexity badge with tooltip.
+    """
+    if complexity <= 5:
+        color = 'green'
+        label = 'Low'
+    elif 6 <= complexity <= 10:
+        color = 'orange'
+        label = 'Medium'
+    else:
+        color = 'red'
+        label = 'High'
+    
+    label_encoded = f"Complexity-{complexity}"
+    badge_url = f'https://img.shields.io/badge/{label_encoded}-{color}'
+    badge_markdown = f'![Cyclomatic Complexity: {complexity}]({badge_url} "Cyclomatic Complexity: {complexity}")'
+    
+    return badge_markdown
+
 def generate_documentation_prompt(
     file_name: str,
     code_structure: Dict[str, Any],
@@ -511,7 +537,8 @@ Using the code structure provided, generate detailed documentation in JSON forma
       "name": "Function name",
       "docstring": "Detailed description of the function, including its purpose and any important details.",
       "args": ["List of argument names"],
-      "async": true or false
+      "async": true or false,
+      "complexity": "Cyclomatic complexity score"
     }
     // More functions...
   ],
@@ -525,7 +552,8 @@ Using the code structure provided, generate detailed documentation in JSON forma
           "docstring": "Detailed description of the method.",
           "args": ["List of argument names"],
           "async": true or false,
-          "type": "Method type (e.g., 'instance', 'class', 'static')"
+          "type": "Method type (e.g., 'instance', 'class', 'static')",
+          "complexity": "Cyclomatic complexity score"
         }
         // More methods...
       ]
@@ -539,14 +567,13 @@ Ensure that:
 - The 'args' lists contain the argument names of each function or method.
 - The 'async' fields correctly indicate whether the function or method is asynchronous.
 - The 'type' field for methods specifies if it's an 'instance', 'class', or 'static' method.
+- The 'complexity' field provides the cyclomatic complexity score.
 
 **Do not omit any 'docstring' fields. Provide detailed descriptions for each.**
 
 Please output only the JSON object that strictly follows the above schema, without any additional commentary or explanations.
 """
     return prompt
-
-
 
 async def write_documentation_report(documentation: Optional[Dict[str, Any]], language: str, file_path: str, repo_root: str, new_content: str) -> str:
     """Asynchronously writes a documentation report to a specified file path.
@@ -561,23 +588,7 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
     Returns:
         str: The documentation content as a string.
     """
-    'Writes a documentation report for a file in the specified language.'
     try:
-        def sanitize_text(text: str) -> str:
-            """Sanitizes the given text for usage in documentation or logging.
-
-            Args:
-                text (str): The text to sanitize.
-
-            Returns:
-                str: Sanitized version of the input text."""
-            'Sanitizes and normalizes a string of text for safe processing.'
-            if not text:
-                return ''
-            lines = text.strip().splitlines()
-            sanitized_lines = [line.strip() for line in lines if line.strip()]
-            return '\n'.join(sanitized_lines)
-
         relative_path = os.path.relpath(file_path, repo_root)
         file_header = f'# File: {relative_path}\n\n'
         documentation_content = file_header
@@ -595,15 +606,17 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
         functions = documentation.get('functions', []) if documentation else []
         if functions:
             functions_section = '## Functions\n\n'
-            functions_section += '| Function | Arguments | Description | Async |\n'
-            functions_section += '|----------|-----------|-------------|-------|\n'
+            functions_section += '| Function | Arguments | Description | Async | Complexity |\n'
+            functions_section += '|----------|-----------|-------------|-------|------------|\n'
             for func in functions:
                 func_name = func.get('name', 'N/A')
                 func_args = ', '.join(func.get('args', []))
                 func_doc = sanitize_text(func.get('docstring', 'No description provided.'))
                 first_line_doc = func_doc.splitlines()[0]
                 func_async = 'Yes' if func.get('async', False) else 'No'
-                functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} |\n'
+                func_complexity = func.get('complexity', 0)
+                complexity_badge = generate_complexity_badge(func_complexity)
+                functions_section += f'| `{func_name}` | `{func_args}` | {first_line_doc} | {func_async} | {complexity_badge} |\n'
             documentation_content += functions_section + '\n'
         classes = documentation.get('classes', []) if documentation else []
         if classes:
@@ -617,8 +630,8 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                     classes_section += f'### Class: `{cls_name}`\n\n'
                 methods = cls.get('methods', [])
                 if methods:
-                    classes_section += '| Method | Arguments | Description | Async | Type |\n'
-                    classes_section += '|--------|-----------|-------------|-------|------|\n'
+                    classes_section += '| Method | Arguments | Description | Async | Type | Complexity |\n'
+                    classes_section += '|--------|-----------|-------------|-------|------|------------|\n'
                     for method in methods:
                         method_name = method.get('name', 'N/A')
                         method_args = ', '.join(method.get('args', []))
@@ -626,7 +639,9 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
                         first_line_method_doc = method_doc.splitlines()[0] if method_doc else 'No description provided.'
                         method_async = 'Yes' if method.get('async', False) else 'No'
                         method_type = method.get('type', 'N/A')
-                        classes_section += f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} |\n'
+                        method_complexity = method.get('complexity', 0)
+                        complexity_badge = generate_complexity_badge(method_complexity)
+                        classes_section += f'| `{method_name}` | `{method_args}` | {first_line_method_doc} | {method_async} | {method_type} | {complexity_badge} |\n'
                     classes_section += '\n'
             documentation_content += classes_section
         code_content = new_content.strip()
@@ -636,6 +651,18 @@ async def write_documentation_report(documentation: Optional[Dict[str, Any]], la
     except Exception as e:
         logger.error(f"Error generating documentation for '{file_path}': {e}", exc_info=True)
         return ''
+
+def sanitize_text(text: str) -> str:
+    """
+    Sanitizes text for Markdown formatting.
+
+    Args:
+        text (str): The text to sanitize.
+
+    Returns:
+        str: Sanitized text.
+    """
+    return text.replace('|', '\\|').replace('\n', ' ').strip()
 
 def generate_table_of_contents(content: str) -> str:
     """
@@ -680,9 +707,10 @@ def validate_schema(schema: dict):
                         "name": {"type": "string"},
                         "args": {"type": "array", "items": {"type": "string"}},
                         "docstring": {"type": "string"},
-                        "async": {"type": "boolean"}
+                        "async": {"type": "boolean"},
+                        "complexity": {"type": "integer"}
                     },
-                    "required": ["name", "args", "docstring", "async"]
+                    "required": ["name", "args", "docstring", "async", "complexity"]
                 }
             },
             "classes": {
@@ -701,9 +729,10 @@ def validate_schema(schema: dict):
                                     "args": {"type": "array", "items": {"type": "string"}},
                                     "docstring": {"type": "string"},
                                     "async": {"type": "boolean"},
-                                    "type": {"type": "string"}
+                                    "type": {"type": "string"},
+                                    "complexity": {"type": "integer"}
                                 },
-                                "required": ["name", "args", "docstring", "async", "type"]
+                                "required": ["name", "args", "docstring", "async", "type", "complexity"]
                             }
                         }
                     },

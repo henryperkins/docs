@@ -9,7 +9,7 @@ import json
 import asyncio
 from typing import Optional, Set, List, Dict, Any
 from tqdm.asyncio import tqdm
-from language_functions import get_handler  # Only import get_handler
+from language_functions import get_handler
 from language_functions.base_handler import BaseHandler
 from utils import (
     is_binary,

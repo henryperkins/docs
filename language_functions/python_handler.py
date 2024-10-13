@@ -3,6 +3,7 @@ import ast
 import logging
 import subprocess
 from typing import Dict, Any, Optional
+from radon.complexity import cc_visit
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ class PythonHandler(BaseHandler):
             tree = ast.parse(code)
             code_structure = {'modules': [], 'classes': [], 'functions': [], 'variables': [], 'constants': []}
 
+            # Calculate complexity scores
+            complexity_scores = cc_visit(code)
+            function_complexity = {score.name: score.complexity for score in complexity_scores}
+
             class CodeVisitor(ast.NodeVisitor):
                 """`CodeVisitor` explores the AST to gather information about functions, classes, and assignments for further analysis."""
 
@@ -54,7 +59,7 @@ class PythonHandler(BaseHandler):
                     class_info = {'name': node.name, 'description': '', 'inherits': [self._get_class_name(base) for base in node.bases], 'methods': [], 'attributes': []}
                     for body_item in node.body:
                         if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            method_info = {'name': body_item.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(body_item.returns), 'description': ''}, 'raises': self._extract_exceptions(body_item), 'examples': [], 'decorators': [ast.unparse(dec) for dec in body_item.decorator_list], 'async': isinstance(body_item, ast.AsyncFunctionDef), 'static': any((isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list)), 'visibility': 'public' if not body_item.name.startswith('_') else 'private'}
+                            method_info = {'name': body_item.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(body_item.returns), 'description': ''}, 'raises': self._extract_exceptions(body_item), 'examples': [], 'decorators': [ast.unparse(dec) for dec in body_item.decorator_list], 'async': isinstance(body_item, ast.AsyncFunctionDef), 'static': any((isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list)), 'visibility': 'public' if not body_item.name.startswith('_') else 'private', 'complexity': function_complexity.get(body_item.name, 0)}
                             defaults = body_item.args.defaults
                             default_values = [self._get_constant_value(d) for d in defaults]
                             start = len(body_item.args.args) - len(default_values) if len(default_values) < len(body_item.args.args) else 0
@@ -90,7 +95,7 @@ class PythonHandler(BaseHandler):
 
                 def _process_function(self, node, is_async: bool):
                     """Processes a given function node, determining its asynchronous state."""
-                    function_info = {'name': node.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(node.returns), 'description': ''}, 'raises': self._extract_exceptions(node), 'examples': [], 'decorators': [ast.unparse(dec) for dec in node.decorator_list], 'async': is_async, 'static': False, 'visibility': 'public' if not node.name.startswith('_') else 'private'}
+                    function_info = {'name': node.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(node.returns), 'description': ''}, 'raises': self._extract_exceptions(node), 'examples': [], 'decorators': [ast.unparse(dec) for dec in node.decorator_list], 'async': is_async, 'static': False, 'visibility': 'public' if not node.name.startswith('_') else 'private', 'complexity': function_complexity.get(node.name, 0)}
                     defaults = node.args.defaults
                     default_values = [self._get_constant_value(d) for d in defaults]
                     start = len(node.args.args) - len(default_values)
@@ -184,14 +189,12 @@ class PythonHandler(BaseHandler):
                     docstring = self.format_function_docstring(func_doc)
                     docstrings_mapping[name] = docstring
                     logger.debug(f"Function '{name}' docstring: {docstring}")
-
             for class_doc in documentation.get('classes', []):
                 class_name = class_doc.get('name')
                 if class_name:
                     class_docstring = class_doc.get('description', '')
                     docstrings_mapping[class_name] = class_docstring
                     logger.debug(f"Class '{class_name}' docstring: {class_docstring}")
-
                     for method_doc in class_doc.get('methods', []):
                         method_name = method_doc.get('name')
                         if method_name:
@@ -251,29 +254,29 @@ class PythonHandler(BaseHandler):
 
         Returns:
             str: A finalized docstring for the provided function."""
-        lines = [f"{func.get('description', '').strip()}"]
+        lines = [f'{func.get("description", "").strip()}']
         params = func.get('parameters', [])
         if params:
             lines.append('\nArgs:')
             for param in params:
-                param_line = f"    {param['name']}"
+                param_line = f'    {param["name"]}'
                 if param.get('type'):
-                    param_line += f" ({param['type']})"
-                param_line += f": {param.get('description', '').strip()}"
+                    param_line += f' ({param["type"]})'
+                param_line += f': {param.get("description", "").strip()}'
                 lines.append(param_line)
         returns = func.get('returns', {})
         if returns and returns.get('description'):
             lines.append('\nReturns:')
             ret_line = '    '
             if returns.get('type'):
-                ret_line += f"{returns.get('type')}: "
+                ret_line += f'{returns.get("type")}: '
             ret_line += returns.get('description', '').strip()
             lines.append(ret_line)
         raises = func.get('raises', [])
         if raises:
             lines.append('\nRaises:')
             for exc in raises:
-                exc_line = f"    {exc.get('type', '')}: {exc.get('description', '').strip()}"
+                exc_line = f'    {exc.get("type", "")}: {exc.get("description", "").strip()}'
                 lines.append(exc_line)
         return '\n'.join(lines)
 
