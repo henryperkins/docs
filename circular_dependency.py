@@ -3,7 +3,7 @@ import ast
 import networkx as nx
 
 def find_imports(file_path):
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         root = ast.parse(f.read(), filename=file_path)
     imports = set()
     for node in ast.walk(root):

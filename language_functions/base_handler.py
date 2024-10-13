@@ -2,9 +2,7 @@
 
 import abc
 import logging
-import subprocess
-import shutil
-from typing import Dict, Any, Optional  # Import Dict, Any, and Optional
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -12,51 +10,43 @@ class BaseHandler(abc.ABC):
     """Abstract base class for language-specific handlers."""
 
     @abc.abstractmethod
-    def extract_structure(self, code: str) -> Dict[str, Any]:
-        """Extracts the structure of the code (classes, functions, etc.)."""
+    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+        """
+        Extracts the structure of the code (classes, functions, etc.).
+
+        Args:
+            code (str): The source code to analyze.
+            file_path (str): Path to the source file.
+
+        Returns:
+            Dict[str, Any]: A dictionary representing the code structure.
+        """
+        pass
 
     @abc.abstractmethod
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts docstrings/comments into the code based on the documentation."""
+        """
+        Inserts docstrings/comments into the code based on the documentation.
+
+        Args:
+            code (str): The original source code.
+            documentation (Dict[str, Any]): Documentation details obtained from AI.
+
+        Returns:
+            str: The source code with inserted documentation.
+        """
+        pass
 
     @abc.abstractmethod
-    def validate_code(self, code: str) -> bool:
-        """Validates the modified code for syntax correctness."""
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates the modified code for syntax correctness.
 
-class PythonHandler(BaseHandler):
-    """Handler for Python language."""
+        Args:
+            code (str): The modified source code.
+            file_path (Optional[str]): Path to the source file (optional).
 
-    def extract_structure(self, code: str) -> Dict[str, Any]:
-        """Parses Python code to extract classes and functions."""
-        # Existing implementation
-        # Ensure complexity data is included in the extracted structure
-        return {}
-
-    def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts docstrings into Python code based on the provided documentation."""
-        # Existing implementation
-        return code
-
-    def validate_code(self, code: str) -> bool:
-        """Validates the modified Python code for syntax correctness."""
-        # Existing implementation
-        return True
-
-class JavaHandler(BaseHandler):
-    """Handler for Java language."""
-
-    def extract_structure(self, code: str) -> Dict[str, Any]:
-        """Parses Java code to extract classes and methods."""
-        # Existing implementation
-        # Ensure complexity data is included in the extracted structure
-        return {}
-
-    def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts Javadoc comments into Java code based on the provided documentation."""
-        # Existing implementation
-        return code
-
-    def validate_code(self, code: str) -> bool:
-        """Validates the modified Java code for syntax correctness."""
-        # Existing implementation
-        return True
+        Returns:
+            bool: True if the code is valid, False otherwise.
+        """
+        pass

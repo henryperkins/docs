@@ -1,337 +1,254 @@
-import os
+# language_functions/python_handler.py
+
 import ast
-import logging
 import subprocess
+import logging
+import os
 from typing import Dict, Any, Optional
 from radon.complexity import cc_visit
 from radon.metrics import h_visit, mi_visit
-from language_functions.base_handler import BaseHandler
+from .base_handler import BaseHandler  # Relative import to avoid circular dependencies
 
 logger = logging.getLogger(__name__)
 
 class PythonHandler(BaseHandler):
-    """The `PythonHandler` class extends `BaseHandler` and is responsible for processing Python code by extracting its structure, validating it, and inserting appropriate docstrings."""
-    'Handler for Python language.'
+    """Handler for Python language."""
 
-    def __init__(self, function_schema):
-        """Initializes instances of the class with required parameters.
+    def __init__(self, function_schema: Dict[str, Any]):
+        """
+        Initializes the PythonHandler with the provided function schema.
 
         Args:
-            self (PythonHandler): The instance of the class.
-            function_schema (Any): The schema used for function operations.
-
-        Returns:
-            None: This constructor does not return a value."""
+            function_schema (Dict[str, Any]): The schema used for function operations.
+        """
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str=None) -> Dict[str, Any]:
-        """Analyzes the provided code and returns its structure in a dictionary form.
+    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+        """
+        Parses Python code to extract classes and functions.
 
         Args:
-            self (PythonHandler): The instance of the class.
             code (str): The Python code to be processed.
-            file_path (str): The path to the file being analyzed.
+            file_path (str): Path to the Python source file.
 
         Returns:
-            Dict[str, Any]: A structured representation of the analyzed code."""
+            Dict[str, Any]: A structured representation of the analyzed code.
+        """
         try:
             module_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else 'module'
             tree = ast.parse(code)
-            code_structure = {'modules': [], 'classes': [], 'functions': [], 'variables': [], 'constants': []}
+            code_structure = {
+                'classes': [],
+                'functions': [],
+                'variables': [],
+                'constants': []
+            }
+
+            # Extract complexity scores using radon
             complexity_scores = cc_visit(code)
             function_complexity = {}
             for score in complexity_scores:
-                if score.classname:
+                if hasattr(score, 'classname') and score.classname:
                     full_name = f"{module_name}.{score.classname}.{score.name}"
                 else:
                     full_name = f"{module_name}.{score.name}"
                 function_complexity[full_name] = score.complexity
+
+            # Extract Halstead metrics and Maintainability Index
             halstead_metrics = h_visit(code)
             maintainability_index = mi_visit(code, True)
+            code_structure['halstead'] = halstead_metrics
+            code_structure['maintainability_index'] = maintainability_index
 
             class CodeVisitor(ast.NodeVisitor):
-                """`CodeVisitor` explores the AST to gather information about functions, classes, and assignments for further analysis."""
+                """AST Node Visitor to extract classes, functions, variables, and constants."""
 
                 def __init__(self):
                     self.scope_stack = []
 
                 def visit_FunctionDef(self, node):
-                    """Processes a function definition within the AST."""
+                    """Processes a function definition."""
                     self.scope_stack.append(node.name)
-                    self._process_function(node, is_async=False)
-                    self.generic_visit(node)
-                    self.scope_stack.pop()
-
-                def visit_AsyncFunctionDef(self, node):
-                    """Processes an async function definition within the AST."""
-                    self.scope_stack.append(node.name)
-                    self._process_function(node, is_async=True)
+                    function_info = {
+                        'name': node.name,
+                        'docstring': ast.get_docstring(node) or '',
+                        'args': [arg.arg for arg in node.args.args if arg.arg != 'self'],
+                        'async': isinstance(node, ast.AsyncFunctionDef),
+                        'complexity': function_complexity.get(f"{module_name}.{node.name}", 0)
+                    }
+                    code_structure['functions'].append(function_info)
                     self.generic_visit(node)
                     self.scope_stack.pop()
 
                 def visit_ClassDef(self, node):
-                    """Processes a class definition within the AST."""
+                    """Processes a class definition."""
                     self.scope_stack.append(node.name)
-                    class_info = {'name': node.name, 'description': '', 'inherits': [self._get_class_name(base) for base in node.bases], 'methods': [], 'attributes': []}
+                    class_info = {
+                        'name': node.name,
+                        'docstring': ast.get_docstring(node) or '',
+                        'methods': []
+                    }
                     for body_item in node.body:
                         if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            method_info = {'name': body_item.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(body_item.returns), 'description': ''}, 'raises': self._extract_exceptions(body_item), 'examples': [], 'decorators': [ast.unparse(dec) for dec in body_item.decorator_list], 'async': isinstance(body_item, ast.AsyncFunctionDef), 'static': any((isinstance(dec, ast.Name) and dec.id == 'staticmethod' for dec in body_item.decorator_list)), 'visibility': 'public' if not body_item.name.startswith('_') else 'private', 'complexity': function_complexity.get(f"{module_name}.{'.'.join(self.scope_stack)}.{body_item.name}", 0)}
-                            defaults = body_item.args.defaults
-                            default_values = [self._get_constant_value(d) for d in defaults]
-                            start = len(body_item.args.args) - len(default_values) if len(default_values) < len(body_item.args.args) else 0
-                            for i, arg in enumerate(body_item.args.args):
-                                if arg.arg == 'self':
-                                    continue
-                                param_info = {'name': arg.arg, 'type': self._get_type_annotation(arg.annotation), 'description': '', 'default': None, 'optional': False}
-                                if i >= start:
-                                    param_info['default'] = default_values[i - start]
-                                    param_info['optional'] = True
-                                method_info['parameters'].append(param_info)
+                            method_info = {
+                                'name': body_item.name,
+                                'docstring': ast.get_docstring(body_item) or '',
+                                'args': [arg.arg for arg in body_item.args.args if arg.arg != 'self'],
+                                'async': isinstance(body_item, ast.AsyncFunctionDef),
+                                'complexity': function_complexity.get(f"{module_name}.{node.name}.{body_item.name}", 0)
+                            }
                             class_info['methods'].append(method_info)
-                        elif isinstance(body_item, ast.Assign):
-                            for target in body_item.targets:
-                                if isinstance(target, ast.Name):
-                                    attribute_info = {'name': target.id, 'type': self._infer_type(body_item.value), 'description': ''}
-                                    class_info['attributes'].append(attribute_info)
                     code_structure['classes'].append(class_info)
                     self.generic_visit(node)
                     self.scope_stack.pop()
 
                 def visit_Assign(self, node):
-                    """Processes an assignment within the AST."""
+                    """Processes variable assignments."""
                     for target in node.targets:
                         if isinstance(target, ast.Name):
-                            value = self._get_constant_value(node.value)
-                            if target.id.isupper():
-                                constant_info = {'name': target.id, 'value': value, 'description': ''}
-                                code_structure['constants'].append(constant_info)
+                            var_name = target.id
+                            if var_name.isupper():
+                                code_structure['constants'].append(var_name)
                             else:
-                                variable_info = {'name': target.id, 'type': self._infer_type(node.value), 'description': ''}
-                                code_structure['variables'].append(variable_info)
+                                code_structure['variables'].append(var_name)
                     self.generic_visit(node)
-
-                def _process_function(self, node, is_async: bool):
-                    """Processes a given function node, determining its asynchronous state."""
-                    full_name = f"{module_name}.{'.'.join(self.scope_stack)}"
-                    function_info = {'name': node.name, 'description': '', 'parameters': [], 'returns': {'type': self._get_type_annotation(node.returns), 'description': ''}, 'raises': self._extract_exceptions(node), 'examples': [], 'decorators': [ast.unparse(dec) for dec in node.decorator_list], 'async': is_async, 'static': False, 'visibility': 'public' if not node.name.startswith('_') else 'private', 'complexity': function_complexity.get(full_name, 0)}
-                    defaults = node.args.defaults
-                    default_values = [self._get_constant_value(d) for d in defaults]
-                    start = len(node.args.args) - len(default_values)
-                    for i, arg in enumerate(node.args.args):
-                        param_info = {'name': arg.arg, 'type': self._get_type_annotation(arg.annotation), 'description': '', 'default': None, 'optional': False}
-                        if i >= start:
-                            param_info['default'] = default_values[i - start]
-                            param_info['optional'] = True
-                        function_info['parameters'].append(param_info)
-                    logger.debug(f"Extracted parameters for function '{node.name}': {function_info['parameters']}")
-                    code_structure['functions'].append(function_info)
-
-                def _get_type_annotation(self, annotation) -> str:
-                    """Obtains type annotation from the AST node."""
-                    if annotation:
-                        return ast.unparse(annotation)
-                    return ''
-
-                def _get_class_name(self, base) -> str:
-                    """Extracts the class's name from the AST node."""
-                    if isinstance(base, ast.Name):
-                        return base.id
-                    return ast.unparse(base)
-
-                def _get_constant_value(self, node):
-                    """Extracts constant values from the AST node."""
-                    if isinstance(node, ast.Constant):
-                        return node.value
-                    return None
-
-                def _infer_type(self, node) -> str:
-                    """Infers and returns the type from the AST node."""
-                    if isinstance(node, ast.Constant):
-                        return type(node.value).__name__
-                    elif isinstance(node, (ast.List, ast.Tuple)):
-                        return 'list' if isinstance(node, ast.List) else 'tuple'
-                    elif isinstance(node, ast.Dict):
-                        return 'dict'
-                    elif isinstance(node, ast.Call):
-                        return ast.unparse(node.func)
-                    return ''
-
-                def _extract_exceptions(self, node) -> list:
-                    """Pulls exception information from the AST node."""
-                    exceptions = []
-                    for n in ast.walk(node):
-                        if isinstance(n, ast.Raise):
-                            if n.exc:
-                                exc_type = self._get_exception_name(n.exc)
-                                if exc_type:
-                                    exceptions.append({'type': exc_type, 'description': ''})
-                    return exceptions
-
-                def _get_exception_name(self, node) -> Optional[str]:
-                    """Determines the exception name from an AST node."""
-                    if isinstance(node, ast.Call):
-                        if isinstance(node.func, ast.Name):
-                            return node.func.id
-                        elif isinstance(node.func, ast.Attribute):
-                            return ast.unparse(node.func)
-                    elif isinstance(node, ast.Name):
-                        return node.id
-                    elif isinstance(node, ast.Attribute):
-                        return ast.unparse(node)
-                    return None
 
             visitor = CodeVisitor()
             visitor.visit(tree)
-            code_structure['halstead'] = halstead_metrics
-            code_structure['maintainability_index'] = maintainability_index
+            logger.debug(f"Extracted structure for '{file_path}': {code_structure}")
             return code_structure
+
+        except SyntaxError as e:
+            logger.error(f"Syntax error in code: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
+            return {}
         except Exception as e:
-            logger.error(f'Error extracting Python structure: {e}')
+            logger.error(f"Error extracting Python structure: {e}", exc_info=True)
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Integrates docstrings into the code as defined by the documentation schema.
+        """
+        Inserts docstrings into Python code based on the provided documentation.
 
         Args:
-            self (PythonHandler): The instance of the class.
-            code (str): The source code to be updated with docstrings.
-            documentation (Dict[str, Any]): A map of docstrings assigned to code structures.
+            code (str): The original source code.
+            documentation (Dict[str, Any]): Documentation details obtained from AI.
 
         Returns:
-            str: Code with integrated docstrings."""
-        logger.debug('Starting insert_docstrings')
+            str: The source code with inserted documentation.
+        """
+        logger.debug("Starting docstring insertion for Python code.")
         try:
             tree = ast.parse(code)
             docstrings_mapping = {}
+
+            # Map functions and classes to their docstrings
             for func_doc in documentation.get('functions', []):
                 name = func_doc.get('name')
                 if name:
-                    docstring = self.format_function_docstring(func_doc)
-                    docstrings_mapping[name] = docstring
-                    logger.debug(f"Function '{name}' docstring: {docstring}")
+                    docstrings_mapping[name] = func_doc.get('docstring', '')
+
             for class_doc in documentation.get('classes', []):
                 class_name = class_doc.get('name')
                 if class_name:
-                    class_docstring = class_doc.get('description', '')
-                    docstrings_mapping[class_name] = class_docstring
-                    logger.debug(f"Class '{class_name}' docstring: {class_docstring}")
+                    docstrings_mapping[class_name] = class_doc.get('docstring', '')
                     for method_doc in class_doc.get('methods', []):
                         method_name = method_doc.get('name')
                         if method_name:
-                            full_method_name = f'{class_name}.{method_name}'
-                            method_docstring = self.format_function_docstring(method_doc)
-                            docstrings_mapping[full_method_name] = method_docstring
-                            logger.debug(f"Method '{full_method_name}' docstring: {method_docstring}")
+                            full_method_name = f"{class_name}.{method_name}"
+                            docstrings_mapping[full_method_name] = method_doc.get('docstring', '')
 
             class DocstringInserter(ast.NodeTransformer):
-                """`DocstringInserter` modifies AST nodes to add docstrings wherever necessary."""
+                """AST Node Transformer to insert docstrings."""
 
                 def visit_FunctionDef(self, node):
-                    """Processes a function definition within the AST."""
+                    """Inserts docstring into function if available."""
+                    full_name = node.name
                     parent = getattr(node, 'parent', None)
                     if isinstance(parent, ast.ClassDef):
-                        full_name = f'{parent.name}.{node.name}'
-                    else:
-                        full_name = node.name
-                    doc_content = docstrings_mapping.get(full_name)
-                    if doc_content:
-                        doc_node = ast.Expr(value=ast.Constant(value=doc_content))
-                        node.body.insert(0, doc_node)
-                        logger.debug(f'Inserted docstring for function: {full_name}')
+                        full_name = f"{parent.name}.{node.name}"
+                    docstring = docstrings_mapping.get(full_name)
+                    if docstring and not ast.get_docstring(node):
+                        new_doc = ast.Expr(value=ast.Constant(value=docstring))
+                        node.body.insert(0, new_doc)
+                        logger.debug(f"Inserted docstring for function: {full_name}")
                     self.generic_visit(node)
                     return node
 
                 def visit_AsyncFunctionDef(self, node):
-                    """Processes an async function definition within the AST."""
+                    """Inserts docstring into async function if available."""
                     return self.visit_FunctionDef(node)
 
                 def visit_ClassDef(self, node):
-                    """Processes a class definition within the AST."""
+                    """Inserts docstring into class if available."""
                     doc_content = docstrings_mapping.get(node.name)
-                    if doc_content:
+                    if doc_content and not ast.get_docstring(node):
                         doc_node = ast.Expr(value=ast.Constant(value=doc_content))
                         node.body.insert(0, doc_node)
-                        logger.debug(f'Inserted docstring for class: {node.name}')
+                        logger.debug(f"Inserted docstring for class: {node.name}")
                     self.generic_visit(node)
                     return node
+
+            # Add parent references to AST nodes
+            def add_parent_links(node, parent=None):
+                for child in ast.iter_child_nodes(node):
+                    setattr(child, 'parent', node)
+                    add_parent_links(child, node)
+
+            add_parent_links(tree)
 
             inserter = DocstringInserter()
             modified_tree = inserter.visit(tree)
             ast.fix_missing_locations(modified_tree)
             modified_code = ast.unparse(modified_tree)
-            logger.debug('Completed inserting Python docstrings')
+            logger.debug("Docstring insertion completed successfully.")
             return modified_code
+
         except Exception as e:
-            logger.error(f'Error inserting Python docstrings: {e}')
+            logger.error(f"Error inserting docstrings: {e}", exc_info=True)
             return code
 
-    def format_function_docstring(self, func: Dict[str, Any]) -> str:
-        """Generates a formatted docstring from a function definition.
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates the modified Python code for syntax correctness.
 
         Args:
-            self (PythonHandler): The instance of the class.
-            func (Dict[str, Any]): The function's details and associated documentation.
+            code (str): The modified source code.
+            file_path (Optional[str]): Path to the Python source file (optional).
 
         Returns:
-            str: A finalized docstring for the provided function."""
-        lines = [f'{func.get("description", "").strip()}']
-        params = func.get('parameters', [])
-        if params:
-            lines.append('\nArgs:')
-            for param in params:
-                param_line = f'    {param["name"]}'
-                if param.get('type'):
-                    param_line += f' ({param["type"]})'
-                param_line += f': {param.get("description", "").strip()}'
-                lines.append(param_line)
-        returns = func.get('returns', {})
-        if returns and returns.get('description'):
-            lines.append('\nReturns:')
-            ret_line = '    '
-            if returns.get('type'):
-                ret_line += f'{returns.get("type")}: '
-            ret_line += returns.get('description', '').strip()
-            lines.append(ret_line)
-        raises = func.get('raises', [])
-        if raises:
-            lines.append('\nRaises:')
-            for exc in raises:
-                exc_line = f'    {exc.get("type", "")}: {exc.get("description", "").strip()}'
-                lines.append(exc_line)
-        return '\n'.join(lines)
-
-    def validate_code(self, code: str, file_path: Optional[str]=None) -> bool:
-        """Performs validation checks on the provided source code.
-
-        Args:
-            self (PythonHandler): The instance of the class.
-            code (str): The code content to validate.
-            file_path (Optional[str]): A file path for additional validation criteria.
-
-        Returns:
-            bool: Validation result indicating code is either valid or not."""
-        logger.debug('Starting Python code validation.')
+            bool: True if the code is valid, False otherwise.
+        """
+        logger.debug("Starting Python code validation.")
         try:
+            # Check for syntax errors
             ast.parse(code)
-            logger.debug('Python syntax validation successful.')
+            logger.debug("Syntax validation passed.")
+
             if file_path:
-                temp_file = f'{file_path}.temp'
+                # Write code to a temporary file for flake8 validation
+                temp_file = f"{file_path}.temp.py"
                 with open(temp_file, 'w', encoding='utf-8') as f:
                     f.write(code)
-                process = subprocess.run(['flake8', temp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                # Run flake8 on the temporary file
+                result = subprocess.run(['flake8', temp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                # Remove the temporary file
                 os.remove(temp_file)
-                if process.returncode != 0:
-                    flake8_output = process.stdout + process.stderr
-                    logger.error(f'Flake8 validation failed for {file_path}:\n{flake8_output}')
+
+                if result.returncode != 0:
+                    logger.error(f"Flake8 validation failed for {file_path}:\n{result.stdout}\n{result.stderr}")
                     return False
                 else:
-                    logger.debug('Flake8 validation successful.')
+                    logger.debug("Flake8 validation passed.")
             else:
-                logger.warning('File path not provided for flake8 validation. Skipping flake8.')
+                logger.warning("File path not provided for flake8 validation. Skipping flake8.")
+
             return True
+
         except SyntaxError as e:
-            logger.error(f'Python syntax error: {e}')
+            logger.error(f"Syntax error during validation: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
             return False
         except Exception as e:
-            logger.error(f'Unexpected error during Python code validation: {e}')
+            logger.error(f"Unexpected error during code validation: {e}", exc_info=True)
             return False

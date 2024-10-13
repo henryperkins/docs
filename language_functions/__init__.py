@@ -1,14 +1,18 @@
 # language_functions/__init__.py
 
-from typing import Dict, Any, Optional  # Import Dict, Any, and Optional
-from language_functions.python_handler import PythonHandler
-from language_functions.java_handler import JavaHandler
-from language_functions.js_ts_handler import JSTsHandler
-from language_functions.go_handler import GoHandler
-from language_functions.cpp_handler import CppHandler
-from language_functions.html_handler import HTMLHandler
-from language_functions.css_handler import CSSHandler
-from language_functions.base_handler import BaseHandler  # Ensure BaseHandler is imported
+import logging
+from typing import Dict, Any, Optional
+
+from .python_handler import PythonHandler
+from .java_handler import JavaHandler
+from .js_ts_handler import JSTsHandler
+from .go_handler import GoHandler
+from .cpp_handler import CppHandler
+from .html_handler import HTMLHandler
+from .css_handler import CSSHandler
+from .base_handler import BaseHandler
+
+logger = logging.getLogger(__name__)
 
 def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[BaseHandler]:
     """
@@ -21,6 +25,10 @@ def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[Base
     Returns:
         Optional[BaseHandler]: The corresponding language handler or None if unsupported.
     """
+    if function_schema is None:
+        logger.error("Function schema is None. Cannot retrieve handler.")
+        return None
+
     language = language.lower()
     if language == 'python':
         return PythonHandler(function_schema)
@@ -37,4 +45,5 @@ def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[Base
     elif language == 'css':
         return CSSHandler(function_schema)
     else:
+        logger.warning(f"No handler available for language: {language}")
         return None

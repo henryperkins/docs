@@ -13,13 +13,11 @@ from utils import (
     is_binary,
     get_language,
     is_valid_extension,
-    generate_documentation_prompt,
-    write_documentation_report,
-    generate_table_of_contents,
     clean_unused_imports_async,
-    format_with_black,
+    format_with_black_async,
     run_flake8_async
 )
+from write_documentation_report import generate_documentation_prompt, generate_table_of_contents, write_documentation_report
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +30,7 @@ if SENTRY_DSN:
 else:
     logger.info('Sentry DSN not provided. Sentry SDK will not be initialized.')
 
+
 async def extract_code_structure(
     content: str,
     file_path: str,
@@ -41,7 +40,11 @@ async def extract_code_structure(
     logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
     try:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, handler.extract_structure, content, file_path)
+        structure = await loop.run_in_executor(None, handler.extract_structure, content, file_path)
+        if structure is None:
+            logger.error(f"Extracted structure is None for '{file_path}'")
+            return None
+        return structure
     except Exception as e:
         logger.error(f"Error extracting structure from '{file_path}': {e}", exc_info=True)
         return None
@@ -228,7 +231,7 @@ async def process_file(
 
                 if language.lower() == 'python':
                     new_content = await clean_unused_imports_async(new_content, file_path)
-                    new_content = format_with_black(new_content)
+                    new_content = await format_with_black_async(new_content)
 
                 if not safe_mode:
                     is_valid = await loop.run_in_executor(None, handler.validate_code, new_content, file_path)

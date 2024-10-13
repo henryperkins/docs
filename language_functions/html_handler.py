@@ -1,6 +1,7 @@
 # language_functions/html_handler.py
 
 import logging
+import subprocess
 from typing import Optional, Dict, Any
 from bs4 import BeautifulSoup, Comment
 from language_functions.base_handler import BaseHandler

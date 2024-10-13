@@ -1,6 +1,6 @@
+import os
 import javalang
 import logging
-import shutil
 import subprocess
 from typing import Dict, Any, Optional
 from language_functions.base_handler import BaseHandler

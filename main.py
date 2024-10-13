@@ -3,6 +3,7 @@ import sys
 import logging
 import argparse
 import asyncio
+import tracemalloc
 import aiohttp
 from dotenv import load_dotenv
 from file_handlers import process_all_files
@@ -14,6 +15,9 @@ from utils import (
     DEFAULT_SKIP_TYPES,
     load_function_schema,
 )
+
+# Enable tracemalloc
+tracemalloc.start()
 
 # Load environment variables from .env file
 load_dotenv()
@@ -121,52 +125,31 @@ async def main():
             "Proceeding with default and command-line settings."
         )
     else:
-        try:
-            project_info_config, style_guidelines_config = load_config(
-                config_path, excluded_dirs, excluded_files, skip_types_set
-            )
-            logger.debug(
-                f"Loaded configurations from '{config_path}': "
-                f"Project Info='{project_info_config}', "
-                f"Style Guidelines='{style_guidelines_config}'"
-            )
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decoding error: {e}")
-            sys.exit(1)
-        except FileNotFoundError as e:
-            logger.error(f"File not found: {e}")
-            sys.exit(1)
-        except Exception as e:
-            logger.error(f"Failed to load configuration from '{config_path}': {e}")
-            sys.exit(1)
+        project_info_config, style_guidelines_config = load_config(config_path, excluded_dirs, excluded_files, skip_types_set)
 
     project_info = project_info_arg or project_info_config
     style_guidelines = style_guidelines_arg or style_guidelines_config
 
     if project_info:
-        logger.debug(f"Project Info: {project_info}")
+        logger.info(f"Project Info: {project_info}")
     if style_guidelines:
-        logger.debug(f"Style Guidelines: {style_guidelines}")
+        logger.info(f"Style Guidelines: {style_guidelines}")
 
     # Load function schema
     function_schema = load_function_schema(schema_path)
 
     try:
-        file_paths = get_all_file_paths(
-            repo_path, excluded_dirs, excluded_files, skip_types_set
-        )
-        logger.info(f"Found {len(file_paths)} files to process.")
+        file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files, skip_types_set)
     except Exception as e:
-        logger.error(f"Error getting file paths: {e}")
+        logger.critical(f"Error retrieving file paths: {e}")
         sys.exit(1)
 
     async with aiohttp.ClientSession(raise_for_status=True) as session:
-        semaphore = asyncio.Semaphore(concurrency)
         await process_all_files(
             session=session,
             file_paths=file_paths,
             skip_types=skip_types_set,
-            semaphore=semaphore,
+            semaphore=asyncio.Semaphore(concurrency),
             deployment_name=deployment_name,
             function_schema=function_schema,
             repo_root=repo_path,
@@ -176,7 +159,7 @@ async def main():
             output_file=output_file,
             azure_api_key=AZURE_OPENAI_API_KEY,
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            azure_api_version=AZURE_OPENAI_API_VERSION,
+            azure_api_version=AZURE_OPENAI_API_VERSION
         )
 
     logger.info("Documentation generation completed successfully.")
@@ -185,8 +168,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.warning("Documentation generation interrupted by user.")
-        sys.exit(1)
+        logger.info("Process interrupted by user.")
     except Exception as e:
-        logger.critical(f"An unexpected error occurred: {e}", exc_info=True)
+        logger.critical(f"Unhandled exception: {e}", exc_info=True)
         sys.exit(1)
