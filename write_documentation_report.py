@@ -70,16 +70,13 @@ def sanitize_text(text: str) -> str:
 
 def generate_table_of_contents(content: str) -> str:
     toc = []
-    seen_anchors = set()
     for line in content.splitlines():
         if line.startswith("#"):
             level = line.count("#")
             title = line.lstrip("#").strip()
             anchor = re.sub(r'[^a-zA-Z0-9\s]', '', title).replace(' ', '-').lower()
             anchor = anchor.replace('--', '-').strip('-')
-            if anchor not in seen_anchors:
-                toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
-                seen_anchors.add(anchor)
+            toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
     return "\n".join(toc)
 
 def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
