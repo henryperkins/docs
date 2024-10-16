@@ -102,57 +102,38 @@ def format_maintainability_index(mi_score: float) -> str:
     return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen)\n'
 
 def format_functions(functions: list) -> str:
-    headers = ["Function Name", "Complexity", "Docstring"]
+    headers = ["Function Name", "Complexity", "Async", "Docstring"]
     rows = [
-        [func["name"], str(func["complexity"]), sanitize_text(func["docstring"])]
+        [func["name"], str(func.get("complexity", 0)), str(func.get("async", False)), sanitize_text(func["docstring"])]
         for func in functions
     ]
     return format_table(headers, rows)
 
 def format_methods(methods: list) -> str:
-    content = ''
-    for method in methods:
-        name = method.get('name', '')
-        docstring = method.get('docstring', '')
-        args = method.get('args', [])
-        is_async = method.get('async', False)
-        method_type = method.get('type', 'instance')
-        async_str = 'async ' if is_async else ''
-        arg_list = ', '.join(args)
-        content += f'- **Method**: `{async_str}{name}({arg_list})` ({method_type} method)\n\n'
-        content += f'  {sanitize_text(docstring)}\n\n'
-    return content
+    headers = ["Method Name", "Type", "Async", "Docstring"]
+    rows = [
+        [method["name"], method.get("type", "instance"), str(method.get("async", False)), sanitize_text(method["docstring"])]
+        for method in methods
+    ]
+    return format_table(headers, rows)
 
 def format_classes(classes: list) -> str:
-    content = ''
-    for cls in classes:
-        name = cls.get('name', '')
-        docstring = cls.get('docstring', '')
-        methods = cls.get('methods', [])
-        content += f"### Class: `{name}`\n\n"
-        content += f"{sanitize_text(docstring)}\n\n"
-        if methods:
-            content += f"#### Methods:\n\n"
-            content += format_methods(methods)
-    return content
+    headers = ["Class Name", "Docstring", "Methods"]
+    rows = [
+        [cls["name"], sanitize_text(cls["docstring"]), format_methods(cls["methods"])]
+        for cls in classes
+    ]
+    return format_table(headers, rows)
 
 def format_variables(variables: list) -> str:
-    if not variables:
-        return ''
-    content = "### Variables\n\n"
-    for var in variables:
-        content += f'- `{var}`\n'
-    content += "\n"
-    return content
+    headers = ["Variable Name"]
+    rows = [[var] for var in variables]
+    return format_table(headers, rows)
 
 def format_constants(constants: list) -> str:
-    if not constants:
-        return ''
-    content = "### Constants\n\n"
-    for const in constants:
-        content += f'- `{const}`\n'
-    content += "\n"
-    return content
+    headers = ["Constant Name"]
+    rows = [[const] for const in constants]
+    return format_table(headers, rows)
 
 def generate_documentation_prompt(
     file_name: str,

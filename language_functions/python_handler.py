@@ -1,7 +1,27 @@
 import logging
 import os
+import sys
+import tempfile
+import subprocess
+import ast
 from typing import Dict, Any, Optional
-from .base_handler import BaseHandler
+
+# External dependencies
+try:
+    from radon.complexity import cc_visit
+    from radon.metrics import h_visit, mi_visit
+except ImportError as e:
+    logging.error("radon is not installed. Please install it using 'pip install radon'.")
+    raise
+
+try:
+    import libcst as cst
+    from libcst import FunctionDef, ClassDef, SimpleStatementLine, Expr, SimpleString
+except ImportError as e:
+    logging.error("libcst is not installed. Please install it using 'pip install libcst'.")
+    raise
+
+from language_functions.base_handler import BaseHandler  # Replace 'mypackage' with your actual package name
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +45,9 @@ class PythonHandler(BaseHandler):
             file_path (Optional[str]): The file path for code reference.
 
         Returns:
-            Dict[str, Any]: A detailed structure of the code components."""
+            Dict[str, Any]: A detailed structure of the code components.
+        """
         try:
-            import ast
-            from radon.complexity import cc_visit
-            from radon.metrics import h_visit, mi_visit
-
             tree = ast.parse(code)
             code_structure = {
                 "classes": [],
@@ -39,23 +56,21 @@ class PythonHandler(BaseHandler):
                 "constants": [],
                 "halstead": {},
                 "maintainability_index": None,
+                "decorators": [],
+                "context_managers": [],
+                "comprehensions": [],
             }
-
-            # Calculate complexity
             complexity_scores = cc_visit(code)
-            function_complexity = {score.name: score.complexity for score in complexity_scores}
-
-            # Calculate Halstead metrics
+            # Use fullname to include scopes
+            function_complexity = {score.fullname: score.complexity for score in complexity_scores}
             halstead_metrics = h_visit(code)
             if halstead_metrics:
                 metrics = halstead_metrics[0]
                 code_structure["halstead"] = {
                     "volume": metrics.volume,
                     "difficulty": metrics.difficulty,
-                    "effort": metrics.effort
+                    "effort": metrics.effort,
                 }
-
-            # Calculate Maintainability Index
             mi_score = mi_visit(code, True)
             code_structure["maintainability_index"] = mi_score
 
@@ -66,37 +81,55 @@ class PythonHandler(BaseHandler):
                     """Initializes the CodeVisitor for traversing AST nodes."""
                     self.scope_stack = []
 
-                def visit_FunctionDef(self, node):
-                    """Visits a function definition node and carries out specific analysis or actions."""
-                    self.scope_stack.append(node.name)
-                    full_name = ".".join(self.scope_stack)
+                def visit_FunctionDef(self, node: ast.FunctionDef):
+                    """Visits a function definition node."""
+                    self._visit_function(node)
+
+                def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
+                    """Visits an async function definition node."""
+                    self._visit_function(node, is_async=True)
+
+                def _visit_function(self, node: ast.FunctionDef, is_async: bool = False) -> None:
+                    """Handles both sync and async functions."""
+                    self.scope_stack.append(node)
+                    full_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, 'name')])
                     complexity = function_complexity.get(full_name, 0)
+                    decorators = [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, 'unparse') else []
                     function_info = {
                         "name": node.name,
                         "docstring": ast.get_docstring(node) or "",
                         "args": [arg.arg for arg in node.args.args if arg.arg != "self"],
-                        "async": isinstance(node, ast.AsyncFunctionDef),
+                        "async": is_async,
                         "complexity": complexity,
+                        "decorators": decorators,
                     }
-                    code_structure["functions"].append(function_info)
+                    if not any(isinstance(parent, ast.ClassDef) for parent in self.scope_stack[:-1]):
+                        code_structure["functions"].append(function_info)
                     self.generic_visit(node)
                     self.scope_stack.pop()
 
-                def visit_ClassDef(self, node):
-                    """Visits a class definition node to process class-level analysis or manipulation."""
-                    self.scope_stack.append(node.name)
-                    class_info = {"name": node.name, "docstring": ast.get_docstring(node) or "", "methods": []}
+                def visit_ClassDef(self, node: ast.ClassDef):
+                    """Visits a class definition node."""
+                    self.scope_stack.append(node)
+                    class_info = {
+                        "name": node.name,
+                        "docstring": ast.get_docstring(node) or "",
+                        "methods": [],
+                        "decorators": [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, 'unparse') else []
+                    }
                     for body_item in node.body:
                         if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            self.scope_stack.append(body_item.name)
-                            full_method_name = ".".join(self.scope_stack)
+                            self.scope_stack.append(body_item)
+                            full_method_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, 'name')])
                             complexity = function_complexity.get(full_method_name, 0)
+                            decorators = [ast.unparse(d) for d in body_item.decorator_list] if hasattr(ast, 'unparse') else []
                             method_info = {
                                 "name": body_item.name,
                                 "docstring": ast.get_docstring(body_item) or "",
                                 "args": [arg.arg for arg in body_item.args.args if arg.arg != "self"],
                                 "async": isinstance(body_item, ast.AsyncFunctionDef),
                                 "complexity": complexity,
+                                "decorators": decorators,
                             }
                             class_info["methods"].append(method_info)
                             self.scope_stack.pop()
@@ -104,15 +137,68 @@ class PythonHandler(BaseHandler):
                     self.generic_visit(node)
                     self.scope_stack.pop()
 
-                def visit_Assign(self, node):
+                def visit_Assign(self, node: ast.Assign):
                     """Processes assignment nodes for extracting code comprehension details."""
                     for target in node.targets:
-                        if isinstance(target, ast.Name):
-                            var_name = target.id
-                            if var_name.isupper():
-                                code_structure["constants"].append(var_name)
-                            else:
-                                code_structure["variables"].append(var_name)
+                        self._process_target(target)
+                    self.generic_visit(node)
+
+                def _process_target(self, target: ast.AST) -> None:
+                    """Recursively processes assignment targets to extract variable names.
+
+                    Args:
+                        target (ast.AST): The assignment target node.
+                    """
+                    if isinstance(target, ast.Name):
+                        var_name = target.id
+                        if var_name.isupper():
+                            code_structure["constants"].append(var_name)
+                        else:
+                            code_structure["variables"].append(var_name)
+                    elif isinstance(target, (ast.Tuple, ast.List)):
+                        for elt in target.elts:
+                            self._process_target(elt)
+                    elif isinstance(target, ast.Attribute):
+                        var_name = target.attr
+                        if var_name.isupper():
+                            code_structure["constants"].append(var_name)
+                        else:
+                            code_structure["variables"].append(var_name)
+
+                def visit_With(self, node: ast.With):
+                    """Processes 'with' statements."""
+                    for item in node.items:
+                        if isinstance(item.context_expr, ast.Call):
+                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, 'unparse') else ""
+                            code_structure.setdefault("context_managers", []).append(context_manager)
+                    self.generic_visit(node)
+
+                def visit_AsyncWith(self, node: ast.AsyncWith):
+                    """Processes 'async with' statements."""
+                    for item in node.items:
+                        if isinstance(item.context_expr, ast.Call):
+                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, 'unparse') else ""
+                            code_structure.setdefault("context_managers", []).append(context_manager)
+                    self.generic_visit(node)
+
+                def visit_ListComp(self, node: ast.ListComp):
+                    """Tracks list comprehensions."""
+                    code_structure.setdefault("comprehensions", []).append("ListComprehension")
+                    self.generic_visit(node)
+
+                def visit_DictComp(self, node: ast.DictComp):
+                    """Tracks dictionary comprehensions."""
+                    code_structure.setdefault("comprehensions", []).append("DictComprehension")
+                    self.generic_visit(node)
+
+                def visit_SetComp(self, node: ast.SetComp):
+                    """Tracks set comprehensions."""
+                    code_structure.setdefault("comprehensions", []).append("SetComprehension")
+                    self.generic_visit(node)
+
+                def visit_GeneratorExp(self, node: ast.GeneratorExp):
+                    """Tracks generator expressions."""
+                    code_structure.setdefault("comprehensions", []).append("GeneratorExpression")
                     self.generic_visit(node)
 
             visitor = CodeVisitor()
@@ -121,6 +207,9 @@ class PythonHandler(BaseHandler):
             return code_structure
         except SyntaxError as e:
             logger.error(f"Syntax error in code: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
+            return {}
+        except ImportError as e:
+            logger.error(f"Required module not found: {e.name}. Please install it using 'pip install {e.name}'.")
             return {}
         except Exception as e:
             logger.error(f"Error extracting Python structure: {e}", exc_info=True)
@@ -139,9 +228,6 @@ class PythonHandler(BaseHandler):
         """
         logger.debug("Starting docstring insertion for Python code.")
         try:
-            import ast
-
-            tree = ast.parse(code)
             docstrings_mapping = {}
             for func_doc in documentation.get("functions", []):
                 name = func_doc.get("name")
@@ -157,57 +243,48 @@ class PythonHandler(BaseHandler):
                             full_method_name = f"{class_name}.{method_name}"
                             docstrings_mapping[full_method_name] = method_doc.get("docstring", "")
 
-            class DocstringInserter(ast.NodeTransformer):
-                """AST Node Transformer to insert docstrings."""
+            class DocstringInserter(cst.CSTTransformer):
+                def __init__(self, docstrings_mapping: Dict[str, str]):
+                    self.docstrings_mapping = docstrings_mapping
+                    self.scope_stack = []
 
-                def visit_FunctionDef(self, node):
-                    """Inserts docstring into function if available."""
-                    full_name = node.name
-                    parent = getattr(node, "parent", None)
-                    if isinstance(parent, ast.ClassDef):
-                        full_name = f"{parent.name}.{node.name}"
-                    docstring = docstrings_mapping.get(full_name)
-                    if docstring and (not ast.get_docstring(node)):
-                        new_doc = ast.Expr(value=ast.Constant(value=docstring))
-                        node.body.insert(0, new_doc)
+                def visit_FunctionDef(self, node: FunctionDef):
+                    self.scope_stack.append(node.name.value)  # Extract string value
+
+                def leave_FunctionDef(self, original_node: FunctionDef, updated_node: FunctionDef) -> FunctionDef:
+                    full_name = ".".join(self.scope_stack)
+                    docstring = self.docstrings_mapping.get(full_name)
+                    if docstring and not original_node.get_docstring():
+                        new_doc = SimpleStatementLine([Expr(SimpleString(f'"""{docstring}"""'))])
+                        new_body = [new_doc] + list(updated_node.body.body)
+                        updated_node = updated_node.with_changes(body=updated_node.body.with_changes(body=new_body))
                         logger.debug(f"Inserted docstring for function: {full_name}")
-                    self.generic_visit(node)
-                    return node
+                    self.scope_stack.pop()
+                    return updated_node
 
-                def visit_AsyncFunctionDef(self, node):
-                    """Inserts docstring into async function if available."""
-                    return self.visit_FunctionDef(node)
+                def visit_ClassDef(self, node: ClassDef):
+                    self.scope_stack.append(node.name.value)  # Extract string value
 
-                def visit_ClassDef(self, node):
-                    """Inserts docstring into class if available."""
-                    doc_content = docstrings_mapping.get(node.name)
-                    if doc_content and (not ast.get_docstring(node)):
-                        doc_node = ast.Expr(value=ast.Constant(value=doc_content))
-                        node.body.insert(0, doc_node)
-                        logger.debug(f"Inserted docstring for class: {node.name}")
-                    self.generic_visit(node)
-                    return node
+                def leave_ClassDef(self, original_node: ClassDef, updated_node: ClassDef) -> ClassDef:
+                    full_name = ".".join(self.scope_stack)
+                    docstring = self.docstrings_mapping.get(full_name)
+                    if docstring and not original_node.get_docstring():
+                        new_doc = SimpleStatementLine([Expr(SimpleString(f'"""{docstring}"""'))])
+                        new_body = [new_doc] + list(updated_node.body.body)
+                        updated_node = updated_node.with_changes(body=updated_node.body.with_changes(body=new_body))
+                        logger.debug(f"Inserted docstring for class: {full_name}")
+                    self.scope_stack.pop()
+                    return updated_node
 
-            def add_parent_links(node, parent=None):
-                """Attaches parent links to nodes within an AST to assist with hierarchical transformations.
-
-                Args:
-                    node (AST): The AST node to process.
-                    parent (Optional[AST]): The parent of the current node.
-
-                Returns:
-                    AST: The node with attached parent references."""
-                for child in ast.iter_child_nodes(node):
-                    setattr(child, "parent", node)
-                    add_parent_links(child, node)
-
-            add_parent_links(tree)
-            inserter = DocstringInserter()
-            modified_tree = inserter.visit(tree)
-            ast.fix_missing_locations(modified_tree)
-            modified_code = ast.unparse(modified_tree)
+            tree = cst.parse_module(code)
+            inserter = DocstringInserter(docstrings_mapping)
+            modified_tree = tree.visit(inserter)
+            modified_code = modified_tree.code
             logger.debug("Docstring insertion completed successfully.")
             return modified_code
+        except ImportError as e:
+            logger.error(f"Required module not found: {e.name}. Please install it using 'pip install {e.name}'.")
+            return code
         except Exception as e:
             logger.error(f"Error inserting docstrings: {e}", exc_info=True)
             return code
@@ -225,25 +302,32 @@ class PythonHandler(BaseHandler):
         """
         logger.debug("Starting Python code validation.")
         try:
-            import ast
-
             ast.parse(code)
             logger.debug("Syntax validation passed.")
             if file_path:
-                import subprocess
-
-                temp_file = f"{file_path}.temp.py"
-                with open(temp_file, "w", encoding="utf-8") as f:
-                    f.write(code)
-                result = subprocess.run(
-                    ["flake8", temp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-                )
-                os.remove(temp_file)
-                if result.returncode != 0:
-                    logger.error(f"Flake8 validation failed for {file_path}:\n{result.stdout}\n{result.stderr}")
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
+                    tmp.write(code)
+                    temp_file = tmp.name
+                try:
+                    result = subprocess.run(
+                        ["flake8", temp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                    )
+                    if result.returncode != 0:
+                        logger.error(f"Flake8 validation failed for {file_path}:\n{result.stdout}\n{result.stderr}")
+                        return False
+                    else:
+                        logger.debug("Flake8 validation passed.")
+                except FileNotFoundError:
+                    logger.error("flake8 is not installed or not found in PATH. Please install it using 'pip install flake8'.")
                     return False
-                else:
-                    logger.debug("Flake8 validation passed.")
+                except subprocess.SubprocessError as e:
+                    logger.error(f"Subprocess error during flake8 execution: {e}")
+                    return False
+                finally:
+                    try:
+                        os.remove(temp_file)
+                    except OSError as e:
+                        logger.error(f"Error deleting temporary file {temp_file}: {e}")
             else:
                 logger.warning("File path not provided for flake8 validation. Skipping flake8.")
             return True
