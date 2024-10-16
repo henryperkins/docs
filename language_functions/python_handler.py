@@ -1,14 +1,8 @@
-import ast
-import subprocess
 import logging
 import os
 from typing import Dict, Any, Optional
-from radon.complexity import cc_visit
-from radon.metrics import h_visit, mi_visit
-from .base_handler import BaseHandler  # Relative import to avoid circular dependencies
 
 logger = logging.getLogger(__name__)
-
 
 class PythonHandler(BaseHandler):
     """Handler for Python language."""
@@ -34,6 +28,10 @@ class PythonHandler(BaseHandler):
             Dict[str, Any]: A structured representation of the analyzed code.
         """
         try:
+            import ast
+            from radon.complexity import cc_visit
+            from radon.metrics import h_visit, mi_visit
+
             module_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else 'module'
             tree = ast.parse(code)
             code_structure = {
@@ -155,6 +153,8 @@ class PythonHandler(BaseHandler):
         """
         logger.debug("Starting docstring insertion for Python code.")
         try:
+            import ast
+
             tree = ast.parse(code)
             docstrings_mapping = {}
 
@@ -237,11 +237,15 @@ class PythonHandler(BaseHandler):
         """
         logger.debug("Starting Python code validation.")
         try:
+            import ast
+
             # Check for syntax errors
             ast.parse(code)
             logger.debug("Syntax validation passed.")
 
             if file_path:
+                import subprocess
+
                 # Write code to a temporary file for flake8 validation
                 temp_file = f"{file_path}.temp.py"
                 with open(temp_file, 'w', encoding='utf-8') as f:
