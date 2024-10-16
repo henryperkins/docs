@@ -11,7 +11,14 @@ def get_threshold(metric: str, key: str, default: int) -> int:
     except ValueError:
         logger.error(f"Invalid environment variable for {metric.upper()}_{key.upper()}_THRESHOLD")
         return default
-
+        
+def format_table(headers: list, rows: list) -> str:
+    table = "| " + " | ".join(headers) + " |\n"
+    table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+    for row in rows:
+        table += "| " + " | ".join(row) + " |\n"
+    return table
+    
 def generate_all_badges(
     complexity: Optional[int] = None,
     halstead: Optional[dict] = None,
