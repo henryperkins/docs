@@ -21,7 +21,7 @@ except ImportError as e:
     logging.error("libcst is not installed. Please install it using 'pip install libcst'.")
     raise
 
-from language_functions.base_handler import BaseHandler  # Replace 'mypackage' with your actual package name
+from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,6 @@ class PythonHandler(BaseHandler):
                 "comprehensions": [],
             }
             complexity_scores = cc_visit(code)
-            # Use fullname to include scopes
             function_complexity = {score.fullname: score.complexity for score in complexity_scores}
             halstead_metrics = h_visit(code)
             if halstead_metrics:
@@ -208,9 +207,6 @@ class PythonHandler(BaseHandler):
         except SyntaxError as e:
             logger.error(f"Syntax error in code: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
             return {}
-        except ImportError as e:
-            logger.error(f"Required module not found: {e.name}. Please install it using 'pip install {e.name}'.")
-            return {}
         except Exception as e:
             logger.error(f"Error extracting Python structure: {e}", exc_info=True)
             return {}
@@ -249,7 +245,7 @@ class PythonHandler(BaseHandler):
                     self.scope_stack = []
 
                 def visit_FunctionDef(self, node: FunctionDef):
-                    self.scope_stack.append(node.name.value)  # Extract string value
+                    self.scope_stack.append(node.name.value)
 
                 def leave_FunctionDef(self, original_node: FunctionDef, updated_node: FunctionDef) -> FunctionDef:
                     full_name = ".".join(self.scope_stack)
@@ -263,7 +259,7 @@ class PythonHandler(BaseHandler):
                     return updated_node
 
                 def visit_ClassDef(self, node: ClassDef):
-                    self.scope_stack.append(node.name.value)  # Extract string value
+                    self.scope_stack.append(node.name.value)
 
                 def leave_ClassDef(self, original_node: ClassDef, updated_node: ClassDef) -> ClassDef:
                     full_name = ".".join(self.scope_stack)
@@ -282,9 +278,6 @@ class PythonHandler(BaseHandler):
             modified_code = modified_tree.code
             logger.debug("Docstring insertion completed successfully.")
             return modified_code
-        except ImportError as e:
-            logger.error(f"Required module not found: {e.name}. Please install it using 'pip install {e.name}'.")
-            return code
         except Exception as e:
             logger.error(f"Error inserting docstrings: {e}", exc_info=True)
             return code

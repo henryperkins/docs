@@ -125,14 +125,9 @@ def format_classes(classes: list) -> str:
     ]
     return format_table(headers, rows)
 
-def format_variables(variables: list) -> str:
-    headers = ["Variable Name"]
-    rows = [[var] for var in variables]
-    return format_table(headers, rows)
-
-def format_constants(constants: list) -> str:
-    headers = ["Constant Name"]
-    rows = [[const] for const in constants]
+def format_variables_and_constants(variables: list, constants: list) -> str:
+    headers = ["Name", "Type"]
+    rows = [[var, "Variable"] for var in variables] + [[const, "Constant"] for const in constants]
     return format_table(headers, rows)
 
 def generate_documentation_prompt(
@@ -243,15 +238,12 @@ async def write_documentation_report(
             documentation_content += "## Functions\n\n"
             documentation_content += format_functions(functions)
 
-        # Add Variables
+        # Add Variables and Constants
         variables = documentation.get('variables', [])
-        if variables:
-            documentation_content += format_variables(variables)
-
-        # Add Constants
         constants = documentation.get('constants', [])
-        if constants:
-            documentation_content += format_constants(constants)
+        if variables or constants:
+            documentation_content += "## Variables and Constants\n\n"
+            documentation_content += format_variables_and_constants(variables, constants)
 
         # Add Source Code
         with open(file_path, 'r') as file:

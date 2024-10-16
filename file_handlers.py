@@ -1,5 +1,5 @@
 import os
-import shutil  # Added import for file operations
+import shutil
 import logging
 import aiofiles
 import aiohttp
@@ -19,15 +19,6 @@ from utils import (
 from write_documentation_report import generate_documentation_prompt, generate_table_of_contents, write_documentation_report
 
 logger = logging.getLogger(__name__)
-
-# Initialize Sentry SDK if DSN is provided
-SENTRY_DSN = os.getenv('SENTRY_DSN')
-if SENTRY_DSN:
-    import sentry_sdk
-    sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=1.0)
-    logger.info('Sentry SDK initialized.')
-else:
-    logger.info('Sentry DSN not provided. Sentry SDK will not be initialized.')
 
 async def extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler) -> Optional[Dict[str, Any]]:
     logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
@@ -98,7 +89,6 @@ async def fetch_documentation_rest(
                             if function_call["name"] == "generate_documentation":
                                 arguments = function_call["arguments"]
                                 try:
-                                    # Ensure that the arguments are a valid JSON string
                                     documentation = json.loads(arguments)
                                     logger.debug("Received documentation via function_call.")
                                     return documentation
@@ -141,7 +131,7 @@ async def process_file(
     azure_api_key: str,
     azure_endpoint: str,
     azure_api_version: str,
-    output_dir: str  # Added output_dir parameter
+    output_dir: str
 ) -> Optional[str]:
     logger.debug(f'Processing file: {file_path}')
     try:
@@ -183,7 +173,7 @@ async def process_file(
                     project_info=project_info,
                     style_guidelines=style_guidelines,
                     language=language,
-                    function_schema=function_schema  # Pass the function schema
+                    function_schema=function_schema
                 )
                 documentation = await fetch_documentation_rest(
                     session=session,
@@ -198,33 +188,11 @@ async def process_file(
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
                 else:
-                    # Combine code_structure with documentation as per schema
                     documentation['halstead'] = code_structure.get('halstead', {})
                     documentation['maintainability_index'] = code_structure.get('maintainability_index', None)
                     documentation['variables'] = code_structure.get('variables', [])
                     documentation['constants'] = code_structure.get('constants', [])
-                    # Ensure 'changes_made' exists as per schema
                     documentation['changes_made'] = documentation.get('changes_made', [])
-                    # Update functions and methods with complexity
-                    function_complexity = {}
-                    for func in code_structure.get('functions', []):
-                        function_complexity[func['name']] = func.get('complexity', 0)
-                    for func in documentation.get('functions', []):
-                        func_name = func['name']
-                        func['complexity'] = function_complexity.get(func_name, 0)
-                    class_complexity = {}
-                    for cls in code_structure.get('classes', []):
-                        class_name = cls['name']
-                        methods_complexity = {}
-                        for method in cls.get('methods', []):
-                            methods_complexity[method['name']] = method.get('complexity', 0)
-                        class_complexity[class_name] = methods_complexity
-                    for cls in documentation.get('classes', []):
-                        class_name = cls['name']
-                        methods_complexity = class_complexity.get(class_name, {})
-                        for method in cls.get('methods', []):
-                            method_name = method['name']
-                            method['complexity'] = methods_complexity.get(method_name, 0)
         except Exception as e:
             logger.error(f"Error during code structure extraction or documentation generation for '{file_path}': {e}", exc_info=True)
 
@@ -254,7 +222,7 @@ async def process_file(
             file_path=file_path,
             repo_root=repo_root,
             new_content=new_content,
-            output_dir=output_dir  # Pass output_dir to write_documentation_report
+            output_dir=output_dir
         )
         logger.info(f"Finished processing '{file_path}'")
         return file_content
@@ -278,7 +246,7 @@ async def process_all_files(
     azure_api_key: str = '',
     azure_endpoint: str = '',
     azure_api_version: str = '',
-    output_dir: str = 'documentation'  # Added output_dir parameter
+    output_dir: str = 'documentation'
 ) -> None:
     logger.info('Starting process of all files.')
     tasks = [
@@ -296,7 +264,7 @@ async def process_all_files(
             azure_api_key=azure_api_key,
             azure_endpoint=azure_endpoint,
             azure_api_version=azure_api_version,
-            output_dir=output_dir  # Pass output_dir to process_file
+            output_dir=output_dir
         )
         for file_path in file_paths
     ]
@@ -309,8 +277,6 @@ async def process_all_files(
                 documentation_contents.append(file_content)
         except Exception as e:
             logger.error(f'Error processing a file: {e}', exc_info=True)
-            if 'sentry_sdk' in globals():
-                sentry_sdk.capture_exception(e)
 
     logger.info('Completed processing all files.')
 
@@ -326,8 +292,6 @@ async def process_all_files(
             logger.info(f"Documentation report written to '{output_file}'")
         except Exception as e:
             logger.error(f"Error writing final documentation to '{output_file}': {e}", exc_info=True)
-            if 'sentry_sdk' in globals():
-                sentry_sdk.capture_exception(e)
     else:
         logger.warning("No documentation was generated.")
 
