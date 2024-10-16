@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Dict, Any, Optional
+from .base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
