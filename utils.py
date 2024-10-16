@@ -219,6 +219,17 @@ def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[s
 # Code Formatting and Cleanup
 # ----------------------------
 
+def format_table(headers: list, rows: list) -> str:
+    table = "| " + " | ".join(headers) + " |\n"
+    table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+    for row in rows:
+        table += "| " + " | ".join(row) + " |\n"
+    return table
+
+def truncate_description(description: str, max_length: int = 100) -> str:
+    return (description[:max_length] + '...') if len(description) > max_length else description
+
+
 async def clean_unused_imports_async(code: str, file_path: str) -> str:
     """
     Asynchronously removes unused imports and variables from the provided code using autoflake.

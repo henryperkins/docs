@@ -11,14 +11,14 @@ def get_threshold(metric: str, key: str, default: int) -> int:
     except ValueError:
         logger.error(f"Invalid environment variable for {metric.upper()}_{key.upper()}_THRESHOLD")
         return default
-        
+
 def format_table(headers: list, rows: list) -> str:
     table = "| " + " | ".join(headers) + " |\n"
     table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
     for row in rows:
         table += "| " + " | ".join(row) + " |\n"
     return table
-    
+
 def generate_all_badges(
     complexity: Optional[int] = None,
     halstead: Optional[dict] = None,
@@ -102,17 +102,12 @@ def format_maintainability_index(mi_score: float) -> str:
     return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen)\n'
 
 def format_functions(functions: list) -> str:
-    content = ''
-    for func in functions:
-        name = func.get('name', '')
-        docstring = func.get('docstring', '')
-        args = func.get('args', [])
-        is_async = func.get('async', False)
-        async_str = 'async ' if is_async else ''
-        arg_list = ', '.join(args)
-        content += f'#### Function: `{async_str}{name}({arg_list})`\n\n'
-        content += f'{docstring}\n\n'
-    return content
+    headers = ["Function Name", "Complexity", "Docstring"]
+    rows = [
+        [func["name"], str(func["complexity"]), sanitize_text(func["docstring"])]
+        for func in functions
+    ]
+    return format_table(headers, rows)
 
 def format_methods(methods: list) -> str:
     content = ''
@@ -125,7 +120,7 @@ def format_methods(methods: list) -> str:
         async_str = 'async ' if is_async else ''
         arg_list = ', '.join(args)
         content += f'- **Method**: `{async_str}{name}({arg_list})` ({method_type} method)\n\n'
-        content += f'  {docstring}\n\n'
+        content += f'  {sanitize_text(docstring)}\n\n'
     return content
 
 def format_classes(classes: list) -> str:
@@ -135,7 +130,7 @@ def format_classes(classes: list) -> str:
         docstring = cls.get('docstring', '')
         methods = cls.get('methods', [])
         content += f"### Class: `{name}`\n\n"
-        content += f"{docstring}\n\n"
+        content += f"{sanitize_text(docstring)}\n\n"
         if methods:
             content += f"#### Methods:\n\n"
             content += format_methods(methods)
@@ -245,14 +240,14 @@ async def write_documentation_report(
         # Add Summary
         summary = documentation.get('summary', '')
         if summary:
-            documentation_content += f"## Summary\n\n{summary}\n\n"
+            documentation_content += f"## Summary\n\n{sanitize_text(summary)}\n\n"
 
         # Add Changes Made
         changes_made = documentation.get('changes_made', [])
         if changes_made:
             documentation_content += f"## Changes Made\n\n"
             for change in changes_made:
-                documentation_content += f"- {change}\n"
+                documentation_content += f"- {sanitize_text(change)}\n"
             documentation_content += "\n"
 
         # Add Classes
