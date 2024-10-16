@@ -179,9 +179,40 @@ Code Structure:
 {json.dumps(code_structure, indent=2)}
 
 Schema:
-{json.dumps(function_schema, indent=2)}
+{json.dumps(function_schema["functions"][0]["parameters"], indent=2)}
 
-Ensure that the output follows the schema exactly, including all required fields.
+Ensure that the output is a JSON object that follows the schema exactly, including all required fields.
+
+Example Output:
+{{
+  "summary": "Brief summary of the file.",
+  "changes_made": ["List of changes made to the file."],
+  "functions": [
+    {{
+      "name": "function_name",
+      "docstring": "Detailed description of the function.",
+      "args": ["arg1", "arg2"],
+      "async": false
+    }}
+  ],
+  "classes": [
+    {{
+      "name": "ClassName",
+      "docstring": "Detailed description of the class.",
+      "methods": [
+        {{
+          "name": "method_name",
+          "docstring": "Detailed description of the method.",
+          "args": ["arg1"],
+          "async": false,
+          "type": "instance"
+        }}
+      ]
+    }}
+  ]
+}}
+
+Ensure all strings are properly escaped and the JSON is valid.
 
 Output:"""
     return prompt
