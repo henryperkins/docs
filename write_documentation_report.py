@@ -23,7 +23,7 @@ def generate_all_badges(
         low_threshold = get_threshold('complexity', 'low', 10)
         medium_threshold = get_threshold('complexity', 'medium', 20)
         color = "green" if complexity < low_threshold else "yellow" if complexity < medium_threshold else "red"
-        complexity_badge = f'<a href="https://example.com/complexity" title="Code Complexity"><img src="https://img.shields.io/badge/Complexity-{complexity}-{color}.svg?style=flat"></a>'
+        complexity_badge = f'![Complexity](https://img.shields.io/badge/Complexity-{complexity}-{color}.svg?style=flat)'
         badges.append(complexity_badge)
 
     if halstead:
@@ -43,9 +43,9 @@ def generate_all_badges(
         effort_medium = get_threshold('halstead_effort', 'medium', 1000)
         effort_color = "green" if effort < effort_low else "yellow" if effort < effort_medium else "red"
 
-        volume_badge = f'<a href="https://example.com/halstead_volume" title="Halstead Volume"><img src="https://img.shields.io/badge/Volume-{volume}-{volume_color}.svg?style=flat"></a>'
-        difficulty_badge = f'<a href="https://example.com/halstead_difficulty" title="Halstead Difficulty"><img src="https://img.shields.io/badge/Difficulty-{difficulty}-{difficulty_color}.svg?style=flat"></a>'
-        effort_badge = f'<a href="https://example.com/halstead_effort" title="Halstead Effort"><img src="https://img.shields.io/badge/Effort-{effort}-{effort_color}.svg?style=flat"></a>'
+        volume_badge = f'![Volume](https://img.shields.io/badge/Volume-{volume}-{volume_color}.svg?style=flat)'
+        difficulty_badge = f'![Difficulty](https://img.shields.io/badge/Difficulty-{difficulty}-{difficulty_color}.svg?style=flat)'
+        effort_badge = f'![Effort](https://img.shields.io/badge/Effort-{effort}-{effort_color}.svg?style=flat)'
 
         badges.extend([volume_badge, difficulty_badge, effort_badge])
 
@@ -53,7 +53,7 @@ def generate_all_badges(
         high_threshold = get_threshold('maintainability_index', 'high', 80)
         medium_threshold = get_threshold('maintainability_index', 'medium', 50)
         color = "green" if mi > high_threshold else "yellow" if mi > medium_threshold else "red"
-        mi_badge = f'<a href="https://example.com/maintainability_index" title="Maintainability Index"><img src="https://img.shields.io/badge/Maintainability-{mi:.2f}-{color}.svg?style=flat"></a>'
+        mi_badge = f'![Maintainability](https://img.shields.io/badge/Maintainability-{mi:.2f}-{color}.svg?style=flat)'
         badges.append(mi_badge)
 
     return ' '.join(badges).strip()
@@ -84,15 +84,15 @@ def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
     volume = halstead.get('volume', 0)
     difficulty = halstead.get('difficulty', 0)
     effort = halstead.get('effort', 0)
-    metrics = f'<a href="https://example.com/halstead_volume" title="Halstead Volume"><img src="https://img.shields.io/badge/Halstead%20Volume-{volume}-blue"></a>\n'
-    metrics += f'<a href="https://example.com/halstead_difficulty" title="Halstead Difficulty"><img src="https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-blue"></a>\n'
-    metrics += f'<a href="https://example.com/halstead_effort" title="Halstead Effort"><img src="https://img.shields.io/badge/Halstead%20Effort-{effort}-blue"></a>\n'
+    metrics = f'![Halstead Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-blue)\n'
+    metrics += f'![Halstead Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-blue)\n'
+    metrics += f'![Halstead Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-blue)\n'
     return metrics
 
 def format_maintainability_index(mi_score: float) -> str:
     if mi_score is None:
         return ''
-    return f'<a href="https://example.com/maintainability_index" title="Maintainability Index"><img src="https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen"></a>\n'
+    return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen)\n'
 
 def format_functions(functions: list) -> str:
     content = ''
@@ -103,11 +103,8 @@ def format_functions(functions: list) -> str:
         is_async = func.get('async', False)
         async_str = 'async ' if is_async else ''
         arg_list = ', '.join(args)
-        content += f'<div class="tooltip">\n'
         content += f'#### Function: `{async_str}{name}({arg_list})`\n\n'
         content += f'{docstring}\n\n'
-        content += f'<span class="tooltiptext">Function `{async_str}{name}` with arguments: {arg_list}</span>\n'
-        content += f'</div>\n\n'
     return content
 
 def format_methods(methods: list) -> str:
@@ -120,11 +117,8 @@ def format_methods(methods: list) -> str:
         method_type = method.get('type', 'instance')
         async_str = 'async ' if is_async else ''
         arg_list = ', '.join(args)
-        content += f'<div class="tooltip">\n'
         content += f'- **Method**: `{async_str}{name}({arg_list})` ({method_type} method)\n\n'
         content += f'  {docstring}\n\n'
-        content += f'<span class="tooltiptext">Method `{async_str}{name}` with arguments: {arg_list}</span>\n'
-        content += f'</div>\n\n'
     return content
 
 def format_classes(classes: list) -> str:
@@ -145,10 +139,7 @@ def format_variables(variables: list) -> str:
         return ''
     content = "### Variables\n\n"
     for var in variables:
-        content += f'<div class="tooltip">\n'
         content += f'- `{var}`\n'
-        content += f'<span class="tooltiptext">Variable `{var}`</span>\n'
-        content += f'</div>\n'
     content += "\n"
     return content
 
@@ -157,10 +148,7 @@ def format_constants(constants: list) -> str:
         return ''
     content = "### Constants\n\n"
     for const in constants:
-        content += f'<div class="tooltip">\n'
         content += f'- `{const}`\n'
-        content += f'<span class="tooltiptext">Constant `{const}`</span>\n'
-        content += f'</div>\n'
     content += "\n"
     return content
 
