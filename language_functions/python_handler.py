@@ -18,21 +18,11 @@ class PythonHandler(BaseHandler):
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
-        """
-        Parses Python code to extract classes and functions.
-
-        Args:
-            code (str): The Python code to be processed.
-            file_path (str): Path to the Python source file.
-
-        Returns:
-            Dict[str, Any]: A structured representation of the analyzed code.
-        """
         try:
             import ast
             from radon.complexity import cc_visit
             from radon.metrics import h_visit, mi_visit
-
+    
             module_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else 'module'
             tree = ast.parse(code)
             code_structure = {
@@ -43,41 +33,36 @@ class PythonHandler(BaseHandler):
                 'halstead': {},
                 'maintainability_index': None,
             }
-
+    
             # Extract complexity scores using radon
             complexity_scores = cc_visit(code)
             function_complexity = {}
             for score in complexity_scores:
-                # Use 'classname' attribute instead of 'class_name'
-                if score.classname:
-                    full_name = f"{score.classname}.{score.name}"
+                if hasattr(score, 'class_name'):
+                    full_name = f"{score.class_name}.{score.name}"
                 else:
                     full_name = score.name
                 function_complexity[full_name] = score.complexity
-
+    
             # Extract Halstead metrics and Maintainability Index
             halstead_metrics = h_visit(code)
             if halstead_metrics:
-                # 'h_visit' returns a dictionary; extract the first item
-                metrics = next(iter(halstead_metrics.values()))
+                metrics = halstead_metrics[0]  # Assuming h_visit returns a list
                 total_halstead = {
                     'volume': metrics.volume,
                     'difficulty': metrics.difficulty,
                     'effort': metrics.effort
                 }
                 code_structure['halstead'] = total_halstead
-
+    
             mi_score = mi_visit(code, True)
             code_structure['maintainability_index'] = mi_score
-
+    
             class CodeVisitor(ast.NodeVisitor):
-                """AST Node Visitor to extract classes, functions, variables, and constants."""
-
                 def __init__(self):
                     self.scope_stack = []
-
+    
                 def visit_FunctionDef(self, node):
-                    """Processes a function definition."""
                     self.scope_stack.append(node.name)
                     full_name = '.'.join(self.scope_stack)
                     complexity = function_complexity.get(full_name, 0)
@@ -91,9 +76,8 @@ class PythonHandler(BaseHandler):
                     code_structure['functions'].append(function_info)
                     self.generic_visit(node)
                     self.scope_stack.pop()
-
+    
                 def visit_ClassDef(self, node):
-                    """Processes a class definition."""
                     self.scope_stack.append(node.name)
                     class_info = {
                         'name': node.name,
@@ -117,9 +101,8 @@ class PythonHandler(BaseHandler):
                     code_structure['classes'].append(class_info)
                     self.generic_visit(node)
                     self.scope_stack.pop()
-
+    
                 def visit_Assign(self, node):
-                    """Processes variable assignments."""
                     for target in node.targets:
                         if isinstance(target, ast.Name):
                             var_name = target.id
@@ -128,12 +111,12 @@ class PythonHandler(BaseHandler):
                             else:
                                 code_structure['variables'].append(var_name)
                     self.generic_visit(node)
-
+    
             visitor = CodeVisitor()
             visitor.visit(tree)
             logger.debug(f"Extracted structure for '{file_path}': {code_structure}")
             return code_structure
-
+    
         except SyntaxError as e:
             logger.error(f"Syntax error in code: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
             return {}
