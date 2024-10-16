@@ -16,129 +16,130 @@ class PythonHandler(BaseHandler):
         """
         self.function_schema = function_schema
 
-def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
-    """
-    Parses Python code to extract classes and functions.
+    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+        """
+        Parses Python code to extract classes and functions.
 
-    Args:
-        code (str): The Python code to be processed.
-        file_path (str): Path to the Python source file.
+        Args:
+            code (str): The Python code to be processed.
+            file_path (str): Path to the Python source file.
 
-    Returns:
-        Dict[str, Any]: A structured representation of the analyzed code.
-    """
-    try:
-        import ast
-        from radon.complexity import cc_visit
-        from radon.metrics import h_visit, mi_visit
+        Returns:
+            Dict[str, Any]: A structured representation of the analyzed code.
+        """
+        try:
+            import ast
+            from radon.complexity import cc_visit
+            from radon.metrics import h_visit, mi_visit
 
-        module_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else 'module'
-        tree = ast.parse(code)
-        code_structure = {
-            'classes': [],
-            'functions': [],
-            'variables': [],
-            'constants': [],
-            'halstead': {},
-            'maintainability_index': None,
-        }
-
-        # Extract complexity scores using radon
-        complexity_scores = cc_visit(code)
-        function_complexity = {}
-        for score in complexity_scores:
-            # Use 'classname' attribute instead of 'class_name'
-            if score.classname:
-                full_name = f"{score.classname}.{score.name}"
-            else:
-                full_name = score.name
-            function_complexity[full_name] = score.complexity
-
-        # Extract Halstead metrics and Maintainability Index
-        halstead_metrics = h_visit(code)
-        if halstead_metrics:
-            # 'h_visit' returns a dictionary; extract the first item
-            metrics = next(iter(halstead_metrics.values()))
-            total_halstead = {
-                'volume': metrics.volume,
-                'difficulty': metrics.difficulty,
-                'effort': metrics.effort
+            module_name = os.path.splitext(os.path.basename(file_path))[0] if file_path else 'module'
+            tree = ast.parse(code)
+            code_structure = {
+                'classes': [],
+                'functions': [],
+                'variables': [],
+                'constants': [],
+                'halstead': {},
+                'maintainability_index': None,
             }
-            code_structure['halstead'] = total_halstead
 
-        mi_score = mi_visit(code, True)
-        code_structure['maintainability_index'] = mi_score
+            # Extract complexity scores using radon
+            complexity_scores = cc_visit(code)
+            function_complexity = {}
+            for score in complexity_scores:
+                # Use 'classname' attribute instead of 'class_name'
+                if score.classname:
+                    full_name = f"{score.classname}.{score.name}"
+                else:
+                    full_name = score.name
+                function_complexity[full_name] = score.complexity
 
-        class CodeVisitor(ast.NodeVisitor):
-            """AST Node Visitor to extract classes, functions, variables, and constants."""
-
-            def __init__(self):
-                self.scope_stack = []
-
-            def visit_FunctionDef(self, node):
-                """Processes a function definition."""
-                self.scope_stack.append(node.name)
-                full_name = '.'.join(self.scope_stack)
-                complexity = function_complexity.get(full_name, 0)
-                function_info = {
-                    'name': node.name,
-                    'docstring': ast.get_docstring(node) or '',
-                    'args': [arg.arg for arg in node.args.args if arg.arg != 'self'],
-                    'async': isinstance(node, ast.AsyncFunctionDef),
-                    'complexity': complexity
+            # Extract Halstead metrics and Maintainability Index
+            halstead_metrics = h_visit(code)
+            if halstead_metrics:
+                # 'h_visit' returns a dictionary; extract the first item
+                metrics = next(iter(halstead_metrics.values()))
+                total_halstead = {
+                    'volume': metrics.volume,
+                    'difficulty': metrics.difficulty,
+                    'effort': metrics.effort
                 }
-                code_structure['functions'].append(function_info)
-                self.generic_visit(node)
-                self.scope_stack.pop()
+                code_structure['halstead'] = total_halstead
 
-            def visit_ClassDef(self, node):
-                """Processes a class definition."""
-                self.scope_stack.append(node.name)
-                class_info = {
-                    'name': node.name,
-                    'docstring': ast.get_docstring(node) or '',
-                    'methods': []
-                }
-                for body_item in node.body:
-                    if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        self.scope_stack.append(body_item.name)
-                        full_method_name = '.'.join(self.scope_stack)
-                        complexity = function_complexity.get(full_method_name, 0)
-                        method_info = {
-                            'name': body_item.name,
-                            'docstring': ast.get_docstring(body_item) or '',
-                            'args': [arg.arg for arg in body_item.args.args if arg.arg != 'self'],
-                            'async': isinstance(body_item, ast.AsyncFunctionDef),
-                            'complexity': complexity
-                        }
-                        class_info['methods'].append(method_info)
-                        self.scope_stack.pop()
-                code_structure['classes'].append(class_info)
-                self.generic_visit(node)
-                self.scope_stack.pop()
+            mi_score = mi_visit(code, True)
+            code_structure['maintainability_index'] = mi_score
 
-            def visit_Assign(self, node):
-                """Processes variable assignments."""
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        var_name = target.id
-                        if var_name.isupper():
-                            code_structure['constants'].append(var_name)
-                        else:
-                            code_structure['variables'].append(var_name)
-                self.generic_visit(node)
+            class CodeVisitor(ast.NodeVisitor):
+                """AST Node Visitor to extract classes, functions, variables, and constants."""
 
-        visitor = CodeVisitor()
-        visitor.visit(tree)
-        logger.debug(f"Extracted structure for '{file_path}': {code_structure}")
-        return code_structure
+                def __init__(self):
+                    self.scope_stack = []
 
-    except SyntaxError as e:
-        logger.error(f"Syntax error in code: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
-        return {}
-    except Exception as e:
-        logger.error(f"Error extracting Python structure: {e}", exc_info=True)
-        return {}
+                def visit_FunctionDef(self, node):
+                    """Processes a function definition."""
+                    self.scope_stack.append(node.name)
+                    full_name = '.'.join(self.scope_stack)
+                    complexity = function_complexity.get(full_name, 0)
+                    function_info = {
+                        'name': node.name,
+                        'docstring': ast.get_docstring(node) or '',
+                        'args': [arg.arg for arg in node.args.args if arg.arg != 'self'],
+                        'async': isinstance(node, ast.AsyncFunctionDef),
+                        'complexity': complexity
+                    }
+                    code_structure['functions'].append(function_info)
+                    self.generic_visit(node)
+                    self.scope_stack.pop()
+
+                def visit_ClassDef(self, node):
+                    """Processes a class definition."""
+                    self.scope_stack.append(node.name)
+                    class_info = {
+                        'name': node.name,
+                        'docstring': ast.get_docstring(node) or '',
+                        'methods': []
+                    }
+                    for body_item in node.body:
+                        if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            self.scope_stack.append(body_item.name)
+                            full_method_name = '.'.join(self.scope_stack)
+                            complexity = function_complexity.get(full_method_name, 0)
+                            method_info = {
+                                'name': body_item.name,
+                                'docstring': ast.get_docstring(body_item) or '',
+                                'args': [arg.arg for arg in body_item.args.args if arg.arg != 'self'],
+                                'async': isinstance(body_item, ast.AsyncFunctionDef),
+                                'complexity': complexity
+                            }
+                            class_info['methods'].append(method_info)
+                            self.scope_stack.pop()
+                    code_structure['classes'].append(class_info)
+                    self.generic_visit(node)
+                    self.scope_stack.pop()
+
+                def visit_Assign(self, node):
+                    """Processes variable assignments."""
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            var_name = target.id
+                            if var_name.isupper():
+                                code_structure['constants'].append(var_name)
+                            else:
+                                code_structure['variables'].append(var_name)
+                    self.generic_visit(node)
+
+            visitor = CodeVisitor()
+            visitor.visit(tree)
+            logger.debug(f"Extracted structure for '{file_path}': {code_structure}")
+            return code_structure
+
+        except SyntaxError as e:
+            logger.error(f"Syntax error in code: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
+            return {}
+        except Exception as e:
+            logger.error(f"Error extracting Python structure: {e}", exc_info=True)
+            return {}
+
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
         """
         Inserts docstrings into Python code based on the provided documentation.
