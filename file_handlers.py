@@ -1,12 +1,10 @@
 import os
 import logging
-import shutil
 import aiofiles
 import aiohttp
 import json
 import asyncio
-from typing import Optional, Set, List, Dict, Any
-from tqdm.asyncio import tqdm
+from typing import Set, List, Dict, Any
 from language_functions import get_handler
 from language_functions.base_handler import BaseHandler
 from utils import (
@@ -30,17 +28,10 @@ if SENTRY_DSN:
 else:
     logger.info('Sentry DSN not provided. Sentry SDK will not be initialized.')
 
-
-async def extract_code_structure(
-    content: str,
-    file_path: str,
-    language: str,
-    handler: BaseHandler
-) -> Optional[Dict[str, Any]]:
+async def extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler) -> Optional[Dict[str, Any]]:
     logger.debug(f"Extracting code structure for '{file_path}' (language: {language})")
     try:
-        loop = asyncio.get_event_loop()
-        structure = await loop.run_in_executor(None, handler.extract_structure, content, file_path)
+        structure = await asyncio.to_thread(handler.extract_structure, content, file_path)
         if structure is None:
             logger.error(f"Extracted structure is None for '{file_path}'")
             return None
@@ -55,7 +46,7 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
         if os.path.exists(backup_path):
             os.remove(backup_path)
             logger.debug(f"Removed existing backup at '{backup_path}'.")
-        shutil.copy(file_path, backup_path)
+        await asyncio.to_thread(shutil.copy, file_path, backup_path)
         logger.debug(f"Backup created at '{backup_path}'.")
         async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
             await f.write(new_content)
@@ -63,7 +54,7 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
     except Exception as e:
         logger.error(f"Error writing to '{file_path}': {e}", exc_info=True)
         if os.path.exists(backup_path):
-            shutil.copy(backup_path, file_path)
+            await asyncio.to_thread(shutil.copy, backup_path, file_path)
             os.remove(backup_path)
             logger.info(f"Restored original file from backup for '{file_path}'.")
 
@@ -87,66 +78,49 @@ async def fetch_documentation_rest(
     }
 
     for attempt in range(1, retry + 1):
-        async with semaphore:
-            try:
-                payload = {
-                    "messages": [
-                        {"role": "user", "content": prompt}
-                    ],
-                    "functions": function_schema["functions"],
-                    "function_call": {"name": "generate_documentation"},
-                }
+        try:
+            async with semaphore, session.post(url, headers=headers, json={
+                "messages": [{"role": "user", "content": prompt}],
+                "functions": function_schema["functions"],
+                "function_call": {"name": "generate_documentation"},
+            }) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    logger.debug(f"API Response: {data}")
 
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        logger.debug(f"API Response: {data}")
+                    if "choices" in data and len(data["choices"]) > 0:
+                        choice = data["choices"][0]
+                        message = choice["message"]
 
-                        if "choices" in data and len(data["choices"]) > 0:
-                            choice = data["choices"][0]
-                            message = choice["message"]
-
-                            if "function_call" in message:
-                                function_call = message["function_call"]
-                                if function_call["name"] == "generate_documentation":
-                                    arguments = function_call["arguments"]
-                                    try:
-                                        documentation = json.loads(arguments)
-                                        logger.debug("Received documentation via function_call.")
-                                        return documentation
-                                    except json.JSONDecodeError as e:
-                                        logger.error(f"Error decoding JSON from function_call arguments: {e}")
-                                        logger.error(f"Arguments Content: {arguments}")
-                                        return None
-                                else:
-                                    logger.error(f"Unexpected function called: {function_call['name']}")
-                                    return None
-                            else:
-                                logger.error("No function_call found in the response.")
-                                return None
-                        else:
-                            logger.error("No choices found in the response.")
-                            return None
+                        if "function_call" in message:
+                            function_call = message["function_call"]
+                            if function_call["name"] == "generate_documentation":
+                                arguments = function_call["arguments"]
+                                try:
+                                    documentation = json.loads(arguments)
+                                    logger.debug("Received documentation via function_call.")
+                                    return documentation
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"Error decoding JSON from function_call arguments: {e}")
+                                    logger.error(f"Arguments Content: {arguments}")
+                                    continue
+                        logger.error("No function_call found in the response.")
                     else:
-                        error_text = await response.text()
-                        logger.error(f"Request failed with status {response.status}: {error_text}")
-                        if attempt < retry:
-                            wait_time = 2 ** attempt
-                            logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
-                            await asyncio.sleep(wait_time)
-                        else:
-                            logger.error("All retry attempts failed.")
-                            return None
-
-            except Exception as e:
-                logger.error(f"An unexpected error occurred: {e}", exc_info=True)
-                if attempt < retry:
-                    wait_time = 2 ** attempt
-                    logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
-                    await asyncio.sleep(wait_time)
+                        logger.error("No choices found in the response.")
                 else:
-                    logger.error("All retry attempts failed.")
-                    return None
+                    error_text = await response.text()
+                    logger.error(f"Request failed with status {response.status}: {error_text}")
+
+            if attempt < retry:
+                wait_time = min(2 ** attempt, 16)
+                logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                await asyncio.sleep(wait_time)
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}", exc_info=True)
+            if attempt < retry:
+                wait_time = min(2 ** attempt, 16)
+                logger.info(f"Retrying after {wait_time} seconds... (Attempt {attempt}/{retry})")
+                await asyncio.sleep(wait_time)
 
     logger.error("All retry attempts failed.")
     return None
@@ -248,31 +222,26 @@ async def process_file(
 
         new_content = content
 
-        if documentation:
+        if documentation and not safe_mode:
             try:
-                loop = asyncio.get_event_loop()
-
-                new_content = await loop.run_in_executor(None, handler.insert_docstrings, content, documentation)
+                new_content = await asyncio.to_thread(handler.insert_docstrings, content, documentation)
 
                 if language.lower() == 'python':
                     new_content = await clean_unused_imports_async(new_content, file_path)
                     new_content = await format_with_black_async(new_content)
 
-                if not safe_mode:
-                    is_valid = await loop.run_in_executor(None, handler.validate_code, new_content, file_path)
-                    if is_valid:
-                        await backup_and_write_new_content(file_path, new_content)
-                        logger.info(f"Documentation inserted into '{file_path}'")
-                    else:
-                        logger.error(f"Code validation failed for '{file_path}'.")
+                is_valid = await asyncio.to_thread(handler.validate_code, new_content, file_path)
+                if is_valid:
+                    await backup_and_write_new_content(file_path, new_content)
+                    logger.info(f"Documentation inserted into '{file_path}'")
                 else:
-                    logger.info(f"Safe mode active. Skipping file modification for '{file_path}'")
+                    logger.error(f"Code validation failed for '{file_path}'.")
             except Exception as e:
                 logger.error(f"Error processing code documentation for '{file_path}': {e}", exc_info=True)
                 new_content = content
 
         file_content = await write_documentation_report(
-            documentation=documentation,
+            documentation=documentation or {},
             language=language,
             file_path=file_path,
             repo_root=repo_root,
@@ -280,6 +249,7 @@ async def process_file(
         )
         logger.info(f"Finished processing '{file_path}'")
         return file_content
+
     except Exception as e:
         logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
         return None
@@ -301,29 +271,27 @@ async def process_all_files(
     azure_api_version: str = ''
 ) -> None:
     logger.info('Starting process of all files.')
-    tasks = []
-    for file_path in file_paths:
-        task = asyncio.create_task(
-            process_file(
-                session=session,
-                file_path=file_path,
-                skip_types=skip_types,
-                semaphore=semaphore,
-                deployment_name=deployment_name,
-                function_schema=function_schema,
-                repo_root=repo_root,
-                project_info=project_info,
-                style_guidelines=style_guidelines,
-                safe_mode=safe_mode,
-                azure_api_key=azure_api_key,
-                azure_endpoint=azure_endpoint,
-                azure_api_version=azure_api_version
-            )
+    tasks = [
+        process_file(
+            session=session,
+            file_path=file_path,
+            skip_types=skip_types,
+            semaphore=semaphore,
+            deployment_name=deployment_name,
+            function_schema=function_schema,
+            repo_root=repo_root,
+            project_info=project_info,
+            style_guidelines=style_guidelines,
+            safe_mode=safe_mode,
+            azure_api_key=azure_api_key,
+            azure_endpoint=azure_endpoint,
+            azure_api_version=azure_api_version
         )
-        tasks.append(task)
+        for file_path in file_paths
+    ]
 
     documentation_contents = []
-    for f in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc='Processing Files'):
+    for f in asyncio.as_completed(tasks):
         try:
             file_content = await f
             if file_content:
