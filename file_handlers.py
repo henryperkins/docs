@@ -192,6 +192,7 @@ async def process_file(
             return None
 
         documentation = None
+        code_structure = None
 
         try:
             code_structure = await extract_code_structure(content, file_path, language, handler)
@@ -218,6 +219,30 @@ async def process_file(
                 )
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
+                else:
+                    documentation['halstead'] = code_structure.get('halstead', {})
+                    documentation['maintainability_index'] = code_structure.get('maintainability_index', None)
+
+                    function_complexity = {}
+                    for func in code_structure.get('functions', []):
+                        function_complexity[func['name']] = func.get('complexity', 0)
+
+                    for cls in code_structure.get('classes', []):
+                        class_name = cls['name']
+                        for method in cls.get('methods', []):
+                            full_method_name = f"{class_name}.{method['name']}"
+                            function_complexity[full_method_name] = method.get('complexity', 0)
+
+                    for func in documentation.get('functions', []):
+                        func_name = func['name']
+                        func['complexity'] = function_complexity.get(func_name, 0)
+
+                    for cls in documentation.get('classes', []):
+                        class_name = cls['name']
+                        for method in cls.get('methods', []):
+                            full_method_name = f"{class_name}.{method['name']}"
+                            method['complexity'] = function_complexity.get(full_method_name, 0)
+
         except Exception as e:
             logger.error(f"Error during code structure extraction or documentation generation for '{file_path}': {e}", exc_info=True)
 

@@ -1,5 +1,3 @@
-# language_functions/python_handler.py
-
 import ast
 import subprocess
 import logging
@@ -41,24 +39,30 @@ class PythonHandler(BaseHandler):
                 'classes': [],
                 'functions': [],
                 'variables': [],
-                'constants': []
+                'constants': [],
+                'halstead': {},
+                'maintainability_index': None,
             }
 
             # Extract complexity scores using radon
             complexity_scores = cc_visit(code)
             function_complexity = {}
             for score in complexity_scores:
-                if hasattr(score, 'classname') and score.classname:
-                    full_name = f"{module_name}.{score.classname}.{score.name}"
-                else:
-                    full_name = f"{module_name}.{score.name}"
+                full_name = f"{score.classname}.{score.name}" if score.classname else score.name
                 function_complexity[full_name] = score.complexity
 
             # Extract Halstead metrics and Maintainability Index
             halstead_metrics = h_visit(code)
-            maintainability_index = mi_visit(code, True)
-            code_structure['halstead'] = halstead_metrics
-            code_structure['maintainability_index'] = maintainability_index
+            if halstead_metrics:
+                total_halstead = {
+                    'volume': sum(h.volume for h in halstead_metrics),
+                    'difficulty': sum(h.difficulty for h in halstead_metrics),
+                    'effort': sum(h.effort for h in halstead_metrics),
+                }
+                code_structure['halstead'] = total_halstead
+
+            mi_score = mi_visit(code, True)
+            code_structure['maintainability_index'] = mi_score
 
             class CodeVisitor(ast.NodeVisitor):
                 """AST Node Visitor to extract classes, functions, variables, and constants."""
@@ -69,12 +73,14 @@ class PythonHandler(BaseHandler):
                 def visit_FunctionDef(self, node):
                     """Processes a function definition."""
                     self.scope_stack.append(node.name)
+                    full_name = '.'.join(self.scope_stack)
+                    complexity = function_complexity.get(full_name, 0)
                     function_info = {
                         'name': node.name,
                         'docstring': ast.get_docstring(node) or '',
                         'args': [arg.arg for arg in node.args.args if arg.arg != 'self'],
                         'async': isinstance(node, ast.AsyncFunctionDef),
-                        'complexity': function_complexity.get(f"{module_name}.{node.name}", 0)
+                        'complexity': complexity
                     }
                     code_structure['functions'].append(function_info)
                     self.generic_visit(node)
@@ -90,14 +96,18 @@ class PythonHandler(BaseHandler):
                     }
                     for body_item in node.body:
                         if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            self.scope_stack.append(body_item.name)
+                            full_method_name = '.'.join(self.scope_stack)
+                            complexity = function_complexity.get(full_method_name, 0)
                             method_info = {
                                 'name': body_item.name,
                                 'docstring': ast.get_docstring(body_item) or '',
                                 'args': [arg.arg for arg in body_item.args.args if arg.arg != 'self'],
                                 'async': isinstance(body_item, ast.AsyncFunctionDef),
-                                'complexity': function_complexity.get(f"{module_name}.{node.name}.{body_item.name}", 0)
+                                'complexity': complexity
                             }
                             class_info['methods'].append(method_info)
+                            self.scope_stack.pop()
                     code_structure['classes'].append(class_info)
                     self.generic_visit(node)
                     self.scope_stack.pop()

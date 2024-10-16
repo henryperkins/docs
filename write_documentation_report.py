@@ -1,13 +1,9 @@
 from utils import logger
-
-
 import aiofiles
-
 import re
 import json
 import os
 from typing import Any, Dict, Optional
-
 
 def generate_table_of_contents(content: str) -> str:
     """
@@ -28,10 +24,8 @@ def generate_table_of_contents(content: str) -> str:
             toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
     return "\n".join(toc)
 
-
 def get_threshold(metric: str, key: str, default: int) -> int:
     return int(os.getenv(f"{metric.upper()}_{key.upper()}_THRESHOLD", default))
-
 
 def generate_all_badges(
     complexity: Optional[int] = None,
@@ -85,11 +79,9 @@ def generate_all_badges(
 
     return ' '.join(badges)
 
-
 def truncate_description(description: str, max_length: int = 100) -> str:
     """Truncates the description to a specified maximum length."""
     return (description[:max_length] + '...') if len(description) > max_length else description
-
 
 def sanitize_text(text: str) -> str:
     """
@@ -105,7 +97,6 @@ def sanitize_text(text: str) -> str:
     for char in markdown_special_chars:
         text = text.replace(char, f"\\{char}")
     return text.replace('|', '\\|').replace('\n', ' ').strip()
-
 
 async def write_documentation_report(
     documentation: Optional[Dict[str, Any]],
@@ -222,7 +213,6 @@ async def write_documentation_report(
         logger.error(f"Unexpected error: {e}")
         return ''
 
-
 def generate_documentation_prompt(
     file_name: str,
     code_structure: Dict[str, Any],
@@ -230,63 +220,66 @@ def generate_documentation_prompt(
     style_guidelines: Optional[str],
     language: str,
 ) -> str:
+    """
+    Generates a prompt for the AI model to produce documentation based on code structure.
+    
+    Args:
+        file_name (str): Name of the file being documented.
+        code_structure (Dict[str, Any]): Structured representation of the code.
+        project_info (Optional[str]): Additional project information.
+        style_guidelines (Optional[str]): Style guidelines for documentation.
+        language (str): Programming language of the code.
+    
+    Returns:
+        str: The complete prompt to send to the AI model.
+    """
     prompt = (
         "You are an expert software engineer tasked with generating comprehensive documentation for the following code structure."
     )
+    
     if project_info:
-        prompt += f"\n\nProject Information:\n{project_info}"
+        prompt += f"\n\n**Project Information:**\n{project_info}"
+    
     if style_guidelines:
-        prompt += f"\n\nStyle Guidelines:\n{style_guidelines}"
-    prompt += f"\n\nFile Name: {file_name}"
-    prompt += f"\nLanguage: {language}"
-    prompt += f"\n\nCode Structure:\n{json.dumps(code_structure, indent=2)}"
-    prompt += """
+        prompt += f"\n\n**Style Guidelines:**\n{style_guidelines}"
+    
+    prompt += f"\n\n**File Name:** {file_name}"
+    prompt += f"\n**Language:** {language}"
+    prompt += f"\n\n**Code Structure:**\n{json.dumps(code_structure, indent=2)}"
 
-Instructions:
+    prompt += """
+**Instructions:**
 Using the code structure provided, generate detailed documentation in JSON format that matches the following schema:
 
+```json
 {
-  "summary": "A detailed summary of the file.",
-  "changes_made": ["List of changes made to the file."],
+  "summary": "A detailed and comprehensive summary of the file, covering its purpose, functionality, and any important details.",
   "functions": [
     {
       "name": "Function name",
       "docstring": "Detailed description of the function, including its purpose and any important details.",
       "args": ["List of argument names"],
-      "async": true or false,
-      "complexity": "Cyclomatic complexity score"
+      "async": true,
+      "complexity": 10
     }
-    // More functions...
+    // Repeat for each function
   ],
   "classes": [
     {
       "name": "Class name",
-      "docstring": "Detailed description of the class.",
+      "docstring": "Detailed description of the class, including its purpose and any important details.",
       "methods": [
         {
           "name": "Method name",
-          "docstring": "Detailed description of the method.",
+          "docstring": "Detailed description of the method, including its purpose and any important details.",
           "args": ["List of argument names"],
-          "async": true or false,
-          "type": "Method type (e.g., 'instance', 'class', 'static')",
-          "complexity": "Cyclomatic complexity score"
+          "async": true,
+          "complexity": 10
         }
-        // More methods...
+        // Repeat for each method
       ]
     }
-    // More classes...
+    // Repeat for each class
   ]
 }
-
-Ensure that:
-- **All 'docstring' fields contain comprehensive and meaningful descriptions.**
-- The 'args' lists contain the argument names of each function or method.
-- The 'async' fields correctly indicate whether the function or method is asynchronous.
-- The 'type' field for methods specifies if it's an 'instance', 'class', or 'static' method.
-- The 'complexity' field provides the cyclomatic complexity score.
-
-**Do not omit any 'docstring' fields. Provide detailed descriptions for each.**
-
-Please output only the JSON object that strictly follows the above schema, without any additional commentary or explanations.
 """
-    return prompt
