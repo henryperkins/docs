@@ -41,7 +41,6 @@ def parse_arguments():
     parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
     parser.add_argument("--schema", help="Path to function_schema.json", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "schemas", "function_schema.json"))
-    # Add an argument for the documentation output directory
     parser.add_argument("--doc-output-dir", help="Directory to save documentation files", default="documentation")
     return parser.parse_args()
 

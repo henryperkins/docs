@@ -98,6 +98,7 @@ async def fetch_documentation_rest(
                             if function_call["name"] == "generate_documentation":
                                 arguments = function_call["arguments"]
                                 try:
+                                    # Ensure that the arguments are a valid JSON string
                                     documentation = json.loads(arguments)
                                     logger.debug("Received documentation via function_call.")
                                     return documentation
@@ -181,7 +182,8 @@ async def process_file(
                     code_structure=code_structure,
                     project_info=project_info,
                     style_guidelines=style_guidelines,
-                    language=language
+                    language=language,
+                    function_schema=function_schema  # Pass the function schema
                 )
                 documentation = await fetch_documentation_rest(
                     session=session,
@@ -196,29 +198,33 @@ async def process_file(
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
                 else:
+                    # Combine code_structure with documentation as per schema
                     documentation['halstead'] = code_structure.get('halstead', {})
                     documentation['maintainability_index'] = code_structure.get('maintainability_index', None)
-
+                    documentation['variables'] = code_structure.get('variables', [])
+                    documentation['constants'] = code_structure.get('constants', [])
+                    # Ensure 'changes_made' exists as per schema
+                    documentation['changes_made'] = documentation.get('changes_made', [])
+                    # Update functions and methods with complexity
                     function_complexity = {}
                     for func in code_structure.get('functions', []):
                         function_complexity[func['name']] = func.get('complexity', 0)
-
-                    for cls in code_structure.get('classes', []):
-                        class_name = cls['name']
-                        for method in cls.get('methods', []):
-                            full_method_name = f"{class_name}.{method['name']}"
-                            function_complexity[full_method_name] = method.get('complexity', 0)
-
                     for func in documentation.get('functions', []):
                         func_name = func['name']
                         func['complexity'] = function_complexity.get(func_name, 0)
-
+                    class_complexity = {}
+                    for cls in code_structure.get('classes', []):
+                        class_name = cls['name']
+                        methods_complexity = {}
+                        for method in cls.get('methods', []):
+                            methods_complexity[method['name']] = method.get('complexity', 0)
+                        class_complexity[class_name] = methods_complexity
                     for cls in documentation.get('classes', []):
                         class_name = cls['name']
+                        methods_complexity = class_complexity.get(class_name, {})
                         for method in cls.get('methods', []):
-                            full_method_name = f"{class_name}.{method['name']}"
-                            method['complexity'] = function_complexity.get(full_method_name, 0)
-
+                            method_name = method['name']
+                            method['complexity'] = methods_complexity.get(method_name, 0)
         except Exception as e:
             logger.error(f"Error during code structure extraction or documentation generation for '{file_path}': {e}", exc_info=True)
 

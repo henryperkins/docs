@@ -2,9 +2,9 @@ import aiofiles
 import re
 import json
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 from utils import logger
-
+import os
 
 def get_threshold(metric: str, key: str, default: int) -> int:
     try:
@@ -54,7 +54,7 @@ def generate_all_badges(
         high_threshold = get_threshold('maintainability_index', 'high', 80)
         medium_threshold = get_threshold('maintainability_index', 'medium', 50)
         color = "green" if mi > high_threshold else "yellow" if mi > medium_threshold else "red"
-        mi_badge = f'![Maintainability Index: {mi}](https://img.shields.io/badge/Maintainability-{mi}-{color}?style=flat-square)'
+        mi_badge = f'![Maintainability Index: {mi:.2f}](https://img.shields.io/badge/Maintainability-{mi:.2f}-{color}?style=flat-square)'
         badges.append(mi_badge)
 
     return ' '.join(badges).strip()
@@ -75,6 +75,7 @@ def generate_table_of_contents(content: str) -> str:
             level = line.count("#")
             title = line.lstrip("#").strip()
             anchor = re.sub(r'[^a-zA-Z0-9\s]', '', title).replace(' ', '-').lower()
+            anchor = anchor.replace('--', '-').strip('-')
             toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
     return "\n".join(toc)
 
@@ -152,95 +153,13 @@ def format_constants(constants: list) -> str:
     content += "\n"
     return content
 
-async def write_documentation_report(
-    documentation: Optional[dict],
-    language: str,
-    file_path: str,
-    repo_root: str,
-    new_content: str,
-    output_dir: str
-) -> str:
-    try:
-        if not documentation:
-            logger.warning(f"No documentation to write for '{file_path}'")
-            return ''
-    
-        relative_path = os.path.relpath(file_path, repo_root)
-        file_header = f'# File: {relative_path}\n\n'
-        documentation_content = file_header
-    
-        # Add Halstead metrics and Maintainability Index
-        halstead_content = format_halstead_metrics(documentation.get('halstead', {}))
-        mi_content = format_maintainability_index(documentation.get('maintainability_index'))
-        documentation_content += halstead_content + mi_content + "\n"
-    
-        # Add Summary
-        summary = documentation.get('summary', '')
-        if summary:
-            documentation_content += f"## Summary\n\n{summary}\n\n"
-    
-        # Add Changes Made
-        changes_made = documentation.get('changes_made', [])
-        if changes_made:
-            documentation_content += f"## Changes Made\n\n"
-            for change in changes_made:
-                documentation_content += f"- {change}\n"
-            documentation_content += "\n"
-    
-        # Add Classes
-        classes = documentation.get('classes', [])
-        if classes:
-            documentation_content += "## Classes\n\n"
-            documentation_content += format_classes(classes)
-    
-        # Add Functions
-        functions = documentation.get('functions', [])
-        if functions:
-            documentation_content += "## Functions\n\n"
-            documentation_content += format_functions(functions)
-    
-        # Add Variables
-        variables = documentation.get('variables', [])
-        if variables:
-            documentation_content += format_variables(variables)
-    
-        # Add Constants
-        constants = documentation.get('constants', [])
-        if constants:
-            documentation_content += format_constants(constants)
-    
-        # Generate Table of Contents
-        toc = generate_table_of_contents(documentation_content)
-        documentation_content = "# Table of Contents\n\n" + toc + "\n\n" + documentation_content
-    
-        # Create the output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-    
-        # Convert relative path to a safe file name
-        safe_file_name = relative_path.replace(os.sep, '_')
-        doc_file_path = os.path.join(output_dir, f"{safe_file_name}.md")
-    
-        async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
-            await f.write(documentation_content)
-        logger.info(f"Documentation written to '{doc_file_path}' successfully.")
-        return documentation_content
-    
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decoding error: {e} for file {file_path}")
-        return ''
-    except FileNotFoundError as e:
-        logger.error(f"File not found: {e}")
-        return ''
-    except Exception as e:
-        logger.error(f"Unexpected error: {e} for file {file_path}", exc_info=True)
-        return ''
-
 def generate_documentation_prompt(
     file_name: str,
     code_structure: Dict[str, Any],
     project_info: str,
     style_guidelines: str,
-    language: str
+    language: str,
+    function_schema: Dict[str, Any]
 ) -> str:
     prompt = f"""
 You are a code documentation generator.
@@ -263,3 +182,86 @@ Ensure that the output follows the schema exactly, including all required fields
 
 Output:"""
     return prompt
+
+async def write_documentation_report(
+    documentation: Optional[dict],
+    language: str,
+    file_path: str,
+    repo_root: str,
+    new_content: str,
+    output_dir: str
+) -> str:
+    try:
+        if not documentation:
+            logger.warning(f"No documentation to write for '{file_path}'")
+            return ''
+    
+        relative_path = os.path.relpath(file_path, repo_root)
+        file_header = f'# File: {relative_path}\n\n'
+        documentation_content = file_header
+
+        # Add Halstead metrics and Maintainability Index
+        halstead_content = format_halstead_metrics(documentation.get('halstead', {}))
+        mi_content = format_maintainability_index(documentation.get('maintainability_index'))
+        documentation_content += halstead_content + mi_content + "\n"
+
+        # Add Summary
+        summary = documentation.get('summary', '')
+        if summary:
+            documentation_content += f"## Summary\n\n{summary}\n\n"
+
+        # Add Changes Made
+        changes_made = documentation.get('changes_made', [])
+        if changes_made:
+            documentation_content += f"## Changes Made\n\n"
+            for change in changes_made:
+                documentation_content += f"- {change}\n"
+            documentation_content += "\n"
+
+        # Add Classes
+        classes = documentation.get('classes', [])
+        if classes:
+            documentation_content += "## Classes\n\n"
+            documentation_content += format_classes(classes)
+
+        # Add Functions
+        functions = documentation.get('functions', [])
+        if functions:
+            documentation_content += "## Functions\n\n"
+            documentation_content += format_functions(functions)
+
+        # Add Variables
+        variables = documentation.get('variables', [])
+        if variables:
+            documentation_content += format_variables(variables)
+
+        # Add Constants
+        constants = documentation.get('constants', [])
+        if constants:
+            documentation_content += format_constants(constants)
+
+        # Generate Table of Contents
+        toc = generate_table_of_contents(documentation_content)
+        documentation_content = "# Table of Contents\n\n" + toc + "\n\n" + documentation_content
+
+        # Create the output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Convert relative path to a safe file name
+        safe_file_name = relative_path.replace(os.sep, '_')
+        doc_file_path = os.path.join(output_dir, f"{safe_file_name}.md")
+
+        async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
+            await f.write(documentation_content)
+        logger.info(f"Documentation written to '{doc_file_path}' successfully.")
+        return documentation_content
+
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decoding error: {e} for file {file_path}")
+        return ''
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        return ''
+    except Exception as e:
+        logger.error(f"Unexpected error: {e} for file {file_path}", exc_info=True)
+        return ''
