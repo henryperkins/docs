@@ -9,6 +9,7 @@ from .base_handler import BaseHandler  # Relative import to avoid circular depen
 
 logger = logging.getLogger(__name__)
 
+
 class PythonHandler(BaseHandler):
     """Handler for Python language."""
 
@@ -48,16 +49,22 @@ class PythonHandler(BaseHandler):
             complexity_scores = cc_visit(code)
             function_complexity = {}
             for score in complexity_scores:
-                full_name = f"{score.classname}.{score.name}" if score.classname else score.name
+                # Use 'class_name' attribute instead of 'classname'
+                if score.class_name:
+                    full_name = f"{score.class_name}.{score.name}"
+                else:
+                    full_name = score.name
                 function_complexity[full_name] = score.complexity
 
             # Extract Halstead metrics and Maintainability Index
             halstead_metrics = h_visit(code)
             if halstead_metrics:
+                # 'h_visit' returns a dictionary; extract the first item
+                metrics = next(iter(halstead_metrics.values()))
                 total_halstead = {
-                    'volume': sum(h.volume for h in halstead_metrics),
-                    'difficulty': sum(h.difficulty for h in halstead_metrics),
-                    'effort': sum(h.effort for h in halstead_metrics),
+                    'volume': metrics.volume,
+                    'difficulty': metrics.difficulty,
+                    'effort': metrics.effort
                 }
                 code_structure['halstead'] = total_halstead
 

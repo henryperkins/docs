@@ -41,6 +41,8 @@ def parse_arguments():
     parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
     parser.add_argument("--schema", help="Path to function_schema.json", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "schemas", "function_schema.json"))
+    # Add an argument for the documentation output directory
+    parser.add_argument("--doc-output-dir", help="Directory to save documentation files", default="documentation")
     return parser.parse_args()
 
 def configure_logging(log_level):
@@ -78,6 +80,7 @@ async def main():
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
     schema_path = args.schema
+    output_dir = args.doc_output_dir  # Get the documentation output directory
 
     # Ensure necessary environment variables are set for Azure OpenAI Service
     AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
@@ -99,6 +102,7 @@ async def main():
     logger.info(f"Deployment Name: {deployment_name}")
     logger.info(f"Safe Mode: {'Enabled' if safe_mode else 'Disabled'}")
     logger.info(f"Function Schema Path: {schema_path}")
+    logger.info(f"Documentation Output Directory: {output_dir}")
 
     if not os.path.isdir(repo_path):
         logger.critical(f"Invalid repository path: '{repo_path}' is not a directory.")
@@ -159,7 +163,8 @@ async def main():
             output_file=output_file,
             azure_api_key=AZURE_OPENAI_API_KEY,
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            azure_api_version=AZURE_OPENAI_API_VERSION
+            azure_api_version=AZURE_OPENAI_API_VERSION,
+            output_dir=output_dir  # Pass the documentation output directory
         )
 
     logger.info("Documentation generation completed successfully.")

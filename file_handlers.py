@@ -1,10 +1,11 @@
 import os
+import shutil  # Added import for file operations
 import logging
 import aiofiles
 import aiohttp
 import json
 import asyncio
-from typing import Set, List, Dict, Any
+from typing import Set, List, Dict, Any, Optional
 from language_functions import get_handler
 from language_functions.base_handler import BaseHandler
 from utils import (
@@ -138,7 +139,8 @@ async def process_file(
     safe_mode: bool,
     azure_api_key: str,
     azure_endpoint: str,
-    azure_api_version: str
+    azure_api_version: str,
+    output_dir: str  # Added output_dir parameter
 ) -> Optional[str]:
     logger.debug(f'Processing file: {file_path}')
     try:
@@ -245,7 +247,8 @@ async def process_file(
             language=language,
             file_path=file_path,
             repo_root=repo_root,
-            new_content=new_content
+            new_content=new_content,
+            output_dir=output_dir  # Pass output_dir to write_documentation_report
         )
         logger.info(f"Finished processing '{file_path}'")
         return file_content
@@ -268,7 +271,8 @@ async def process_all_files(
     output_file: str = 'output.md',
     azure_api_key: str = '',
     azure_endpoint: str = '',
-    azure_api_version: str = ''
+    azure_api_version: str = '',
+    output_dir: str = 'documentation'  # Added output_dir parameter
 ) -> None:
     logger.info('Starting process of all files.')
     tasks = [
@@ -285,7 +289,8 @@ async def process_all_files(
             safe_mode=safe_mode,
             azure_api_key=azure_api_key,
             azure_endpoint=azure_endpoint,
-            azure_api_version=azure_api_version
+            azure_api_version=azure_api_version,
+            output_dir=output_dir  # Pass output_dir to process_file
         )
         for file_path in file_paths
     ]

@@ -5,15 +5,6 @@ import os
 from typing import Optional
 from utils import logger
 
-def generate_table_of_contents(content: str) -> str:
-    toc = []
-    for line in content.splitlines():
-        if line.startswith("#"):
-            level = line.count("#")
-            title = line.lstrip("#").strip()
-            anchor = re.sub(r'[^a-zA-Z0-9\s]', '', title).replace(' ', '-').lower()
-            toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
-    return "\n".join(toc)
 
 def get_threshold(metric: str, key: str, default: int) -> int:
     try:
@@ -77,12 +68,24 @@ def sanitize_text(text: str) -> str:
         text = text.replace(char, f"\\{char}")
     return text.replace('|', '\\|').replace('\n', ' ').strip()
 
+
+def generate_table_of_contents(content: str) -> str:
+    toc = []
+    for line in content.splitlines():
+        if line.startswith("#"):
+            level = line.count("#")
+            title = line.lstrip("#").strip()
+            anchor = re.sub(r'[^a-zA-Z0-9\s]', '', title).replace(' ', '-').lower()
+            toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
+    return "\n".join(toc)
+
 async def write_documentation_report(
     documentation: Optional[dict],
     language: str,
     file_path: str,
     repo_root: str,
-    new_content: str
+    new_content: str,
+    output_dir: str  # Added output_dir parameter
 ) -> str:
     try:
         relative_path = os.path.relpath(file_path, repo_root)
@@ -166,9 +169,15 @@ async def write_documentation_report(
         toc = generate_table_of_contents(documentation_content)
         documentation_content = toc + "\n\n" + documentation_content
 
-        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+        # Create the output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Save documentation to a separate .md file
+        doc_file_path = os.path.join(output_dir, f"{os.path.basename(file_path)}.md")
+
+        async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
             await f.write(documentation_content)
-        logger.info(f"Documentation written to '{file_path}' successfully.")
+        logger.info(f"Documentation written to '{doc_file_path}' successfully.")
         return documentation_content
 
     except json.JSONDecodeError as e:
