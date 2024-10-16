@@ -16,7 +16,11 @@ from utils import (
     format_with_black_async,
     run_flake8_async
 )
-from write_documentation_report import generate_documentation_prompt, generate_table_of_contents, write_documentation_report
+from write_documentation_report import (
+    generate_documentation_prompt,
+    write_documentation_report,
+    sanitize_filename
+)
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +225,6 @@ async def process_file(
             language=language,
             file_path=file_path,
             repo_root=repo_root,
-            new_content=new_content,
             output_dir=output_dir
         )
         logger.info(f"Finished processing '{file_path}'")

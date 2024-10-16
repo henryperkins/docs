@@ -2,8 +2,20 @@ import aiofiles
 import re
 import json
 import os
-from typing import Optional, Dict, Any
-from utils import logger
+import textwrap
+import logging
+import sys
+from typing import Optional, Dict, Any, List
+from utils import logger  # Ensure logger is properly configured elsewhere
+
+# Configure logging if not already configured
+if not logger.hasHandlers():
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+
 
 def get_threshold(metric: str, key: str, default: int) -> int:
     try:
@@ -12,12 +24,14 @@ def get_threshold(metric: str, key: str, default: int) -> int:
         logger.error(f"Invalid environment variable for {metric.upper()}_{key.upper()}_THRESHOLD")
         return default
 
-def format_table(headers: list, rows: list) -> str:
+
+def format_table(headers: List[str], rows: List[List[str]]) -> str:
     table = "| " + " | ".join(headers) + " |\n"
     table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
     for row in rows:
         table += "| " + " | ".join(row) + " |\n"
     return table
+
 
 def generate_all_badges(
     complexity: Optional[int] = None,
@@ -50,9 +64,9 @@ def generate_all_badges(
         effort_medium = get_threshold('halstead_effort', 'medium', 1000)
         effort_color = "green" if effort < effort_low else "yellow" if effort < effort_medium else "red"
 
-        volume_badge = f'![Volume](https://img.shields.io/badge/Volume-{volume}-{volume_color}.svg?style=flat)'
-        difficulty_badge = f'![Difficulty](https://img.shields.io/badge/Difficulty-{difficulty}-{difficulty_color}.svg?style=flat)'
-        effort_badge = f'![Effort](https://img.shields.io/badge/Effort-{effort}-{effort_color}.svg?style=flat)'
+        volume_badge = f'![Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-{volume_color}.svg?style=flat)'
+        difficulty_badge = f'![Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-{difficulty_color}.svg?style=flat)'
+        effort_badge = f'![Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-{effort_color}.svg?style=flat)'
 
         badges.extend([volume_badge, difficulty_badge, effort_badge])
 
@@ -65,8 +79,10 @@ def generate_all_badges(
 
     return ' '.join(badges).strip()
 
+
 def truncate_description(description: str, max_length: int = 100) -> str:
     return (description[:max_length] + '...') if len(description) > max_length else description
+
 
 def sanitize_text(text: str) -> str:
     markdown_special_chars = ['*', '_', '`', '~', '<', '>', '#']
@@ -74,16 +90,20 @@ def sanitize_text(text: str) -> str:
         text = text.replace(char, f"\\{char}")
     return text.replace('|', '\\|').replace('\n', ' ').strip()
 
+
 def generate_table_of_contents(content: str) -> str:
     toc = []
     for line in content.splitlines():
         if line.startswith("#"):
             level = line.count("#")
             title = line.lstrip("#").strip()
-            anchor = re.sub(r'[^a-zA-Z0-9\s]', '', title).replace(' ', '-').lower()
-            anchor = anchor.replace('--', '-').strip('-')
+            # Replace non-alphanumerics except spaces and dashes
+            anchor = re.sub(r'[^a-zA-Z0-9\s-]', '', title)
+            anchor = re.sub(r'\s+', '-', anchor).lower()
+            anchor = re.sub(r'-+', '-', anchor).strip('-')
             toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
     return "\n".join(toc)
+
 
 def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
     if not halstead:
@@ -91,44 +111,111 @@ def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
     volume = halstead.get('volume', 0)
     difficulty = halstead.get('difficulty', 0)
     effort = halstead.get('effort', 0)
-    metrics = f'![Halstead Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-blue)\n'
-    metrics += f'![Halstead Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-blue)\n'
-    metrics += f'![Halstead Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-blue)\n'
+
+    # Define thresholds
+    volume_low, volume_medium = 100, 500
+    difficulty_low, difficulty_medium = 10, 20
+    effort_low, effort_medium = 500, 1000
+
+    volume_color = "green" if volume < volume_low else "yellow" if volume < volume_medium else "red"
+    difficulty_color = "green" if difficulty < difficulty_low else "yellow" if difficulty < difficulty_medium else "red"
+    effort_color = "green" if effort < effort_low else "yellow" if effort < effort_medium else "red"
+
+    metrics = f'![Halstead Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-{volume_color}.svg?style=flat)\n'
+    metrics += f'![Halstead Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-{difficulty_color}.svg?style=flat)\n'
+    metrics += f'![Halstead Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-{effort_color}.svg?style=flat)\n'
     return metrics
+
 
 def format_maintainability_index(mi_score: float) -> str:
     if mi_score is None:
         return ''
-    return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen)\n'
+    return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen.svg?style=flat)\n'
 
-def format_functions(functions: list) -> str:
+
+def format_functions(functions: List[Dict[str, Any]]) -> str:
     headers = ["Function Name", "Complexity", "Async", "Docstring"]
     rows = [
-        [func["name"], str(func.get("complexity", 0)), str(func.get("async", False)), sanitize_text(func["docstring"])]
+        [
+            func.get("name", "N/A"),
+            str(func.get("complexity", 0)),
+            str(func.get("async", False)),
+            sanitize_text(func.get("docstring", ""))
+        ]
         for func in functions
     ]
     return format_table(headers, rows)
 
-def format_methods(methods: list) -> str:
+
+def format_methods(methods: List[Dict[str, Any]]) -> str:
     headers = ["Method Name", "Type", "Async", "Docstring"]
     rows = [
-        [method["name"], method.get("type", "instance"), str(method.get("async", False)), sanitize_text(method["docstring"])]
+        [
+            method.get("name", "N/A"),
+            method.get("type", "instance"),
+            str(method.get("async", False)),
+            sanitize_text(method.get("docstring", ""))
+        ]
         for method in methods
     ]
     return format_table(headers, rows)
 
-def format_classes(classes: list) -> str:
+
+def format_classes(classes: List[Dict[str, Any]]) -> str:
     headers = ["Class Name", "Docstring", "Methods"]
     rows = [
-        [cls["name"], sanitize_text(cls["docstring"]), format_methods(cls["methods"])]
+        [
+            cls.get("name", "N/A"),
+            sanitize_text(cls.get("docstring", "")),
+            format_methods(cls.get("methods", []))
+        ]
         for cls in classes
     ]
     return format_table(headers, rows)
 
-def format_variables_and_constants(variables: list, constants: list) -> str:
-    headers = ["Name", "Type"]
-    rows = [[var, "Variable"] for var in variables] + [[const, "Constant"] for const in constants]
+
+def format_variables_and_constants(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
+    headers = ["Name", "Type", "Data Type", "Description", "Defined At", "Usage Example", "References"]
+    var_rows = [
+        [
+            var.get("name", "N/A"),
+            "Variable",
+            f"`{var.get('type', 'Unknown')}`",
+            sanitize_text(var.get("description", "No description provided.")),
+            f"[{var.get('file', 'N/A')}:{var.get('line', 'N/A')}]({var.get('link', '#')})",
+            sanitize_text(var.get("example", "No example provided.")),
+            sanitize_text(var.get("references", "N/A"))
+        ]
+        for var in variables
+    ]
+    const_rows = [
+        [
+            const.get("name", "N/A"),
+            "Constant",
+            f"`{const.get('type', 'Unknown')}`",
+            sanitize_text(const.get("description", "No description provided.")),
+            f"[{const.get('file', 'N/A')}:{const.get('line', 'N/A')}]({const.get('link', '#')})",
+            sanitize_text(const.get("example", "No example provided.")),
+            sanitize_text(const.get("references", "N/A"))
+        ]
+        for const in constants
+    ]
+    rows = var_rows + const_rows
     return format_table(headers, rows)
+
+
+def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
+    """Generate a summary section for variables and constants."""
+    total_vars = len(variables)
+    total_consts = len(constants)
+    summary = f"### **Summary**\n\n- **Total Variables:** {total_vars}\n- **Total Constants:** {total_consts}\n"
+    return summary
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filenames by replacing invalid characters."""
+    return re.sub(r'[<>:"/\\|?*]', '_', filename)
+
 
 def generate_documentation_prompt(
     file_name: str,
@@ -138,73 +225,96 @@ def generate_documentation_prompt(
     language: str,
     function_schema: Dict[str, Any]
 ) -> str:
+    functions = function_schema.get("functions", [])
+    if functions and "parameters" in functions[0]:
+        schema = json.dumps(function_schema["functions"][0]["parameters"], indent=2)
+    else:
+        logger.error("Function schema is missing or empty.")
+        schema = "{}"  # Fallback or handle accordingly
+
     prompt = f"""
-You are a code documentation generator.
-
-Project Info:
-{project_info}
-
-Style Guidelines:
-{style_guidelines}
-
-Given the following code structure of the {language} file '{file_name}', generate detailed documentation according to the specified schema.
-
-Code Structure:
-{json.dumps(code_structure, indent=2)}
-
-Schema:
-{json.dumps(function_schema["functions"][0]["parameters"], indent=2)}
-
-Ensure that the output is a JSON object that follows the schema exactly, including all required fields.
-
-Example Output:
-{{
-  "summary": "Brief summary of the file.",
-  "changes_made": ["List of changes made to the file."],
-  "functions": [
+    You are a code documentation generator.
+    
+    Project Info:
+    {project_info}
+    
+    Style Guidelines:
+    {style_guidelines}
+    
+    Given the following code structure of the {language} file '{file_name}', generate detailed documentation according to the specified schema.
+    
+    Code Structure:
+    {json.dumps(code_structure, indent=2)}
+    
+    Schema:
+    {schema}
+    
+    Ensure that the output is a JSON object that follows the schema exactly, including all required fields.
+    
+    Example Output:
     {{
-      "name": "function_name",
-      "docstring": "Detailed description of the function.",
-      "args": ["arg1", "arg2"],
-      "async": false
-    }}
-  ],
-  "classes": [
-    {{
-      "name": "ClassName",
-      "docstring": "Detailed description of the class.",
-      "methods": [
+      "summary": "Brief summary of the file.",
+      "changes_made": ["List of changes made to the file."],
+      "functions": [
         {{
-          "name": "method_name",
-          "docstring": "Detailed description of the method.",
-          "args": ["arg1"],
-          "async": false,
-          "type": "instance"
+          "name": "function_name",
+          "docstring": "Detailed description of the function.",
+          "args": ["arg1", "arg2"],
+          "async": false
+        }}
+      ],
+      "classes": [
+        {{
+          "name": "ClassName",
+          "docstring": "Detailed description of the class.",
+          "methods": [
+            {{
+              "name": "method_name",
+              "docstring": "Detailed description of the method.",
+              "args": ["arg1"],
+              "async": false,
+              "type": "instance"
+            }}
+          ]
         }}
       ]
     }}
-  ]
-}}
+    
+    Ensure all strings are properly escaped and the JSON is valid.
+    
+    Output:"""
+    return textwrap.dedent(prompt).strip()
 
-Ensure all strings are properly escaped and the JSON is valid.
-
-Output:"""
-    return prompt
 
 async def write_documentation_report(
     documentation: Optional[dict],
     language: str,
     file_path: str,
     repo_root: str,
-    new_content: str,
     output_dir: str
 ) -> str:
+    """
+    Writes the documentation report to a markdown file with enhanced variable and constant information.
+
+    Args:
+        documentation (Optional[dict]): The documentation data.
+        language (str): Programming language of the source code.
+        file_path (str): Path to the source code file.
+        repo_root (str): Root directory of the repository.
+        output_dir (str): Directory where the documentation will be saved.
+
+    Returns:
+        str: The generated documentation content.
+    """
     try:
         if not documentation:
             logger.warning(f"No documentation to write for '{file_path}'")
             return ''
-    
+
         relative_path = os.path.relpath(file_path, repo_root)
+        safe_file_name = sanitize_filename(relative_path.replace(os.sep, '_'))
+        doc_file_path = os.path.join(output_dir, f"{safe_file_name}.md")
+
         file_header = f'# File: {relative_path}\n\n'
         documentation_content = file_header
 
@@ -214,9 +324,8 @@ async def write_documentation_report(
         documentation_content += halstead_content + mi_content + "\n"
 
         # Add Summary
-        summary = documentation.get('summary', '')
-        if summary:
-            documentation_content += f"## Summary\n\n{sanitize_text(summary)}\n\n"
+        summary = generate_summary(documentation.get('variables', []), documentation.get('constants', []))
+        documentation_content += summary + "\n"
 
         # Add Changes Made
         changes_made = documentation.get('changes_made', [])
@@ -231,12 +340,14 @@ async def write_documentation_report(
         if classes:
             documentation_content += "## Classes\n\n"
             documentation_content += format_classes(classes)
+            documentation_content += "\n"
 
         # Add Functions
         functions = documentation.get('functions', [])
         if functions:
             documentation_content += "## Functions\n\n"
             documentation_content += format_functions(functions)
+            documentation_content += "\n"
 
         # Add Variables and Constants
         variables = documentation.get('variables', [])
@@ -244,10 +355,11 @@ async def write_documentation_report(
         if variables or constants:
             documentation_content += "## Variables and Constants\n\n"
             documentation_content += format_variables_and_constants(variables, constants)
+            documentation_content += "\n"
 
         # Add Source Code
-        with open(file_path, 'r') as file:
-            source_code = file.read()
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as file:
+            source_code = await file.read()
         documentation_content += f"## Source Code\n\n```{language}\n{source_code}\n```\n"
 
         # Generate Table of Contents
@@ -257,20 +369,17 @@ async def write_documentation_report(
         # Create the output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
-        # Convert relative path to a safe file name
-        safe_file_name = relative_path.replace(os.sep, '_')
-        doc_file_path = os.path.join(output_dir, f"{safe_file_name}.md")
-
+        # Write to markdown file
         async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
             await f.write(documentation_content)
         logger.info(f"Documentation written to '{doc_file_path}' successfully.")
         return documentation_content
 
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decoding error: {e} for file {file_path}")
-        return ''
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
+        return ''
+    except subprocess.SubprocessError as e:
+        logger.error(f"Subprocess error during flake8 execution: {e}")
         return ''
     except Exception as e:
         logger.error(f"Unexpected error: {e} for file {file_path}", exc_info=True)
