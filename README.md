@@ -14,35 +14,53 @@
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [How It Works](#how-it-works)
+- [Customization](#customization)
 - [Contributing](#contributing)
 - [License](#license)
 - [Contact](#contact)
 
 ## Overview
 
-AI-Driven Code Documentation Generator is a powerful tool that automates the creation of comprehensive, structured documentation for your codebase. Leveraging OpenAI's GPT-4 (or Azure OpenAI) and advanced code parsing techniques, this tool extracts code structures, generates detailed docstrings following Google-style conventions, and inserts them back into your code. It supports multiple programming languages, ensuring your projects are well-documented with minimal effort.
+The AI-Driven Code Documentation Generator automates the creation of structured documentation for codebases. Utilizing OpenAI's GPT-4 (or Azure OpenAI) and advanced parsing techniques, it extracts code structures and generates insightful docstrings. This tool enhances maintainability and collaboration for projects of any size.
 
-![Demo](https://your-repo-url/demo.gif)
+![Demo](https://github.com/yourusername/yourrepo/raw/main/demo.gif)
 
 ## Features
 
 - **Multi-Language Support**: Automatically generates documentation for Python, JavaScript, TypeScript, Go, C++, Java, HTML, and CSS.
+    
 - **Structured Documentation**: Produces JSON-based documentation conforming to a predefined schema for consistency and ease of use.
+    
 - **Google-Style Docstrings**: Inserts detailed, Google-style docstrings into your codebase.
+    
 - **Asynchronous Processing**: Efficiently handles large codebases with asynchronous file processing.
+    
 - **Customizable Prompts**: Tailor AI prompts to fit your project's specific documentation needs.
+    
 - **Comprehensive Logging**: Detailed logs with log rotation to monitor the documentation process.
-- **Configuration Flexibility**: Customize settings via `config.json` and environment variables.
+    
+- **Configuration Flexibility**: Customize settings via `config.json` and environment variables.
+    
 - **Documentation Report**: Generates a Markdown report with all generated documentation and a dynamically generated Table of Contents.
+    
 - **Unified Badge Function**: Generates badges for Cyclomatic Complexity, Halstead Metrics (Volume, Difficulty, Effort), and Maintainability Index.
-- **Compact Badge Style**: Uses `flat-square` style for badges.
+    
+- **Compact Badge Style**: Uses `flat-square` style for badges.
+    
 - **Dynamic Thresholds**: Customizable thresholds for different metrics.
-- **Enhanced `generate_documentation_report`**: Integrates badge generation into the report.
+    
+- **Enhanced `generate_documentation_report`**: Integrates badge generation into the report.
+    
 - **Markdown Structure**: Uses tables for readability.
+    
 - **Environment-Based Thresholds**: Fetches thresholds from environment variables.
-- **Asynchronous File Writing**: Uses `aiofiles` for non-blocking operations.
+    
+- **Asynchronous File Writing**: Uses `aiofiles` for non-blocking operations.
+    
 - **Comprehensive Scoring**: Calculates maximum complexity across functions and methods.
+    
 - **Robust Error Management**: Handles missing Halstead metrics and logs errors.
+    
 - **Flexibility and Customization**: Dynamic thresholds and compact badge styles.
 
 ## Supported Languages
@@ -61,7 +79,7 @@ AI-Driven Code Documentation Generator is a powerful tool that automates the cre
 ### Prerequisites
 
 - **Python 3.9+**
-- **Node.js (for JavaScript/TypeScript handlers)**
+- **Node.js** (for JavaScript/TypeScript handlers)
 - **OpenAI API Key** or **Azure OpenAI Credentials**
 - **Git** (for cloning the repository)
 
@@ -79,13 +97,15 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### Install Python Dependencies
+### Install Dependencies
+
+#### Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Install Node.js Dependencies
+#### Install Node.js Dependencies
 
 Navigate to the `scripts` directory and install dependencies:
 
@@ -99,7 +119,7 @@ cd ..
 
 ### Environment Variables
 
-Create a `.env` file in the root directory and add the following variables:
+Create a `.env` file in the root directory:
 
 ```env
 # OpenAI Configuration
@@ -109,17 +129,17 @@ ENDPOINT_URL=your_azure_endpoint_url
 DEPLOYMENT_NAME=your_azure_deployment_name
 
 # Other Configurations
-MODEL_NAME=gpt-4  # or your specific deployment ID for Azure
+MODEL_NAME=gpt-4
 ```
 
 ### `config.json`
 
-Create a `config.json` file to specify additional settings:
+Create a `config.json` file:
 
 ```json
 {
-  "project_info": "This project is an AI-driven documentation generator that automates the creation of comprehensive docstrings.",
-  "style_guidelines": "Follow Google Python Style Guide for docstrings.",
+  "project_info": "This project is an AI-driven documentation generator.",
+  "style_guidelines": "Follow Google Python Style Guide.",
   "excluded_dirs": ["tests", "docs"],
   "excluded_files": ["setup.py", "manage.py"],
   "skip_types": [".json", ".md", ".txt", ".csv", ".lock"]
@@ -130,19 +150,17 @@ Create a `config.json` file to specify additional settings:
 
 ### Running the Documentation Generator
 
-Use the following command to run the documentation generator:
-
 ```bash
 python3 main.py /path/to/your/project -c config.json --use-azure --concurrency 3 -o documentation_report.md
 ```
 
 ### Command-Line Arguments
 
-- `/path/to/your/project`: Path to the root directory of your codebase.
+- `/path/to/your/project`: Path to the codebase.
 - `-c config.json`: Path to the configuration file.
-- `--use-azure`: (Optional) Flag to use Azure OpenAI instead of OpenAI.
-- `--concurrency 3`: (Optional) Number of concurrent API requests.
-- `-o documentation_report.md`: (Optional) Output file for the documentation report.
+- `--use-azure`: Use Azure OpenAI.
+- `--concurrency 3`: Number of concurrent API requests.
+- `-o documentation_report.md`: Output file for the report.
 
 ### Example
 
@@ -152,35 +170,31 @@ python3 main.py ./my_project -c config.json --use-azure --concurrency 5 -o docs_
 
 ## How It Works
 
-1. **Configuration**: The tool reads configurations from `config.json` and environment variables.
-2. **File Collection**: It traverses the specified project directory, excluding directories and files as configured.
-3. **Code Structure Extraction**: For each supported file, it extracts the code structure (modules, classes, functions, variables, constants) using language-specific handlers.
-4. **Documentation Generation**: Sends the extracted structure to the AI model with a tailored prompt to generate structured documentation conforming to `function_schema.json`.
-5. **Docstring Insertion**: Inserts the generated Google-style docstrings back into the source code.
-6. **Validation**: Validates the modified code using syntax checks and tools like `flake8`.
-7. **Reporting**: Compiles a Markdown report with all generated documentation, including badges for complexity and other metrics.
+1. **Configuration**: Reads from `config.json` and environment variables.
+2. **File Collection**: Traverses the project directory.
+3. **Code Structure Extraction**: Extracts structures using handlers.
+4. **Documentation Generation**: Uses AI to generate documentation.
+5. **Docstring Insertion**: Inserts docstrings into source code.
+6. **Validation**: Validates code with syntax checks.
+7. **Reporting**: Compiles Markdown report with badges.
 
-## How to Customize
+## Customization
 
 ### Updating the Function Schema
 
-The `function_schema.json` defines the structure of the documentation. You can modify this schema to include additional fields or adjust existing ones to fit your project's needs.
+Modify `function_schema.json` to fit your needs.
 
 ### Changing Docstring Styles
 
-Currently, the tool inserts Google-style docstrings. To switch to another style (e.g., NumPy or reStructuredText), modify the `format_function_docstring` method in `utils.py` accordingly.
+Modify `format_function_docstring` in `utils.py`.
 
 ### Adding Support for More Languages
 
-To add support for additional programming languages:
-
-1. **Create a Language Handler**: Implement a new handler class in `language_functions/` that inherits from `BaseHandler`.
-2. **Implement `extract_structure` and `insert_docstrings`**: Ensure these methods conform to the `function_schema.json`.
-3. **Update `LANGUAGE_MAPPING`**: Add the new language's file extensions to the `LANGUAGE_MAPPING` dictionary in `utils.py`.
+1. **Create a Language Handler**: Inherit from `BaseHandler`.
+2. **Implement Methods**: `extract_structure` and `insert_docstrings`.
+3. **Update `LANGUAGE_MAPPING`**: Add file extensions in `utils.py`.
 
 ## Contributing
-
-Contributions are welcome! Please follow these steps:
 
 1. **Fork the Repository**
 2. **Create a Feature Branch**
@@ -209,8 +223,11 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Contact
 
-For any questions, suggestions, or support, please contact [hperkin4@asu.edu](mailto:hperkin4@asu.edu).
+For questions or support, contact [hperkin4@asu.edu](mailto:hperkin4@asu.edu).
 
----
+You can also reach out through:
+
+- [GitHub Issues](https://github.com/yourusername/yourrepo/issues)
+- [Discussion Forum](https://github.com/yourusername/yourrepo/discussions)
 
 *Enhance your codebase documentation effortlessly with AI-driven precision.*
