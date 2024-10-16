@@ -271,6 +271,11 @@ async def write_documentation_report(
         if constants:
             documentation_content += format_constants(constants)
 
+        # Add Source Code
+        with open(file_path, 'r') as file:
+            source_code = file.read()
+        documentation_content += f"## Source Code\n\n```{language}\n{source_code}\n```\n"
+
         # Generate Table of Contents
         toc = generate_table_of_contents(documentation_content)
         documentation_content = "# Table of Contents\n\n" + toc + "\n\n" + documentation_content
