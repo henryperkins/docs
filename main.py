@@ -16,11 +16,52 @@ from utils import (
     load_function_schema,
 )
 
+# Load environment variables from .env file early
+load_dotenv()
+
 # Enable tracemalloc
 tracemalloc.start()
 
-# Load environment variables from .env file
-load_dotenv()
+# Import Sentry SDK and integrations
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.aiohttp import AioHttpIntegration
+
+# Define the before_send function for data scrubbing and filtering
+def before_send(event, hint):
+    """
+    Modify or filter out events before they are sent to Sentry.
+    """
+    # Scrub sensitive information
+    if 'password' in event.get('request', {}).get('data', {}):
+        event['request']['data']['password'] = '***REDACTED***'
+
+    # Example: Filter out specific exceptions
+    if event.get('exception'):
+        exception_type = event['exception']['values'][0]['type']
+        if exception_type in ['SomeNonCriticalException', 'IgnoredException']:
+            return None  # Drop the event
+
+    return event
+
+# Configure Sentry Logging Integration
+logging_integration = LoggingIntegration(
+    level=logging.INFO,        # Capture info and above as breadcrumbs
+    event_level=logging.ERROR  # Send errors as events
+)
+
+# Initialize Sentry
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    integrations=[
+        logging_integration,
+        AioHttpIntegration(),  # Integrate with aiohttp for tracing
+    ],
+    traces_sample_rate=0.2,        # 20% sample rate for production
+    environment=os.getenv("ENVIRONMENT", "production"),
+    release=os.getenv("RELEASE_VERSION", "unknown"),
+    before_send=before_send,       # Add the before_send callback
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -45,26 +86,34 @@ def parse_arguments():
     return parser.parse_args()
 
 def configure_logging(log_level):
-    logger.setLevel(log_level)
+    """
+    Configures logging for the application.
+    """
+    numeric_level = getattr(logging, log_level.upper(), logging.INFO)
+    logger.setLevel(numeric_level)
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d: %(message)s"
     )
 
+    # File handler for detailed logs
     file_handler = logging.FileHandler("docs_generation.log")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
+    # Console handler for real-time feedback
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(log_level)
+    console_handler.setLevel(numeric_level)
     console_handler.setFormatter(formatter)
 
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    # Prevent adding multiple handlers if configure_logging is called multiple times
+    if not logger.handlers:
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
 
 async def main():
     args = parse_arguments()
 
-    configure_logging(getattr(logging, args.log_level.upper(), logging.INFO))
+    configure_logging(args.log_level)
 
     logger.info("Starting Documentation Generation Tool.")
     logger.debug(f"Parsed arguments: {args}")
@@ -147,24 +196,26 @@ async def main():
         logger.critical(f"Error retrieving file paths: {e}")
         sys.exit(1)
 
-    async with aiohttp.ClientSession(raise_for_status=True) as session:
-        await process_all_files(
-            session=session,
-            file_paths=file_paths,
-            skip_types=skip_types_set,
-            semaphore=asyncio.Semaphore(concurrency),
-            deployment_name=deployment_name,
-            function_schema=function_schema,
-            repo_root=repo_path,
-            project_info=project_info,
-            style_guidelines=style_guidelines,
-            safe_mode=safe_mode,
-            output_file=output_file,
-            azure_api_key=AZURE_OPENAI_API_KEY,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            azure_api_version=AZURE_OPENAI_API_VERSION,
-            output_dir=output_dir  # Pass the documentation output directory
-        )
+    # Start a Sentry transaction for the main documentation generation process
+    with sentry_sdk.start_transaction(op="task", name="Documentation Generation"):
+        async with aiohttp.ClientSession(raise_for_status=True) as session:
+            await process_all_files(
+                session=session,
+                file_paths=file_paths,
+                skip_types=skip_types_set,
+                semaphore=asyncio.Semaphore(concurrency),
+                deployment_name=deployment_name,
+                function_schema=function_schema,
+                repo_root=repo_path,
+                project_info=project_info,
+                style_guidelines=style_guidelines,
+                safe_mode=safe_mode,
+                output_file=output_file,
+                azure_api_key=AZURE_OPENAI_API_KEY,
+                azure_endpoint=AZURE_OPENAI_ENDPOINT,
+                azure_api_version=AZURE_OPENAI_API_VERSION,
+                output_dir=output_dir  # Pass the documentation output directory
+            )
 
     logger.info("Documentation generation completed successfully.")
 
