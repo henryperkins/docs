@@ -175,9 +175,30 @@ def format_classes(classes: List[Dict[str, Any]]) -> str:
 
 
 def format_variables_and_constants(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
+    """
+    Formats variables and constants into markdown tables with detailed information.
+
+    Args:
+        variables (List[Dict[str, Any]]): A list of variable dictionaries.
+        constants (List[Dict[str, Any]]): A list of constant dictionaries.
+
+    Returns:
+        str: Markdown-formatted tables for variables and constants.
+    """
     headers = ["Name", "Type", "Data Type", "Description", "Defined At", "Usage Example", "References"]
-    var_rows = [
-        [
+    rows = []
+
+    logger.debug(f"Formatting {len(variables)} variables and {len(constants)} constants.")
+
+    # Define required keys
+    required_keys = ["name", "type", "description", "file", "line", "link", "example", "references"]
+
+    # Process Variables
+    for var in variables:
+        missing_keys = [key for key in required_keys if key not in var]
+        if missing_keys:
+            logger.warning(f"Variable '{var.get('name', 'N/A')}' is missing keys: {missing_keys}")
+        row = [
             var.get("name", "N/A"),
             "Variable",
             f"`{var.get('type', 'Unknown')}`",
@@ -186,10 +207,14 @@ def format_variables_and_constants(variables: List[Dict[str, Any]], constants: L
             sanitize_text(var.get("example", "No example provided.")),
             sanitize_text(var.get("references", "N/A"))
         ]
-        for var in variables
-    ]
-    const_rows = [
-        [
+        rows.append(row)
+
+    # Process Constants
+    for const in constants:
+        missing_keys = [key for key in required_keys if key not in const]
+        if missing_keys:
+            logger.warning(f"Constant '{const.get('name', 'N/A')}' is missing keys: {missing_keys}")
+        row = [
             const.get("name", "N/A"),
             "Constant",
             f"`{const.get('type', 'Unknown')}`",
@@ -198,10 +223,11 @@ def format_variables_and_constants(variables: List[Dict[str, Any]], constants: L
             sanitize_text(const.get("example", "No example provided.")),
             sanitize_text(const.get("references", "N/A"))
         ]
-        for const in constants
-    ]
-    rows = var_rows + const_rows
-    return format_table(headers, rows)
+        rows.append(row)
+
+    table = format_table(headers, rows)
+    logger.debug("Completed formatting variables and constants tables.")
+    return table
 
 
 def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:

@@ -4,7 +4,7 @@ import sys
 import tempfile
 import subprocess
 import ast
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 # External dependencies
 try:
@@ -42,7 +42,7 @@ class PythonHandler(BaseHandler):
 
         Args:
             code (str): The source code to analyze.
-            file_path (Optional[str]): The file path for code reference.
+            file_path (str): The file path for code reference.
 
         Returns:
             Dict[str, Any]: A detailed structure of the code components.
@@ -76,9 +76,30 @@ class PythonHandler(BaseHandler):
             class CodeVisitor(ast.NodeVisitor):
                 """AST visitor for traversing Python code structures and extracting functional and class definitions."""
 
-                def __init__(self):
+                def __init__(self, file_path: str):
                     """Initializes the CodeVisitor for traversing AST nodes."""
                     self.scope_stack = []
+                    self.file_path = file_path
+                    # To track parent nodes for comment extraction
+                    self.comments = self._extract_comments(code, tree)
+
+                def _extract_comments(self, code: str, tree: ast.AST) -> Dict[int, List[str]]:
+                    """Extracts comments from the source code and maps them to line numbers.
+
+                    Args:
+                        code (str): The source code.
+                        tree (ast.AST): The parsed AST.
+
+                    Returns:
+                        Dict[int, List[str]]: Mapping from line numbers to list of comments.
+                    """
+                    comments = {}
+                    for lineno, line in enumerate(code.splitlines(), start=1):
+                        stripped = line.strip()
+                        if stripped.startswith("#"):
+                            comment = stripped.lstrip("#").strip()
+                            comments.setdefault(lineno, []).append(comment)
+                    return comments
 
                 def visit_FunctionDef(self, node: ast.FunctionDef):
                     """Visits a function definition node."""
@@ -94,9 +115,10 @@ class PythonHandler(BaseHandler):
                     full_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, 'name')])
                     complexity = function_complexity.get(full_name, 0)
                     decorators = [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, 'unparse') else []
+                    docstring = ast.get_docstring(node) or ""
                     function_info = {
                         "name": node.name,
-                        "docstring": ast.get_docstring(node) or "",
+                        "docstring": docstring,
                         "args": [arg.arg for arg in node.args.args if arg.arg != "self"],
                         "async": is_async,
                         "complexity": complexity,
@@ -110,9 +132,10 @@ class PythonHandler(BaseHandler):
                 def visit_ClassDef(self, node: ast.ClassDef):
                     """Visits a class definition node."""
                     self.scope_stack.append(node)
+                    class_docstring = ast.get_docstring(node) or ""
                     class_info = {
                         "name": node.name,
-                        "docstring": ast.get_docstring(node) or "",
+                        "docstring": class_docstring,
                         "methods": [],
                         "decorators": [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, 'unparse') else []
                     }
@@ -122,13 +145,15 @@ class PythonHandler(BaseHandler):
                             full_method_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, 'name')])
                             complexity = function_complexity.get(full_method_name, 0)
                             decorators = [ast.unparse(d) for d in body_item.decorator_list] if hasattr(ast, 'unparse') else []
+                            method_docstring = ast.get_docstring(body_item) or ""
                             method_info = {
                                 "name": body_item.name,
-                                "docstring": ast.get_docstring(body_item) or "",
+                                "docstring": method_docstring,
                                 "args": [arg.arg for arg in body_item.args.args if arg.arg != "self"],
                                 "async": isinstance(body_item, ast.AsyncFunctionDef),
                                 "complexity": complexity,
                                 "decorators": decorators,
+                                "type": "async" if isinstance(body_item, ast.AsyncFunctionDef) else "instance"
                             }
                             class_info["methods"].append(method_info)
                             self.scope_stack.pop()
@@ -137,32 +162,64 @@ class PythonHandler(BaseHandler):
                     self.scope_stack.pop()
 
                 def visit_Assign(self, node: ast.Assign):
-                    """Processes assignment nodes for extracting code comprehension details."""
+                    """Processes assignment nodes for extracting variable information."""
                     for target in node.targets:
-                        self._process_target(target)
+                        self._process_target(target, node.value)
                     self.generic_visit(node)
 
-                def _process_target(self, target: ast.AST) -> None:
-                    """Recursively processes assignment targets to extract variable names.
+                def _process_target(self, target: ast.AST, value: ast.AST) -> None:
+                    """Recursively processes assignment targets to extract variable information.
 
                     Args:
                         target (ast.AST): The assignment target node.
+                        value (ast.AST): The value assigned to the target.
                     """
                     if isinstance(target, ast.Name):
                         var_name = target.id
-                        if var_name.isupper():
-                            code_structure["constants"].append(var_name)
+                        is_constant = var_name.isupper()
+                        var_type = self._infer_type(value)
+                        description = self._extract_description(target.lineno)
+                        example = self._extract_example(target.lineno)
+                        references = self._extract_references(target.lineno)
+                        var_info = {
+                            "name": var_name,
+                            "type": var_type,
+                            "description": description,
+                            "file": os.path.basename(self.file_path),
+                            "line": target.lineno,
+                            "link": f"https://github.com/user/repo/blob/main/{self.file_path}#L{target.lineno}",
+                            "example": example,
+                            "references": references
+                        }
+                        if is_constant:
+                            code_structure["constants"].append(var_info)
                         else:
-                            code_structure["variables"].append(var_name)
+                            code_structure["variables"].append(var_info)
                     elif isinstance(target, (ast.Tuple, ast.List)):
                         for elt in target.elts:
-                            self._process_target(elt)
+                            self._process_target(elt, value)
                     elif isinstance(target, ast.Attribute):
                         var_name = target.attr
-                        if var_name.isupper():
-                            code_structure["constants"].append(var_name)
+                        is_constant = var_name.isupper()
+                        var_type = self._infer_type(value)
+                        description = self._extract_description(target.lineno)
+                        example = self._extract_example(target.lineno)
+                        references = self._extract_references(target.lineno)
+                        var_info = {
+                            "name": var_name,
+                            "type": var_type,
+                            "description": description,
+                            "file": os.path.basename(self.file_path),
+                            "line": target.lineno,
+                            "link": f"https://github.com/user/repo/blob/main/{self.file_path}#L{target.lineno}",
+                            "example": example,
+                            "references": references
+                        }
+                        if is_constant:
+                            code_structure["constants"].append(var_info)
                         else:
-                            code_structure["variables"].append(var_name)
+                            code_structure["variables"].append(var_info)
+                    # Handle other target types if necessary
 
                 def visit_With(self, node: ast.With):
                     """Processes 'with' statements."""
@@ -200,7 +257,82 @@ class PythonHandler(BaseHandler):
                     code_structure.setdefault("comprehensions", []).append("GeneratorExpression")
                     self.generic_visit(node)
 
-            visitor = CodeVisitor()
+                # Helper methods for detailed information
+                def _infer_type(self, value: ast.AST) -> str:
+                    """Infers the type of a variable based on its assigned value.
+
+                    Args:
+                        value (ast.AST): The value assigned to the variable.
+
+                    Returns:
+                        str: The inferred type as a string.
+                    """
+                    if isinstance(value, ast.Constant):
+                        return type(value.value).__name__
+                    elif isinstance(value, ast.List):
+                        return "List"
+                    elif isinstance(value, ast.Tuple):
+                        return "Tuple"
+                    elif isinstance(value, ast.Dict):
+                        return "Dict"
+                    elif isinstance(value, ast.Set):
+                        return "Set"
+                    elif isinstance(value, ast.Call):
+                        return "Call"
+                    elif isinstance(value, ast.BinOp):
+                        return "BinOp"
+                    elif isinstance(value, ast.UnaryOp):
+                        return "UnaryOp"
+                    elif isinstance(value, ast.Lambda):
+                        return "Lambda"
+                    elif isinstance(value, ast.Name):
+                        return "Name"
+                    else:
+                        return "Unknown"
+
+                def _extract_description(self, lineno: int) -> str:
+                    """Extracts the description of a variable from inline comments.
+
+                    Args:
+                        lineno (int): The line number of the variable assignment.
+
+                    Returns:
+                        str: The extracted description.
+                    """
+                    comments = self.comments.get(lineno - 1, []) + self.comments.get(lineno, [])
+                    if comments:
+                        return " ".join(comments)
+                    return "No description provided."
+
+                def _extract_example(self, lineno: int) -> str:
+                    """Extracts an example usage of the variable from comments.
+
+                    Args:
+                        lineno (int): The line number of the variable assignment.
+
+                    Returns:
+                        str: The example usage.
+                    """
+                    comments = self.comments.get(lineno + 1, [])
+                    if comments:
+                        return " ".join(comments)
+                    return "No example provided."
+
+                def _extract_references(self, lineno: int) -> str:
+                    """Extracts references related to the variable from comments.
+
+                    Args:
+                        lineno (int): The line number of the variable assignment.
+
+                    Returns:
+                        str: The references.
+                    """
+                    comments = self.comments.get(lineno + 2, [])
+                    if comments:
+                        return " ".join(comments)
+                    return "N/A"
+
+            visitor = CodeVisitor(file_path)
             visitor.visit(tree)
             logger.debug(f"Extracted structure for '{file_path}': {code_structure}")
             return code_structure
