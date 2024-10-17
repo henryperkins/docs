@@ -19,7 +19,8 @@ from utils import (
 from write_documentation_report import (
     generate_documentation_prompt,
     write_documentation_report,
-    sanitize_filename
+    sanitize_filename,
+    generate_table_of_contents
 )
 
 logger = logging.getLogger(__name__)
