@@ -6,9 +6,8 @@ import textwrap
 import logging
 import sys
 from typing import Optional, Dict, Any, List
-from utils import logger  # Ensure logger is properly configured elsewhere
+from utils import logger
 
-# Configure logging if not already configured
 if not logger.hasHandlers():
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -16,14 +15,12 @@ if not logger.hasHandlers():
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
-
 def get_threshold(metric: str, key: str, default: int) -> int:
     try:
         return int(os.getenv(f"{metric.upper()}_{key.upper()}_THRESHOLD", default))
     except ValueError:
         logger.error(f"Invalid environment variable for {metric.upper()}_{key.upper()}_THRESHOLD")
         return default
-
 
 def format_table(headers: List[str], rows: List[List[str]]) -> str:
     table = "| " + " | ".join(headers) + " |\n"
@@ -78,10 +75,8 @@ def generate_all_badges(
 
     return ' '.join(badges).strip()
 
-
 def truncate_description(description: str, max_length: int = 100) -> str:
     return (description[:max_length] + '...') if len(description) > max_length else description
-
 
 def sanitize_text(text: str) -> str:
     markdown_special_chars = ['*', '_', '`', '~', '<', '>', '#']
@@ -89,20 +84,17 @@ def sanitize_text(text: str) -> str:
         text = text.replace(char, f"\\{char}")
     return text.replace('|', '\\|').replace('\n', ' ').strip()
 
-
 def generate_table_of_contents(content: str) -> str:
     toc = []
     for line in content.splitlines():
         if line.startswith("#"):
             level = line.count("#")
             title = line.lstrip("#").strip()
-            # Replace non-alphanumerics except spaces and dashes
             anchor = re.sub(r'[^a-zA-Z0-9\s-]', '', title)
             anchor = re.sub(r'\s+', '-', anchor).lower()
             anchor = re.sub(r'-+', '-', anchor).strip('-')
             toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
     return "\n".join(toc)
-
 
 def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
     if not halstead:
@@ -111,7 +103,6 @@ def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
     difficulty = halstead.get('difficulty', 0)
     effort = halstead.get('effort', 0)
 
-    # Define thresholds
     volume_low, volume_medium = 100, 500
     difficulty_low, difficulty_medium = 10, 20
     effort_low, effort_medium = 500, 1000
@@ -125,26 +116,10 @@ def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
     metrics += f'![Halstead Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-{effort_color}.svg?style=flat)\n'
     return metrics
 
-
 def format_maintainability_index(mi_score: float) -> str:
     if mi_score is None:
         return ''
     return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen.svg?style=flat)\n'
-
-
-def format_functions(functions: List[Dict[str, Any]]) -> str:
-    headers = ["Function Name", "Complexity", "Async", "Docstring"]
-    rows = [
-        [
-            func.get("name", "N/A"),
-            str(func.get("complexity", 0)),
-            str(func.get("async", False)),
-            sanitize_text(func.get("docstring", ""))
-        ]
-        for func in functions
-    ]
-    return format_table(headers, rows)
-
 
 def format_methods(methods: List[Dict[str, Any]]) -> str:
     headers = ["Method Name", "Complexity", "Async", "Docstring"]
@@ -158,7 +133,6 @@ def format_methods(methods: List[Dict[str, Any]]) -> str:
         for method in methods
     ]
     return format_table(headers, rows)
-
 
 def format_classes(classes: List[Dict[str, Any]]) -> str:
     headers = ["Class Name", "Docstring"]
@@ -174,36 +148,29 @@ def format_classes(classes: List[Dict[str, Any]]) -> str:
     method_tables = []
     for cls in classes:
         if cls.get("methods"):
-            method_tables.append(f"### Methods for {cls.get('name')}\n")
+            method_tables.append(f"#### Methods for {cls.get('name')}\n")
             method_tables.append(format_methods(cls.get("methods", [])))
     
     return class_table + "\n\n" + "\n".join(method_tables)
 
+def format_functions(functions: List[Dict[str, Any]]) -> str:
+    headers = ["Function Name", "Complexity", "Async", "Docstring"]
+    rows = [
+        [
+            func.get("name", "N/A"),
+            str(func.get("complexity", 0)),
+            str(func.get("async", False)),
+            sanitize_text(func.get("docstring", ""))
+        ]
+        for func in functions
+    ]
+    return format_table(headers, rows)
 
 def format_variables_and_constants(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
-    """
-    Formats variables and constants into markdown tables with detailed information.
-
-    Args:
-        variables (List[Dict[str, Any]]): A list of variable dictionaries.
-        constants (List[Dict[str, Any]]): A list of constant dictionaries.
-
-    Returns:
-        str: Markdown-formatted tables for variables and constants.
-    """
     headers = ["Name", "Type", "Data Type", "Description", "Defined At", "Usage Example", "References"]
     rows = []
 
-    logger.debug(f"Formatting {len(variables)} variables and {len(constants)} constants.")
-
-    # Define required keys
-    required_keys = ["name", "type", "description", "file", "line", "link", "example", "references"]
-
-    # Process Variables
     for var in variables:
-        missing_keys = [key for key in required_keys if key not in var]
-        if missing_keys:
-            logger.warning(f"Variable '{var.get('name', 'N/A')}' is missing keys: {missing_keys}")
         row = [
             var.get("name", "N/A"),
             "Variable",
@@ -215,11 +182,7 @@ def format_variables_and_constants(variables: List[Dict[str, Any]], constants: L
         ]
         rows.append(row)
 
-    # Process Constants
     for const in constants:
-        missing_keys = [key for key in required_keys if key not in const]
-        if missing_keys:
-            logger.warning(f"Constant '{const.get('name', 'N/A')}' is missing keys: {missing_keys}")
         row = [
             const.get("name", "N/A"),
             "Constant",
@@ -231,23 +194,16 @@ def format_variables_and_constants(variables: List[Dict[str, Any]], constants: L
         ]
         rows.append(row)
 
-    table = format_table(headers, rows)
-    logger.debug("Completed formatting variables and constants tables.")
-    return table
-
+    return format_table(headers, rows)
 
 def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
-    """Generate a summary section for variables and constants."""
     total_vars = len(variables)
     total_consts = len(constants)
     summary = f"### **Summary**\n\n- **Total Variables:** {total_vars}\n- **Total Constants:** {total_consts}\n"
     return summary
 
-
 def sanitize_filename(filename: str) -> str:
-    """Sanitize filenames by replacing invalid characters."""
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
-
 
 def generate_documentation_prompt(
     file_name: str,
@@ -317,7 +273,6 @@ def generate_documentation_prompt(
     Output:"""
     return textwrap.dedent(prompt).strip()
 
-
 async def write_documentation_report(
     documentation: Optional[dict],
     language: str,
@@ -336,6 +291,14 @@ async def write_documentation_report(
 
         file_header = f'# File: {relative_path}\n\n'
         documentation_content = file_header
+
+        # Add Badges
+        badges = generate_all_badges(
+            complexity=documentation.get('complexity'),
+            halstead=documentation.get('halstead', {}),
+            mi=documentation.get('maintainability_index')
+        )
+        documentation_content += badges + "\n\n"
 
         # Add Halstead metrics and Maintainability Index
         halstead_content = format_halstead_metrics(documentation.get('halstead', {}))
