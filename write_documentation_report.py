@@ -32,7 +32,6 @@ def format_table(headers: List[str], rows: List[List[str]]) -> str:
         table += "| " + " | ".join(row) + " |\n"
     return table
 
-
 def generate_all_badges(
     complexity: Optional[int] = None,
     halstead: Optional[dict] = None,
@@ -148,11 +147,11 @@ def format_functions(functions: List[Dict[str, Any]]) -> str:
 
 
 def format_methods(methods: List[Dict[str, Any]]) -> str:
-    headers = ["Method Name", "Type", "Async", "Docstring"]
+    headers = ["Method Name", "Complexity", "Async", "Docstring"]
     rows = [
         [
             method.get("name", "N/A"),
-            method.get("type", "instance"),
+            str(method.get("complexity", 0)),
             str(method.get("async", False)),
             sanitize_text(method.get("docstring", ""))
         ]
@@ -162,16 +161,23 @@ def format_methods(methods: List[Dict[str, Any]]) -> str:
 
 
 def format_classes(classes: List[Dict[str, Any]]) -> str:
-    headers = ["Class Name", "Docstring", "Methods"]
+    headers = ["Class Name", "Docstring"]
     rows = [
         [
             cls.get("name", "N/A"),
-            sanitize_text(cls.get("docstring", "")),
-            format_methods(cls.get("methods", []))
+            sanitize_text(cls.get("docstring", ""))
         ]
         for cls in classes
     ]
-    return format_table(headers, rows)
+    class_table = format_table(headers, rows)
+    
+    method_tables = []
+    for cls in classes:
+        if cls.get("methods"):
+            method_tables.append(f"### Methods for {cls.get('name')}\n")
+            method_tables.append(format_methods(cls.get("methods", [])))
+    
+    return class_table + "\n\n" + "\n".join(method_tables)
 
 
 def format_variables_and_constants(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
@@ -319,19 +325,6 @@ async def write_documentation_report(
     repo_root: str,
     output_dir: str
 ) -> str:
-    """
-    Writes the documentation report to a markdown file with enhanced variable and constant information.
-
-    Args:
-        documentation (Optional[dict]): The documentation data.
-        language (str): Programming language of the source code.
-        file_path (str): Path to the source code file.
-        repo_root (str): Root directory of the repository.
-        output_dir (str): Directory where the documentation will be saved.
-
-    Returns:
-        str: The generated documentation content.
-    """
     try:
         if not documentation:
             logger.warning(f"No documentation to write for '{file_path}'")
@@ -361,7 +354,7 @@ async def write_documentation_report(
                 documentation_content += f"- {sanitize_text(change)}\n"
             documentation_content += "\n"
 
-        # Add Classes
+        # Add Classes and Methods
         classes = documentation.get('classes', [])
         if classes:
             documentation_content += "## Classes\n\n"
