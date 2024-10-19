@@ -22,8 +22,12 @@ from write_documentation_report import (
     sanitize_filename,
     generate_table_of_contents
 )
+from context_manager import ContextManager  # Import ContextManager
 
 logger = logging.getLogger(__name__)
+
+# Initialize the ContextManager
+context_manager = ContextManager(max_entries=100)
 
 async def extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler) -> Optional[Dict[str, Any]]:
     """
@@ -235,14 +239,28 @@ async def process_file(
                 logger.warning(f"Could not extract code structure from '{file_path}'")
             else:
                 logger.debug(f"Extracted code structure for '{file_path}': {code_structure}")
-                prompt = generate_documentation_prompt(
-                    file_name=os.path.basename(file_path),
-                    code_structure=code_structure,
-                    project_info=project_info,
-                    style_guidelines=style_guidelines,
-                    language=language,
-                    function_schema=function_schema
-                )
+
+                # Extract critical context information and add to ContextManager
+                critical_info = extract_critical_info(code_structure, file_path)
+                context_manager.add_context(critical_info)
+
+                persistent_context = '\n'.join(context_manager.get_context())
+                # Modify the prompt to include persistent context
+                prompt = f"""
+[Context Start]
+{persistent_context}
+[Context End]
+
+{generate_documentation_prompt(
+    file_name=os.path.basename(file_path),
+    code_structure=code_structure,
+    project_info=project_info,
+    style_guidelines=style_guidelines,
+    language=language,
+    function_schema=function_schema
+)}
+""".strip()
+
                 documentation = await fetch_documentation_rest(
                     session=session,
                     prompt=prompt,
@@ -416,3 +434,45 @@ async def process_all_files(
             if flake8_output:
                 logger.warning(f'Flake8 issues found in {file_path}:\n{flake8_output}')
     logger.info('Flake8 linting completed.')
+
+def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str:
+    """
+    Extracts critical information from the code structure to be used as persistent context.
+
+    Args:
+        code_structure (Dict[str, Any]): The extracted code structure.
+        file_path (str): Path to the source file.
+
+    Returns:
+        str: A formatted string containing critical context information.
+    """
+    info_lines = [f"File: {file_path}"]
+    # Extract function signatures
+    functions = code_structure.get('functions', [])
+    for func in functions:
+        signature = f"def {func.get('name')}({', '.join(func.get('args', []))}):"
+        doc = func.get('docstring', '').split('\n')[0]
+        info_lines.append(f"{signature}  # {doc}")
+
+    # Extract class definitions
+    classes = code_structure.get('classes', [])
+    for cls in classes:
+        class_info = f"class {cls.get('name')}:"
+        doc = cls.get('docstring', '').split('\n')[0]
+        info_lines.append(f"{class_info}  # {doc}")
+        # Include methods
+        for method in cls.get('methods', []):
+            method_signature = f"    def {method.get('name')}({', '.join(method.get('args', []))}):"
+            method_doc = method.get('docstring', '').split('\n')[0]
+            info_lines.append(f"{method_signature}  # {method_doc}")
+
+    # Extract important variables
+    variables = code_structure.get('variables', [])
+    for var in variables:
+        var_info = f"{var.get('name')} = "
+        var_type = var.get('type', 'Unknown')
+        var_desc = var.get('description', '').split('\n')[0]
+        info_lines.append(f"{var_info}  # Type: {var_type}, {var_desc}")
+
+    critical_info = '\n'.join(info_lines)
+    return critical_info
