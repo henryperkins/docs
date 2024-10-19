@@ -14,12 +14,14 @@ black==24.8.0
 blinker==1.7.0
 bs4==0.0.2
 certifi==2024.7.4
+cffi==1.17.1
 chardet==5.2.0
+charset-normalizer==3.4.0
 click==8.1.6
 colorama==0.4.6
 configobj==5.0.9
 constantly==23.10.4
-cryptography
+cryptography==41.0.7
 distro==1.9.0
 esprima==4.0.1
 flake8==7.1.1
@@ -27,7 +29,8 @@ frozenlist==1.4.1
 httplib2==0.20.4
 hyperlink==21.0.0
 idna==3.7
-incremental
+incremental==24.7.2
+javalang==0.13.0
 Jinja2==3.1.4
 json5==0.9.25
 jsonpatch==1.32
@@ -36,6 +39,8 @@ jsonschema==4.10.3
 launchpadlib==1.11.0
 lazr.restfulclient==0.14.6
 lazr.uri==1.0.6
+libcst==1.5.0
+mando==0.7.1
 markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 mccabe==0.7.0
@@ -52,7 +57,9 @@ platformdirs==4.3.6
 ptyprocess==0.7.0
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
+pycairo==1.27.0
 pycodestyle==2.12.1
+pycparser==2.22
 pyflakes==3.2.0
 Pygments==2.17.2
 PyGObject==3.48.2
@@ -67,8 +74,10 @@ python-dotenv==1.0.1
 python-magic==0.4.27
 pytz==2024.1
 PyYAML==6.0.1
+radon==6.0.1
 requests==2.32.2
 rich==13.7.1
+sentry-sdk==2.17.0
 service-identity==24.1.0
 setuptools==70.0.0
 six==1.16.0
