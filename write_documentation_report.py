@@ -36,13 +36,15 @@ def generate_all_badges(
 ) -> str:
     badges = []
 
+    # Complexity Score Badge
     if complexity is not None:
         low_threshold = get_threshold('complexity', 'low', 10)
         medium_threshold = get_threshold('complexity', 'medium', 20)
         color = "green" if complexity < low_threshold else "yellow" if complexity < medium_threshold else "red"
-        complexity_badge = f'![Complexity](https://img.shields.io/badge/Complexity-{complexity}-{color}.svg?style=flat)'
+        complexity_badge = f'![Complexity](https://img.shields.io/badge/Complexity-{complexity}-{color}?style=flat-square&logo=codeClimate&logoColor=white)'
         badges.append(complexity_badge)
 
+    # Halstead Metrics Badges
     if halstead:
         volume = halstead.get('volume', 0)
         difficulty = halstead.get('difficulty', 0)
@@ -60,17 +62,18 @@ def generate_all_badges(
         effort_medium = get_threshold('halstead_effort', 'medium', 1000)
         effort_color = "green" if effort < effort_low else "yellow" if effort < effort_medium else "red"
 
-        volume_badge = f'![Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-{volume_color}.svg?style=flat)'
-        difficulty_badge = f'![Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-{difficulty_color}.svg?style=flat)'
-        effort_badge = f'![Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-{effort_color}.svg?style=flat)'
+        volume_badge = f'![Volume](https://img.shields.io/badge/Volume-{volume}-{volume_color}?style=flat-square&logo=stackOverflow&logoColor=white)' 
+        difficulty_badge = f'![Difficulty](https://img.shields.io/badge/Difficulty-{difficulty}-{difficulty_color}?style=flat-square&logo=codewars&logoColor=white)'
+        effort_badge = f'![Effort](https://img.shields.io/badge/Effort-{effort}-{effort_color}?style=flat-square&logo=atlassian&logoColor=white)'
 
         badges.extend([volume_badge, difficulty_badge, effort_badge])
 
+    # Maintainability Index Badge
     if mi is not None:
         high_threshold = get_threshold('maintainability_index', 'high', 80)
         medium_threshold = get_threshold('maintainability_index', 'medium', 50)
         color = "green" if mi > high_threshold else "yellow" if mi > medium_threshold else "red"
-        mi_badge = f'![Maintainability](https://img.shields.io/badge/Maintainability-{mi:.2f}-{color}.svg?style=flat)'
+        mi_badge = f'![Maintainability](https://img.shields.io/badge/Maintainability-{mi:.2f}-{color}?style=flat-square&logo=codeclimate&logoColor=white)'
         badges.append(mi_badge)
 
     return ' '.join(badges).strip()
@@ -111,15 +114,15 @@ def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
     difficulty_color = "green" if difficulty < difficulty_low else "yellow" if difficulty < difficulty_medium else "red"
     effort_color = "green" if effort < effort_low else "yellow" if effort < effort_medium else "red"
 
-    metrics = f'![Halstead Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-{volume_color}.svg?style=flat)\n'
-    metrics += f'![Halstead Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-{difficulty_color}.svg?style=flat)\n'
-    metrics += f'![Halstead Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-{effort_color}.svg?style=flat)\n'
+    metrics = f'![Halstead Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-{volume_color}.svg?style=flat-square)\n'
+    metrics += f'![Halstead Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-{difficulty_color}.svg?style=flat-square)\n'
+    metrics += f'![Halstead Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-{effort_color}.svg?style=flat-square)\n'
     return metrics
 
 def format_maintainability_index(mi_score: float) -> str:
     if mi_score is None:
         return ''
-    return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen.svg?style=flat)\n'
+    return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen.svg?style=flat-square)\n'
 
 def format_methods(methods: List[Dict[str, Any]]) -> str:
     headers = ["Method Name", "Complexity", "Async", "Docstring"]
@@ -166,39 +169,24 @@ def format_functions(functions: List[Dict[str, Any]]) -> str:
     ]
     return format_table(headers, rows)
 
-def format_variables_and_constants(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
-    headers = ["Name", "Type", "Data Type", "Description", "Defined At", "Usage Example", "References"]
-    rows = []
-
-    for var in variables:
-        row = [
-            var.get("name", "N/A"),
-            "Variable",
-            f"`{var.get('type', 'Unknown')}`",
-            sanitize_text(var.get("description", "No description provided.")),
-            f"[{var.get('file', 'N/A')}:{var.get('line', 'N/A')}]({var.get('link', '#')})",
-            sanitize_text(var.get("example", "No example provided.")),
-            sanitize_text(var.get("references", "N/A"))
-        ]
-        rows.append(row)
-
-    for const in constants:
-        row = [
-            const.get("name", "N/A"),
-            "Constant",
-            f"`{const.get('type', 'Unknown')}`",
-            sanitize_text(const.get("description", "No description provided.")),
-            f"[{const.get('file', 'N/A')}:{const.get('line', 'N/A')}]({const.get('link', '#')})",
-            sanitize_text(const.get("example", "No example provided.")),
-            sanitize_text(const.get("references", "N/A"))
-        ]
-        rows.append(row)
-
-    return format_table(headers, rows)
-
 def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
+    """Generates a summary with tooltips for variables and constants."""
+
     total_vars = len(variables)
     total_consts = len(constants)
+
+    # Create tooltip content for variables
+    var_tooltip = ""
+    if total_vars > 0:
+        var_tooltip = "<br>".join([f"- {var.get('name', 'N/A')}" for var in variables])
+        total_vars = f'<span title="{var_tooltip}">{total_vars}</span>'
+
+    # Create tooltip content for constants
+    const_tooltip = ""
+    if total_consts > 0:
+        const_tooltip = "<br>".join([f"- {const.get('name', 'N/A')}" for const in constants])
+        total_consts = f'<span title="{const_tooltip}">{total_consts}</span>'
+
     summary = f"### **Summary**\n\n- **Total Variables:** {total_vars}\n- **Total Constants:** {total_consts}\n"
     return summary
 
@@ -239,37 +227,6 @@ def generate_documentation_prompt(
     
     Ensure that the output is a JSON object that follows the schema exactly, including all required fields.
     
-    Example Output:
-    {{
-      "summary": "Brief summary of the file.",
-      "changes_made": ["List of changes made to the file."],
-      "functions": [
-        {{
-          "name": "function_name",
-          "docstring": "Detailed description of the function.",
-          "args": ["arg1", "arg2"],
-          "async": false
-        }}
-      ],
-      "classes": [
-        {{
-          "name": "ClassName",
-          "docstring": "Detailed description of the class.",
-          "methods": [
-            {{
-              "name": "method_name",
-              "docstring": "Detailed description of the method.",
-              "args": ["arg1"],
-              "async": false,
-              "type": "instance"
-            }}
-          ]
-        }}
-      ]
-    }}
-    
-    Ensure all strings are properly escaped and the JSON is valid.
-    
     Output:"""
     return textwrap.dedent(prompt).strip()
 
@@ -300,11 +257,6 @@ async def write_documentation_report(
         )
         documentation_content += badges + "\n\n"
 
-        # Add Halstead metrics and Maintainability Index
-        halstead_content = format_halstead_metrics(documentation.get('halstead', {}))
-        mi_content = format_maintainability_index(documentation.get('maintainability_index'))
-        documentation_content += halstead_content + mi_content + "\n"
-
         # Add Summary
         summary = generate_summary(documentation.get('variables', []), documentation.get('constants', []))
         documentation_content += summary + "\n"
@@ -329,14 +281,6 @@ async def write_documentation_report(
         if functions:
             documentation_content += "## Functions\n\n"
             documentation_content += format_functions(functions)
-            documentation_content += "\n"
-
-        # Add Variables and Constants
-        variables = documentation.get('variables', [])
-        constants = documentation.get('constants', [])
-        if variables or constants:
-            documentation_content += "## Variables and Constants\n\n"
-            documentation_content += format_variables_and_constants(variables, constants)
             documentation_content += "\n"
 
         # Add Source Code
