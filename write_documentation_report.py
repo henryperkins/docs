@@ -193,41 +193,29 @@ def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, 
 def sanitize_filename(filename: str) -> str:
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
 
-def generate_documentation_prompt(
-    file_name: str,
-    code_structure: Dict[str, Any],
-    project_info: str,
-    style_guidelines: str,
-    language: str,
-    function_schema: Dict[str, Any]
-) -> str:
-    functions = function_schema.get("functions", [])
-    if functions and "parameters" in functions[0]:
-        schema = json.dumps(function_schema["functions"][0]["parameters"], indent=2)
-    else:
-        logger.error("Function schema is missing or empty.")
-        schema = "{}"  # Fallback or handle accordingly
-
+def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
+    docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
     prompt = f"""
     You are a code documentation generator.
-    
+
     Project Info:
     {project_info}
-    
+
     Style Guidelines:
     {style_guidelines}
-    
+
+    Use the {docstring_format} style for docstrings.
+
     Given the following code structure of the {language} file '{file_name}', generate detailed documentation according to the specified schema.
-    
+
     Code Structure:
     {json.dumps(code_structure, indent=2)}
-    
+
     Schema:
-    {schema}
-    
+    {json.dumps(function_schema["functions"][0]["parameters"], indent=2)}
+
     Ensure that the output is a JSON object that follows the schema exactly, including all required fields.
-    
-    Output:"""
+    """
     return textwrap.dedent(prompt).strip()
 
 async def write_documentation_report(
