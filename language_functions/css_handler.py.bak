@@ -10,13 +10,14 @@ from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
+
 class CSSHandler(BaseHandler):
     """Handler for CSS language."""
 
     def __init__(self, function_schema: Dict[str, Any]):
         """
         Initializes the CSSHandler with a function schema.
-    
+
         Args:
             function_schema (Dict[str, Any]): The schema used for function operations.
         """
@@ -33,20 +34,11 @@ class CSSHandler(BaseHandler):
             Dict[str, Any]: A detailed structure of the CSS components.
         """
         try:
-            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'css_parser.js')
-            input_data = {
-                "code": code,
-                "language": "css"
-            }
+            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "css_parser.js")
+            input_data = {"code": code, "language": "css"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running CSS parser script: {script_path}")
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
             structure = json.loads(result.stdout)
             logger.debug(f"Extracted CSS code structure successfully from file: {file_path}")
             return structure
@@ -72,21 +64,11 @@ class CSSHandler(BaseHandler):
         """
         logger.debug("Inserting comments into CSS code.")
         try:
-            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'css_inserter.js')
-            input_data = {
-                "code": code,
-                "documentation": documentation,
-                "language": "css"
-            }
+            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "css_inserter.js")
+            input_data = {"code": code, "documentation": documentation, "language": "css"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running CSS inserter script: {script_path}")
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
             modified_code = result.stdout
             logger.debug("Completed inserting comments into CSS code.")
             return modified_code
@@ -108,15 +90,10 @@ class CSSHandler(BaseHandler):
         Returns:
             bool: True if the code is valid, False otherwise.
         """
-        logger.debug('Starting CSS code validation.')
+        logger.debug("Starting CSS code validation.")
         try:
             # Use stylelint to validate CSS code
-            process = subprocess.run(
-                ["stylelint", "--stdin"],
-                input=code,
-                capture_output=True,
-                text=True
-            )
+            process = subprocess.run(["stylelint", "--stdin"], input=code, capture_output=True, text=True)
             if process.returncode != 0:
                 logger.error(f"stylelint validation failed:\n{process.stderr}")
                 return False
@@ -124,7 +101,9 @@ class CSSHandler(BaseHandler):
                 logger.debug("stylelint validation passed.")
             return True
         except FileNotFoundError:
-            logger.error("stylelint is not installed or not found in PATH. Please install it using 'npm install -g stylelint'.")
+            logger.error(
+                "stylelint is not installed or not found in PATH. Please install it using 'npm install -g stylelint'."
+            )
             return False
         except Exception as e:
             logger.error(f"Unexpected error during CSS code validation: {e}")
