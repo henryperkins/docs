@@ -10,13 +10,14 @@ from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
+
 class JavaHandler(BaseHandler):
     """Handler for Java language."""
 
     def __init__(self, function_schema: Dict[str, Any]):
         """
         Initializes the JavaHandler with a function schema.
-    
+
         Args:
             function_schema (Dict[str, Any]): The schema used for function operations.
         """
@@ -33,20 +34,11 @@ class JavaHandler(BaseHandler):
             Dict[str, Any]: A detailed structure of the code components.
         """
         try:
-            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'java_parser.js')
-            input_data = {
-                "code": code,
-                "language": "java"
-            }
+            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "java_parser.js")
+            input_data = {"code": code, "language": "java"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running Java parser script: {script_path}")
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
             structure = json.loads(result.stdout)
             logger.debug(f"Extracted Java code structure successfully from file: {file_path}")
             return structure
@@ -72,21 +64,11 @@ class JavaHandler(BaseHandler):
         """
         logger.debug("Inserting Javadoc docstrings into Java code.")
         try:
-            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'java_inserter.js')
-            input_data = {
-                "code": code,
-                "documentation": documentation,
-                "language": "java"
-            }
+            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "java_inserter.js")
+            input_data = {"code": code, "documentation": documentation, "language": "java"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running Java inserter script: {script_path}")
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
             modified_code = result.stdout
             logger.debug("Completed inserting Javadoc docstrings into Java code.")
             return modified_code
@@ -108,24 +90,20 @@ class JavaHandler(BaseHandler):
         Returns:
             bool: True if the code is valid, False otherwise.
         """
-        logger.debug('Starting Java code validation.')
+        logger.debug("Starting Java code validation.")
         if not file_path:
-            logger.warning('File path not provided for javac validation. Skipping javac.')
+            logger.warning("File path not provided for javac validation. Skipping javac.")
             return True  # Assuming no validation without a file
 
         try:
             # Write code to a temporary file for validation
             temp_file = f"{file_path}.temp.java"
-            with open(temp_file, 'w', encoding='utf-8') as f:
+            with open(temp_file, "w", encoding="utf-8") as f:
                 f.write(code)
             logger.debug(f"Wrote temporary Java file for validation: {temp_file}")
 
             # Compile the temporary Java file
-            process = subprocess.run(
-                ["javac", temp_file],
-                capture_output=True,
-                text=True
-            )
+            process = subprocess.run(["javac", temp_file], capture_output=True, text=True)
 
             # Remove the temporary file and class file if compilation was successful
             if process.returncode != 0:
@@ -135,7 +113,7 @@ class JavaHandler(BaseHandler):
                 logger.debug("javac validation passed.")
                 os.remove(temp_file)
                 # Remove the generated class file
-                class_file = temp_file.replace('.java', '.class')
+                class_file = temp_file.replace(".java", ".class")
                 if os.path.exists(class_file):
                     os.remove(class_file)
             return True
