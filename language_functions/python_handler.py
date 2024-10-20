@@ -344,32 +344,22 @@ class PythonHandler(BaseHandler):
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """
-        Inserts docstrings into Python code based on the provided documentation.
-
-        Args:
-            code (str): The original source code.
-            documentation (Dict[str, Any]): Documentation details obtained from AI.
-
-        Returns:
-            str: The source code with inserted documentation.
-        """
-        logger.debug("Starting docstring insertion for Python code.")
+        logger.debug("Starting docstring insertion for Python code (Google Style).")
         try:
             docstrings_mapping = {}
             for func_doc in documentation.get("functions", []):
                 name = func_doc.get("name")
                 if name:
-                    docstrings_mapping[name] = func_doc.get("docstring", "")
+                    docstrings_mapping[name] = self._format_google_docstring(func_doc)
             for class_doc in documentation.get("classes", []):
                 class_name = class_doc.get("name")
                 if class_name:
-                    docstrings_mapping[class_name] = class_doc.get("docstring", "")
+                    docstrings_mapping[class_name] = self._format_google_docstring(class_doc)
                     for method_doc in class_doc.get("methods", []):
                         method_name = method_doc.get("name")
                         if method_name:
                             full_method_name = f"{class_name}.{method_name}"
-                            docstrings_mapping[full_method_name] = method_doc.get("docstring", "")
+                            docstrings_mapping[full_method_name] = self._format_google_docstring(method_doc)
 
             class DocstringInserter(cst.CSTTransformer):
                 def __init__(self, docstrings_mapping: Dict[str, str]):
@@ -413,6 +403,21 @@ class PythonHandler(BaseHandler):
         except Exception as e:
             logger.error(f"Error inserting docstrings: {e}", exc_info=True)
             return code
+
+    def _format_google_docstring(self, doc: Dict[str, Any]) -> str:
+        docstring = f"""\"\"\"
+        {doc.get('docstring', '')}
+
+        Args:
+        """
+        for arg in doc.get('args', []):
+            docstring += f"    {arg} (type): Description.\n"
+
+        if 'returns' in doc:
+            docstring += f"\nReturns:\n    type: Description.\n"
+
+        docstring += "\"\"\""
+        return docstring
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
