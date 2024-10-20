@@ -1,119 +1,131 @@
 # language_functions/css_handler.py
 
+import os
 import logging
-import subprocess  # Ensure subprocess is imported
+import subprocess
+import json
 from typing import Dict, Any, Optional
-import tinycss2
+
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
-class CSSHandler:
+class CSSHandler(BaseHandler):
     """Handler for CSS language."""
 
     def __init__(self, function_schema: Dict[str, Any]):
-        """Initializes the CSSHandler with a function schema."""
+        """
+        Initializes the CSSHandler with a function schema.
+    
+        Args:
+            function_schema (Dict[str, Any]): The schema used for function operations.
+        """
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
-        """
-        Extracts structure from CSS code.
+    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+        """Extracts the structure of the CSS code, analyzing selectors, properties, and rules.
 
         Args:
-            code (str): The CSS source code to parse.
-            file_path (str): The path to the CSS file.
+            code (str): The source code to analyze.
+            file_path (str): The file path for code reference.
 
         Returns:
-            dict: A dictionary containing the structure of the CSS code.
+            Dict[str, Any]: A detailed structure of the CSS components.
         """
-        logger.debug("Extracting CSS structure.")
         try:
-            rules = tinycss2.parse_rule_list(code, skip_whitespace=True, skip_comments=True)
-            structure = {"rules": []}
-            for rule in rules:
-                if rule.type == "qualified-rule":
-                    selectors = "".join([token.serialize() for token in rule.prelude]).strip()
-                    declarations = []
-                    for decl in tinycss2.parse_declaration_list(rule.content):
-                        if decl.type == "declaration":
-                            declarations.append({
-                                "property": decl.lower_name,
-                                "value": "".join([token.serialize() for token in decl.value]).strip(),
-                            })
-                    structure["rules"].append({
-                        "selectors": selectors,
-                        "declarations": declarations
-                    })
-                    logger.debug("Extracted rule: %s", selectors)
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'css_parser.js')
+            input_data = {
+                "code": code,
+                "language": "css"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running CSS parser script: {script_path}")
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            structure = json.loads(result.stdout)
+            logger.debug(f"Extracted CSS code structure successfully from file: {file_path}")
             return structure
-        except tinycss2.ParseError as e:
-            logger.error("Parse error while extracting CSS structure: %s", e)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running css_parser.js for file {file_path}: {e.stderr}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing output from css_parser.js for file {file_path}: {e}")
             return {}
         except Exception as e:
-            logger.error("Unexpected error while extracting CSS structure: %s", e)
+            logger.error(f"Unexpected error extracting CSS structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts comments into CSS code based on provided documentation."""
-        logger.debug("Inserting CSS docstrings.")
+        """Inserts comments into CSS code based on the provided documentation.
+
+        Args:
+            code (str): The original source code.
+            documentation (Dict[str, Any]): Documentation details obtained from AI.
+
+        Returns:
+            str: The source code with inserted documentation.
+        """
+        logger.debug("Inserting comments into CSS code.")
         try:
-            summary = documentation.get("summary", "").strip()
-            changes = documentation.get("changes_made", [])
-            if not summary and not changes:
-                logger.warning("No summary or changes provided in documentation. Skipping comment insertion.")
-                return code
-            new_comment_parts = []
-            if summary:
-                new_comment_parts.append(f"Summary: {summary}")
-            if changes:
-                changes_formatted = "; ".join(changes)
-                new_comment_parts.append(f"Changes: {changes_formatted}")
-            new_comment = "/* " + " | ".join(new_comment_parts) + " */\n"
-            modified_code = new_comment + code
-            logger.debug("Completed inserting CSS docstrings.")
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'css_inserter.js')
+            input_data = {
+                "code": code,
+                "documentation": documentation,
+                "language": "css"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running CSS inserter script: {script_path}")
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            modified_code = result.stdout
+            logger.debug("Completed inserting comments into CSS code.")
             return modified_code
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running css_inserter.js: {e.stderr}")
+            return code
         except Exception as e:
-            logger.error("Error inserting CSS docstrings: %s", e)
+            logger.error(f"Unexpected error inserting comments into CSS code: {e}")
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates CSS code using Stylelint.
+        Validates CSS code for correctness using 'stylelint'.
 
         Args:
             code (str): The CSS code to validate.
-            file_path (Optional[str]): The path to the CSS file being validated.
+            file_path (Optional[str]): The path to the CSS source file.
 
         Returns:
             bool: True if the code is valid, False otherwise.
         """
-        logger.debug('Starting CSS code validation for file: %s', file_path)
-        if not file_path:
-            logger.warning('File path not provided for Stylelint validation. Skipping validation.')
-            return True  # Assuming no validation without a file
-
+        logger.debug('Starting CSS code validation.')
         try:
-            # Write code to the specified file path
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(code)
-
-            # Attempt to validate the CSS file using Stylelint
+            # Use stylelint to validate CSS code
             process = subprocess.run(
-                ['stylelint', file_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                ["stylelint", "--stdin"],
+                input=code,
+                capture_output=True,
                 text=True
             )
-
             if process.returncode != 0:
-                logger.error('Stylelint validation failed for %s:\n%s', file_path, process.stdout)
+                logger.error(f"stylelint validation failed:\n{process.stderr}")
                 return False
             else:
-                logger.debug('Stylelint validation successful for %s.', file_path)
+                logger.debug("stylelint validation passed.")
             return True
         except FileNotFoundError:
-            logger.error("Stylelint not found. Please install it using 'npm install -g stylelint'.")
+            logger.error("stylelint is not installed or not found in PATH. Please install it using 'npm install -g stylelint'.")
             return False
         except Exception as e:
-            logger.error('Unexpected error during Stylelint validation for %s: %s', file_path, e)
+            logger.error(f"Unexpected error during CSS code validation: {e}")
             return False
