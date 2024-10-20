@@ -28,7 +28,9 @@
     "ajv": "^8.17.1",
     "astring": "^1.9.0",
     "babel": "^5.8.38",
+    "escodegen": "^2.1.0",
     "esprima": "^4.0.1",
+    "java-parser": "^2.3.2",
     "javaparser": "^2.0.2",
     "prettier": "^2.8.8",
     "stylelint": "^16.10.0"
