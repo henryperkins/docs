@@ -1,3 +1,4 @@
+import aiohttp
 import os
 import sys
 import logging
