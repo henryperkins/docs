@@ -1,134 +1,157 @@
 # language_functions/go_handler.py
 
+import os
+import logging
 import subprocess
 import json
-import logging
-import re
 from typing import Dict, Any, Optional
+
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
 class GoHandler(BaseHandler):
-    def __init__(self, function_schema):
+    """Handler for Go language."""
+
+    def __init__(self, function_schema: Dict[str, Any]):
+        """
+        Initializes the GoHandler with a function schema.
+    
+        Args:
+            function_schema (Dict[str, Any]): The schema used for function operations.
+        """
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+        """Extracts the structure of the Go code, analyzing functions, types, and variables.
 
+        Args:
+            code (str): The source code to analyze.
+            file_path (str): The file path for code reference.
+
+        Returns:
+            Dict[str, Any]: A detailed structure of the code components.
+        """
         try:
-            process = subprocess.run(
-                ["go", "ast", "-json"],
-                input=code,
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'go_parser.go')
+            input_data = {
+                "code": code,
+                "language": "go"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running Go parser script: {script_path}")
+            result = subprocess.run(
+                ["go", "run", script_path],
+                input=input_json,
                 capture_output=True,
                 text=True,
                 check=True
             )
-            ast_json = process.stdout
-            ast_data = json.loads(ast_json)
-
-            structure = {
-                "summary": "",
-                "changes_made": [],
-                "functions": [],
-                "interfaces": [],  # Go interfaces
-                "structs": []       # Go structs
-            }
-
-            def traverse_ast(node):
-                """Recursively traverses the Go AST."""
-                if node["Kind"] == "FuncDecl":
-                    func = {
-                        "name": node["Name"],
-                        "args": [param.get("Names", [{}])[0].get("Name", "") for param in node.get("Type", {}).get("Params", {}).get("List", [])],
-                        "docstring": node.get("Doc", {}).get("Text", "").strip(),
-                        "async": False  # Go doesn't have async/await keywords
-                    }
-                    structure["functions"].append(func)
-                elif node["Kind"] == "InterfaceType":
-                    interface = {
-                        "name": node["Name"],
-                        "docstring": "",
-                        "methods": []
-                    }
-                    if "Doc" in node and "Text" in node["Doc"]:
-                        interface["docstring"] = node["Doc"]["Text"].strip()
-                    for method in node.get("Methods", {}).get("List", []):
-                        method_name = method["Names"][0]["Name"]
-                        method_type = get_type_string(method["Type"])
-                        interface["methods"].append({"name": method_name, "type": method_type, "description": ""})
-                    structure["interfaces"].append(interface)
-                elif node["Kind"] == "StructType":
-                    struct = {
-                        "name": node["Name"],
-                        "docstring": "",
-                        "fields": []
-                    }
-                    if "Doc" in node and "Text" in node["Doc"]:
-                        struct["docstring"] = node["Doc"]["Text"].strip()
-                    for field in node.get("Fields", {}).get("List", []):
-                        field_name = field["Names"][0]["Name"]
-                        field_type = get_type_string(field["Type"])
-                        struct["fields"].append({"name": field_name, "type": field_type, "description": ""})
-                    structure["structs"].append(struct)
-                for child in node.values():
-                    if isinstance(child, dict):
-                        traverse_ast(child)
-                    elif isinstance(child, list):
-                        for item in child:
-                            if isinstance(item, dict):
-                                traverse_ast(item)
-
-            traverse_ast(ast_data)
+            structure = json.loads(result.stdout)
+            logger.debug(f"Extracted Go code structure successfully from file: {file_path}")
             return structure
-
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running 'go ast': {e.stderr}")
+            logger.error(f"Error running go_parser.go for file {file_path}: {e.stderr}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing output from go_parser.go for file {file_path}: {e}")
             return {}
         except Exception as e:
-            logger.error(f"Error extracting Go structure: {e}", exc_info=True)
+            logger.error(f"Unexpected error extracting Go structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts docstrings into Go code."""
-        try:
-            modified_code = code
-            for func in documentation.get("functions", []):
-                docstring = func.get("docstring", "").strip()
-                if docstring:
-                    pattern = r"(?P<indent>\s*)func\s+(?P<name>" + re.escape(func["name"]) + r")\s*\((?P<params>[^)]*)\)\s*(?P<return_type>.*?)\s*\{?"
-                    match = re.search(pattern, modified_code)
-                    if match:
-                        indent = match.group("indent")
-                        docstring_lines = docstring.splitlines()
-                        formatted_docstring = "\n".join([f"{indent}// {line}" for line in docstring_lines])
-                        modified_code = re.sub(pattern, f"{indent}{formatted_docstring}\n{match.group(0)}", modified_code)
-            return modified_code
+        """Inserts comments into Go code based on the provided documentation.
 
+        Args:
+            code (str): The original source code.
+            documentation (Dict[str, Any]): Documentation details obtained from AI.
+
+        Returns:
+            str: The source code with inserted documentation.
+        """
+        logger.debug("Inserting comments into Go code.")
+        try:
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'go_inserter.go')
+            input_data = {
+                "code": code,
+                "documentation": documentation,
+                "language": "go"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running Go inserter script: {script_path}")
+            result = subprocess.run(
+                ["go", "run", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            modified_code = result.stdout
+            logger.debug("Completed inserting comments into Go code.")
+            return modified_code
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running go_inserter.go: {e.stderr}")
+            return code
         except Exception as e:
-            logger.error(f"Error inserting Go docstrings: {e}", exc_info=True)
+            logger.error(f"Unexpected error inserting comments into Go code: {e}")
             return code
 
-    def validate_code(self, code: str) -> bool:
-        """Validates Go code using the 'go vet' command."""
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates Go code for syntax correctness using 'go fmt' and 'go vet'.
+
+        Args:
+            code (str): The Go code to validate.
+            file_path (Optional[str]): The path to the Go source file.
+
+        Returns:
+            bool: True if the code is valid, False otherwise.
+        """
+        logger.debug('Starting Go code validation.')
+        if not file_path:
+            logger.warning('File path not provided for Go validation. Skipping validation.')
+            return True  # Assuming no validation without a file
+
         try:
-            process = subprocess.run(["go", "vet"], input=code, capture_output=True, text=True, check=False)
-            if process.returncode == 0:
-                logger.debug("Go code validation successful.")
-                return True
-            else:
-                logger.error(f"Go code validation failed:\n{process.stderr}")
+            # Write code to a temporary file for validation
+            temp_file = f"{file_path}.temp.go"
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(code)
+            logger.debug(f"Wrote temporary Go file for validation: {temp_file}")
+
+            # Run 'go fmt' to format the code and check syntax
+            fmt_process = subprocess.run(
+                ["go", "fmt", temp_file],
+                capture_output=True,
+                text=True
+            )
+            if fmt_process.returncode != 0:
+                logger.error(f"go fmt validation failed for {file_path}:\n{fmt_process.stderr}")
                 return False
+            else:
+                logger.debug("go fmt validation passed.")
+
+            # Run 'go vet' to check for potential errors
+            vet_process = subprocess.run(
+                ["go", "vet", temp_file],
+                capture_output=True,
+                text=True
+            )
+            if vet_process.returncode != 0:
+                logger.error(f"go vet validation failed for {file_path}:\n{vet_process.stderr}")
+                return False
+            else:
+                logger.debug("go vet validation passed.")
+
+            # Remove the temporary file
+            os.remove(temp_file)
+            logger.debug(f"Removed temporary Go file: {temp_file}")
+
+            return True
         except FileNotFoundError:
-            logger.error("Go compiler not found. Please install Go.")
+            logger.error("Go is not installed or not found in PATH. Please install Go.")
             return False
         except Exception as e:
             logger.error(f"Unexpected error during Go code validation: {e}")
             return False
-
-def get_type_string(type_node):
-    """Extracts the type string from a Go AST type node."""
-    if isinstance(type_node, str):
-        return type_node
-    elif isinstance(type_node, dict):
-        return type_node.get("Name", "") or get_type_string(type_node.get("Type", ""))
-    return ""
