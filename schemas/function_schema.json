@@ -6,6 +6,11 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "docstring_format": {
+            "type": "string",
+            "description": "Format of the docstring (e.g., Google, NumPy, Sphinx).",
+            "enum": ["Google"]
+          },
           "summary": {
             "type": "string",
             "description": "A detailed summary of the file."
@@ -248,6 +253,7 @@
           }
         },
         "required": [
+          "docstring_format",
           "summary",
           "changes_made",
           "functions",
