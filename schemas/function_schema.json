@@ -40,9 +40,19 @@
                 "async": {
                   "type": "boolean",
                   "description": "Whether the function is asynchronous."
+                },
+                "complexity": {
+                  "type": "integer",
+                  "description": "Cyclomatic complexity of the function."
                 }
               },
-              "required": ["name", "docstring", "args", "async"]
+              "required": [
+                "name",
+                "docstring",
+                "args",
+                "async",
+                "complexity"
+              ]
             },
             "description": "List of functions."
           },
@@ -86,19 +96,167 @@
                       "type": {
                         "type": "string",
                         "description": "Method type (e.g., 'instance', 'class', 'static')."
+                      },
+                      "complexity": {
+                        "type": "integer",
+                        "description": "Cyclomatic complexity of the method."
                       }
                     },
-                    "required": ["name", "docstring", "args", "async", "type"]
+                    "required": [
+                      "name",
+                      "docstring",
+                      "args",
+                      "async",
+                      "type",
+                      "complexity"
+                    ]
                   },
                   "description": "List of methods."
                 }
               },
-              "required": ["name", "docstring", "methods"]
+              "required": [
+                "name",
+                "docstring",
+                "methods"
+              ]
             },
             "description": "List of classes."
+          },
+          "halstead": {
+            "type": "object",
+            "properties": {
+              "volume": {
+                "type": "number",
+                "description": "Halstead Volume"
+              },
+              "difficulty": {
+                "type": "number",
+                "description": "Halstead Difficulty"
+              },
+              "effort": {
+                "type": "number",
+                "description": "Halstead Effort"
+              }
+            },
+            "description": "Halstead complexity metrics."
+          },
+          "maintainability_index": {
+            "type": "number",
+            "description": "Maintainability index of the code."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Variable name."
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Inferred data type of the variable."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description of the variable."
+                },
+                "file": {
+                  "type": "string",
+                  "description": "File where the variable is defined."
+                },
+                "line": {
+                  "type": "integer",
+                  "description": "Line number where the variable is defined."
+                },
+                "link": {
+                  "type": "string",
+                  "description": "Link to the variable definition."
+                },
+                "example": {
+                  "type": "string",
+                  "description": "Example usage of the variable."
+                },
+                "references": {
+                  "type": "string",
+                  "description": "References to the variable."
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "description",
+                "file",
+                "line",
+                "link",
+                "example",
+                "references"
+              ]
+            },
+            "description": "List of variables in the code."
+          },
+          "constants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Constant name."
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Inferred data type of the constant."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description of the constant."
+                },
+                "file": {
+                  "type": "string",
+                  "description": "File where the constant is defined."
+                },
+                "line": {
+                  "type": "integer",
+                  "description": "Line number where the constant is defined."
+                },
+                "link": {
+                  "type": "string",
+                  "description": "Link to the constant definition."
+                },
+                "example": {
+                  "type": "string",
+                  "description": "Example usage of the constant."
+                },
+                "references": {
+                  "type": "string",
+                  "description": "References to the constant."
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "description",
+                "file",
+                "line",
+                "link",
+                "example",
+                "references"
+              ]
+            },
+            "description": "List of constants in the code."
           }
         },
-        "required": ["summary", "changes_made", "functions", "classes"]
+        "required": [
+          "summary",
+          "changes_made",
+          "functions",
+          "classes",
+          "halstead",
+          "maintainability_index",
+          "variables",
+          "constants"
+        ]
       }
     }
   ]
