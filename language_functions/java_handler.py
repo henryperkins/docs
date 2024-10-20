@@ -1,133 +1,147 @@
+# language_functions/java_handler.py
+
 import os
-import javalang
 import logging
 import subprocess
+import json
 from typing import Dict, Any, Optional
+
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
 class JavaHandler(BaseHandler):
-    def __init__(self, function_schema):
-        self.function_schema = function_schema
-
-    # Other methods...
     """Handler for Java language."""
 
-    def extract_structure(self, code: str) -> Dict[str, Any]:
-        """Parses Java code to extract classes and methods."""
-        logger.debug("Extracting Java code structure.")
-        
-        structure = {
-            "classes": [],
-            "functions": [],
-        }
-        
+    def __init__(self, function_schema: Dict[str, Any]):
+        """
+        Initializes the JavaHandler with a function schema.
+    
+        Args:
+            function_schema (Dict[str, Any]): The schema used for function operations.
+        """
+        self.function_schema = function_schema
+
+    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+        """Extracts the structure of the Java code, analyzing classes, methods, and fields.
+
+        Args:
+            code (str): The source code to analyze.
+            file_path (str): The file path for code reference.
+
+        Returns:
+            Dict[str, Any]: A detailed structure of the code components.
+        """
         try:
-            tokens = javalang.tokenizer.tokenize(code)
-            parser = javalang.parser.Parser(tokens)
-            tree = parser.parse()
-            
-            for path, node in tree.filter(javalang.tree.ClassDeclaration):
-                cls = {
-                    "name": node.name,
-                    "methods": [],
-                    "docstring": node.documentation or ""
-                }
-                
-                for method in node.methods:
-                    func = {
-                        "name": method.name,
-                        "args": [param.name for param in method.parameters],
-                        "docstring": method.documentation or "",
-                    }
-                    cls["methods"].append(func)
-                
-                structure["classes"].append(cls)
-            
-            for path, node in tree.filter(javalang.tree.MethodDeclaration):
-                func = {
-                    "name": node.name,
-                    "args": [param.name for param in node.parameters],
-                    "docstring": node.documentation or "",
-                }
-                structure["functions"].append(func)
-            
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'java_parser.js')
+            input_data = {
+                "code": code,
+                "language": "java"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running Java parser script: {script_path}")
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            structure = json.loads(result.stdout)
+            logger.debug(f"Extracted Java code structure successfully from file: {file_path}")
             return structure
-        
-        except javalang.parser.JavaSyntaxError as e:
-            logger.error(f"Failed to parse Java code: {e}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running java_parser.js for file {file_path}: {e.stderr}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing output from java_parser.js for file {file_path}: {e}")
             return {}
         except Exception as e:
-            logger.error(f"Unexpected error during Java code parsing: {e}")
+            logger.error(f"Unexpected error extracting Java structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts Javadoc comments into Java code based on the provided documentation."""
-        logger.debug("Inserting Javadoc docstrings into Java code.")
-        
-        for class_doc in documentation.get("classes", []):
-            class_name = class_doc.get("name")
-            class_docstring = class_doc.get("docstring", "")
-            code = self.insert_comment(code, class_name, class_docstring)
-            
-            for method_doc in class_doc.get("methods", []):
-                method_name = method_doc.get("name")
-                method_docstring = method_doc.get("docstring", "")
-                code = self.insert_comment(code, method_name, method_docstring)
-        
-        return code
+        """Inserts Javadoc comments into Java code based on the provided documentation.
 
-    def insert_comment(self, code: str, name: str, comment: str) -> str:
-        """Inserts comment above the specified class/method name in the code."""
-        comment_block = f"/**\n * {comment}\n */\n"
-        code = code.replace(f"class {name}", f"{comment_block}class {name}")
-        code = code.replace(f"void {name}", f"{comment_block}void {name}")
-        return code
+        Args:
+            code (str): The original source code.
+            documentation (Dict[str, Any]): Documentation details obtained from AI.
+
+        Returns:
+            str: The source code with inserted documentation.
+        """
+        logger.debug("Inserting Javadoc docstrings into Java code.")
+        try:
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'java_inserter.js')
+            input_data = {
+                "code": code,
+                "documentation": documentation,
+                "language": "java"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running Java inserter script: {script_path}")
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            modified_code = result.stdout
+            logger.debug("Completed inserting Javadoc docstrings into Java code.")
+            return modified_code
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running java_inserter.js: {e.stderr}")
+            return code
+        except Exception as e:
+            logger.error(f"Unexpected error inserting Javadoc docstrings: {e}")
+            return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates Java code by attempting to compile it.
+        Validates Java code for syntax correctness using javac.
 
         Args:
             code (str): The Java code to validate.
-            file_path (Optional[str]): The path to the Java file being validated.
+            file_path (Optional[str]): The path to the Java source file.
 
         Returns:
-            bool: True if the code compiles successfully, False otherwise.
+            bool: True if the code is valid, False otherwise.
         """
         logger.debug('Starting Java code validation.')
         if not file_path:
-            logger.warning('File path not provided for Java validation. Skipping compilation.')
-            return True  # Assuming no compilation without a file
+            logger.warning('File path not provided for javac validation. Skipping javac.')
+            return True  # Assuming no validation without a file
 
         try:
-            # Write code to the specified file path
-            with open(file_path, 'w', encoding='utf-8') as f:
+            # Write code to a temporary file for validation
+            temp_file = f"{file_path}.temp.java"
+            with open(temp_file, 'w', encoding='utf-8') as f:
                 f.write(code)
+            logger.debug(f"Wrote temporary Java file for validation: {temp_file}")
 
-            # Attempt to compile the Java file
+            # Compile the temporary Java file
             process = subprocess.run(
-                ['javac', file_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                ["javac", temp_file],
+                capture_output=True,
                 text=True
             )
 
+            # Remove the temporary file and class file if compilation was successful
             if process.returncode != 0:
-                logger.error(f'Java compilation failed for {file_path}:\n{process.stderr}')
+                logger.error(f"javac validation failed for {file_path}:\n{process.stderr}")
                 return False
             else:
-                logger.debug('Java compilation successful.')
-                # Optionally, remove the .class file after validation
-                class_file = file_path.replace('.java', '.class')
+                logger.debug("javac validation passed.")
+                os.remove(temp_file)
+                # Remove the generated class file
+                class_file = temp_file.replace('.java', '.class')
                 if os.path.exists(class_file):
                     os.remove(class_file)
-                    logger.debug(f'Removed compiled class file {class_file}.')
             return True
         except FileNotFoundError:
-            logger.error("Java compiler (javac) not found. Please ensure JDK is installed and javac is in the PATH.")
+            logger.error("javac is not installed or not found in PATH. Please install the JDK.")
             return False
         except Exception as e:
-            logger.error(f'Unexpected error during Java code validation: {e}')
+            logger.error(f"Unexpected error during Java code validation: {e}")
             return False

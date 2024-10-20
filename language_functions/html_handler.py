@@ -1,101 +1,131 @@
 # language_functions/html_handler.py
 
+import os
 import logging
 import subprocess
-from typing import Optional, Dict, Any
-from bs4 import BeautifulSoup, Comment
+import json
+from typing import Dict, Any, Optional
+
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
 class HTMLHandler(BaseHandler):
     """Handler for HTML language."""
+
     def __init__(self, function_schema: Dict[str, Any]):
-        """Initializes the HTMLHandler with a function schema."""
+        """
+        Initializes the HTMLHandler with a function schema.
+    
+        Args:
+            function_schema (Dict[str, Any]): The schema used for function operations.
+        """
         self.function_schema = function_schema
-        
-    def extract_structure(self, code: str) -> Dict[str, Any]:
-        """Extracts the structure of HTML code."""
-        logger.debug("Extracting HTML structure.")
+
+    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+        """Extracts the structure of the HTML code, analyzing tags, attributes, and nesting.
+
+        Args:
+            code (str): The source code to analyze.
+            file_path (str): The file path for code reference.
+
+        Returns:
+            Dict[str, Any]: A detailed structure of the HTML components.
+        """
         try:
-            soup = BeautifulSoup(code, "lxml")
-            structure = {"tags": []}
-            for tag in soup.find_all(True):
-                structure["tags"].append({"name": tag.name, "attributes": tag.attrs})
-                logger.debug(f"Extracted tag: {tag.name}")
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'html_parser.js')
+            input_data = {
+                "code": code,
+                "language": "html"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running HTML parser script: {script_path}")
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            structure = json.loads(result.stdout)
+            logger.debug(f"Extracted HTML code structure successfully from file: {file_path}")
             return structure
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running html_parser.js for file {file_path}: {e.stderr}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing output from html_parser.js for file {file_path}: {e}")
+            return {}
         except Exception as e:
-            logger.error(f"Error extracting HTML structure: {e}")
+            logger.error(f"Unexpected error extracting HTML structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts comments into HTML code based on provided documentation."""
-        logger.debug("Inserting HTML comments.")
+        """Inserts comments into HTML code based on the provided documentation.
+
+        Args:
+            code (str): The original source code.
+            documentation (Dict[str, Any]): Documentation details obtained from AI.
+
+        Returns:
+            str: The source code with inserted documentation.
+        """
+        logger.debug("Inserting comments into HTML code.")
         try:
-            soup = BeautifulSoup(code, "lxml")
-            summary = documentation.get("summary", "").strip()
-            changes = documentation.get("changes_made", [])
-            if not summary and not changes:
-                logger.warning("No summary or changes provided in documentation. Skipping comment insertion.")
-                return code
-            new_comment_parts = []
-            if summary:
-                new_comment_parts.append(f"Summary: {summary}")
-            if changes:
-                changes_formatted = "; ".join(changes)
-                new_comment_parts.append(f"Changes: {changes_formatted}")
-            new_comment = Comment(" " + " | ".join(new_comment_parts) + " ")
-            if soup.body:
-                soup.body.insert(0, new_comment)
-                logger.debug("Inserted comment at the beginning of the body.")
-            else:
-                soup.insert(0, new_comment)
-                logger.debug("Inserted comment at the beginning of the document.")
-            modified_code = soup.prettify()
-            logger.debug("Completed inserting HTML comments.")
+            script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'html_inserter.js')
+            input_data = {
+                "code": code,
+                "documentation": documentation,
+                "language": "html"
+            }
+            input_json = json.dumps(input_data)
+            logger.debug(f"Running HTML inserter script: {script_path}")
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            modified_code = result.stdout
+            logger.debug("Completed inserting comments into HTML code.")
             return modified_code
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running html_inserter.js: {e.stderr}")
+            return code
         except Exception as e:
-            logger.error(f"Error inserting HTML comments: {e}")
+            logger.error(f"Unexpected error inserting comments into HTML code: {e}")
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates HTML code using the tidy utility.
+        Validates HTML code for correctness using an HTML validator like 'tidy'.
 
         Args:
             code (str): The HTML code to validate.
-            file_path (Optional[str]): The path to the HTML file being validated.
+            file_path (Optional[str]): The path to the HTML source file.
 
         Returns:
             bool: True if the code is valid, False otherwise.
         """
         logger.debug('Starting HTML code validation.')
-        if not file_path:
-            logger.warning('File path not provided for HTML validation. Skipping tidy validation.')
-            return True  # Assuming no validation without a file
-
         try:
-            # Write code to the specified file path
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(code)
-
-            # Attempt to validate the HTML file using tidy
+            # Using 'tidy' for HTML validation
             process = subprocess.run(
-                ['tidy', '-e', file_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                ["tidy", "-errors", "-quiet", "-utf8"],
+                input=code,
+                capture_output=True,
                 text=True
             )
-
-            if process.returncode != 0:
-                logger.error(f'Tidy validation failed for {file_path}:\n{process.stderr}')
+            if process.returncode > 0:
+                logger.error(f"HTML validation failed:\n{process.stderr}")
                 return False
             else:
-                logger.debug('Tidy validation successful.')
+                logger.debug("HTML validation passed.")
             return True
         except FileNotFoundError:
-            logger.error("Tidy utility not found. Please install it using your package manager (e.g., 'sudo apt-get install tidy').")
+            logger.error("tidy is not installed or not found in PATH. Please install it for HTML validation.")
             return False
         except Exception as e:
-            logger.error(f'Unexpected error during HTML code validation: {e}')
+            logger.error(f"Unexpected error during HTML code validation: {e}")
             return False

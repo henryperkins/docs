@@ -28,7 +28,7 @@
                 },
                 "docstring": {
                   "type": "string",
-                  "description": "Detailed description of the function."
+                  "description": "Detailed description of the function in Google Style."
                 },
                 "args": {
                   "type": "array",
@@ -67,7 +67,7 @@
                 },
                 "docstring": {
                   "type": "string",
-                  "description": "Detailed description of the class."
+                  "description": "Detailed description of the class in Google Style."
                 },
                 "methods": {
                   "type": "array",
@@ -80,7 +80,7 @@
                       },
                       "docstring": {
                         "type": "string",
-                        "description": "Detailed description of the method."
+                        "description": "Detailed description of the method in Google Style."
                       },
                       "args": {
                         "type": "array",
