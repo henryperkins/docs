@@ -2,7 +2,8 @@
 
 import threading
 from collections import deque
-from typing import List, Dict, Optional
+from typing import List
+
 
 class ContextManager:
     """
@@ -10,6 +11,10 @@ class ContextManager:
     """
 
     def __init__(self, max_entries: int = 100):
+        """Initializes the ContextManager with a maximum number of entries it can hold.
+
+        Args:
+            max_entries (int): The maximum number of context entries allowed."""
         self.max_entries = max_entries
         self.context_entries = deque(maxlen=self.max_entries)
         self.lock = threading.Lock()
@@ -50,8 +55,7 @@ class ContextManager:
         """
         with self.lock:
             self.context_entries = deque(
-                [entry for entry in self.context_entries if context_reference not in entry],
-                maxlen=self.max_entries
+                [entry for entry in self.context_entries if context_reference not in entry], maxlen=self.max_entries
             )
 
     def get_relevant_context(self, query: str, top_k: int = 5) -> List[str]:

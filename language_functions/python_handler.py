@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 import tempfile
 import subprocess
 import ast
@@ -10,20 +9,21 @@ from typing import Dict, Any, Optional, List
 try:
     from radon.complexity import cc_visit
     from radon.metrics import h_visit, mi_visit
-except ImportError as e:
+except ImportError:
     logging.error("radon is not installed. Please install it using 'pip install radon'.")
     raise
 
 try:
     import libcst as cst
     from libcst import FunctionDef, ClassDef, SimpleStatementLine, Expr, SimpleString
-except ImportError as e:
+except ImportError:
     logging.error("libcst is not installed. Please install it using 'pip install libcst'.")
     raise
 
 from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
+
 
 class PythonHandler(BaseHandler):
     """Handler for Python language."""
@@ -112,9 +112,9 @@ class PythonHandler(BaseHandler):
                 def _visit_function(self, node: ast.FunctionDef, is_async: bool = False) -> None:
                     """Handles both sync and async functions."""
                     self.scope_stack.append(node)
-                    full_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, 'name')])
+                    full_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, "name")])
                     complexity = function_complexity.get(full_name, 0)
-                    decorators = [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, 'unparse') else []
+                    decorators = [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, "unparse") else []
                     docstring = ast.get_docstring(node) or ""
                     function_info = {
                         "name": node.name,
@@ -137,14 +137,18 @@ class PythonHandler(BaseHandler):
                         "name": node.name,
                         "docstring": class_docstring,
                         "methods": [],
-                        "decorators": [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, 'unparse') else []
+                        "decorators": [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, "unparse") else [],
                     }
                     for body_item in node.body:
                         if isinstance(body_item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             self.scope_stack.append(body_item)
-                            full_method_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, 'name')])
+                            full_method_name = ".".join(
+                                [scope.name for scope in self.scope_stack if hasattr(scope, "name")]
+                            )
                             complexity = function_complexity.get(full_method_name, 0)
-                            decorators = [ast.unparse(d) for d in body_item.decorator_list] if hasattr(ast, 'unparse') else []
+                            decorators = (
+                                [ast.unparse(d) for d in body_item.decorator_list] if hasattr(ast, "unparse") else []
+                            )
                             method_docstring = ast.get_docstring(body_item) or ""
                             method_info = {
                                 "name": body_item.name,
@@ -153,7 +157,7 @@ class PythonHandler(BaseHandler):
                                 "async": isinstance(body_item, ast.AsyncFunctionDef),
                                 "complexity": complexity,
                                 "decorators": decorators,
-                                "type": "async" if isinstance(body_item, ast.AsyncFunctionDef) else "instance"
+                                "type": "async" if isinstance(body_item, ast.AsyncFunctionDef) else "instance",
                             }
                             class_info["methods"].append(method_info)
                             self.scope_stack.pop()
@@ -189,7 +193,7 @@ class PythonHandler(BaseHandler):
                             "line": target.lineno,
                             "link": f"https://github.com/user/repo/blob/main/{self.file_path}#L{target.lineno}",
                             "example": example,
-                            "references": references
+                            "references": references,
                         }
                         if is_constant:
                             code_structure["constants"].append(var_info)
@@ -213,7 +217,7 @@ class PythonHandler(BaseHandler):
                             "line": target.lineno,
                             "link": f"https://github.com/user/repo/blob/main/{self.file_path}#L{target.lineno}",
                             "example": example,
-                            "references": references
+                            "references": references,
                         }
                         if is_constant:
                             code_structure["constants"].append(var_info)
@@ -225,7 +229,7 @@ class PythonHandler(BaseHandler):
                     """Processes 'with' statements."""
                     for item in node.items:
                         if isinstance(item.context_expr, ast.Call):
-                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, 'unparse') else ""
+                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, "unparse") else ""
                             code_structure.setdefault("context_managers", []).append(context_manager)
                     self.generic_visit(node)
 
@@ -233,7 +237,7 @@ class PythonHandler(BaseHandler):
                     """Processes 'async with' statements."""
                     for item in node.items:
                         if isinstance(item.context_expr, ast.Call):
-                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, 'unparse') else ""
+                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, "unparse") else ""
                             code_structure.setdefault("context_managers", []).append(context_manager)
                     self.generic_visit(node)
 
@@ -443,7 +447,9 @@ class PythonHandler(BaseHandler):
                     else:
                         logger.debug("Flake8 validation passed.")
                 except FileNotFoundError:
-                    logger.error("flake8 is not installed or not found in PATH. Please install it using 'pip install flake8'.")
+                    logger.error(
+                        "flake8 is not installed or not found in PATH. Please install it using 'pip install flake8'."
+                    )
                     return False
                 except subprocess.SubprocessError as e:
                     logger.error(f"Subprocess error during flake8 execution: {e}")

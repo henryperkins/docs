@@ -14,6 +14,7 @@ from .base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
+
 def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[BaseHandler]:
     """
     Factory function to retrieve the appropriate language handler.
@@ -30,19 +31,19 @@ def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[Base
         return None
 
     language = language.lower()
-    if language == 'python':
+    if language == "python":
         return PythonHandler(function_schema)
-    elif language == 'java':
+    elif language == "java":
         return JavaHandler(function_schema)
-    elif language in ['javascript', 'js', 'typescript', 'ts']:
+    elif language in ["javascript", "js", "typescript", "ts"]:
         return JSTsHandler(function_schema)
-    elif language == 'go':
+    elif language == "go":
         return GoHandler(function_schema)
-    elif language in ['cpp', 'c++', 'cxx']:
+    elif language in ["cpp", "c++", "cxx"]:
         return CppHandler(function_schema)
-    elif language in ['html', 'htm']:
+    elif language in ["html", "htm"]:
         return HTMLHandler(function_schema)
-    elif language == 'css':
+    elif language == "css":
         return CSSHandler(function_schema)
     else:
         logger.warning(f"No handler available for language: {language}")

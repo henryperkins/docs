@@ -7,6 +7,7 @@ from .base_handler import PythonHandler  # Ensure correct import path
 
 logger = logging.getLogger(__name__)
 
+
 def get_handler(language: str, function_schema: Dict[str, Any]):
     """
     Returns the appropriate handler based on the programming language.
@@ -19,15 +20,16 @@ def get_handler(language: str, function_schema: Dict[str, Any]):
         BaseHandler or None: An instance of the appropriate handler or None if unsupported.
     """
     language = language.lower()
-    if language == 'python':
+    if language == "python":
         return PythonHandler(function_schema)
     # Add other language handlers here (e.g., JavaHandler) as needed
     else:
         logger.warning(f"No handler available for language: {language}")
         return None
 
+
 def insert_docstrings(
-    original_code: str, documentation: Dict[str, Any], language: str, schema_path: str = 'schemas/function_schema.json'
+    original_code: str, documentation: Dict[str, Any], language: str, schema_path: str = "schemas/function_schema.json"
 ) -> str:
     """
     Inserts docstrings/comments into code based on the language.
@@ -46,7 +48,7 @@ def insert_docstrings(
     # Load the function schema from the specified path
     function_schema = None
     try:
-        with open(schema_path, 'r', encoding='utf-8') as f:
+        with open(schema_path, "r", encoding="utf-8") as f:
             function_schema = json.load(f)
         logger.debug(f"Loaded function schema from '{schema_path}'.")
     except FileNotFoundError:

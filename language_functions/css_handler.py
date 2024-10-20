@@ -4,9 +4,9 @@ import logging
 import subprocess  # Ensure subprocess is imported
 from typing import Dict, Any, Optional
 import tinycss2
-from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
+
 
 class CSSHandler:
     """Handler for CSS language."""
@@ -36,14 +36,13 @@ class CSSHandler:
                     declarations = []
                     for decl in tinycss2.parse_declaration_list(rule.content):
                         if decl.type == "declaration":
-                            declarations.append({
-                                "property": decl.lower_name,
-                                "value": "".join([token.serialize() for token in decl.value]).strip(),
-                            })
-                    structure["rules"].append({
-                        "selectors": selectors,
-                        "declarations": declarations
-                    })
+                            declarations.append(
+                                {
+                                    "property": decl.lower_name,
+                                    "value": "".join([token.serialize() for token in decl.value]).strip(),
+                                }
+                            )
+                    structure["rules"].append({"selectors": selectors, "declarations": declarations})
                     logger.debug("Extracted rule: %s", selectors)
             return structure
         except tinycss2.ParseError as e:
@@ -87,33 +86,30 @@ class CSSHandler:
         Returns:
             bool: True if the code is valid, False otherwise.
         """
-        logger.debug('Starting CSS code validation for file: %s', file_path)
+        logger.debug("Starting CSS code validation for file: %s", file_path)
         if not file_path:
-            logger.warning('File path not provided for Stylelint validation. Skipping validation.')
+            logger.warning("File path not provided for Stylelint validation. Skipping validation.")
             return True  # Assuming no validation without a file
 
         try:
             # Write code to the specified file path
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(code)
 
             # Attempt to validate the CSS file using Stylelint
             process = subprocess.run(
-                ['stylelint', file_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                ["stylelint", file_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )
 
             if process.returncode != 0:
-                logger.error('Stylelint validation failed for %s:\n%s', file_path, process.stdout)
+                logger.error("Stylelint validation failed for %s:\n%s", file_path, process.stdout)
                 return False
             else:
-                logger.debug('Stylelint validation successful for %s.', file_path)
+                logger.debug("Stylelint validation successful for %s.", file_path)
             return True
         except FileNotFoundError:
             logger.error("Stylelint not found. Please install it using 'npm install -g stylelint'.")
             return False
         except Exception as e:
-            logger.error('Unexpected error during Stylelint validation for %s: %s', file_path, e)
+            logger.error("Unexpected error during Stylelint validation for %s: %s", file_path, e)
             return False

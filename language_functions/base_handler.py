@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class BaseHandler(abc.ABC):
     """Abstract base class for language-specific handlers."""
 
@@ -21,7 +22,6 @@ class BaseHandler(abc.ABC):
         Returns:
             Dict[str, Any]: A dictionary representing the code structure.
         """
-        pass
 
     @abc.abstractmethod
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -35,7 +35,6 @@ class BaseHandler(abc.ABC):
         Returns:
             str: The source code with inserted documentation.
         """
-        pass
 
     @abc.abstractmethod
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
@@ -49,4 +48,3 @@ class BaseHandler(abc.ABC):
         Returns:
             bool: True if the code is valid, False otherwise.
         """
-        pass
