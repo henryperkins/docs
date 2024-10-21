@@ -19,9 +19,9 @@
   "dependencies": {
     "@azure/openai": "^2.0.0-beta.2",
     "@babel/generator": "^7.25.7",
-    "@babel/parser": "^7.21.3",
+    "@babel/parser": "^7.25.8",
     "@babel/traverse": "^7.25.7",
-    "@babel/types": "^7.21.0",
+    "@babel/types": "^7.25.8",
     "@typescript-eslint/typescript-estree": "^5.62.0",
     "acorn": "^8.12.1",
     "acorn-typescript": "^1.0.0",
@@ -31,7 +31,9 @@
     "esprima": "^4.0.1",
     "javaparser": "^2.0.2",
     "prettier": "^2.8.8",
-    "stylelint": "^16.10.0"
+    "stylelint": "^16.10.0",
+    "typescript": "^5.6.3",
+    "typhonjs-escomplex": "^0.1.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.8.1",
