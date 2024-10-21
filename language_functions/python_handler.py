@@ -13,18 +13,18 @@ from typing import Dict, Any, Optional, List
 
 # External dependencies
 try:
-   from radon.complexity import cc_visit
-   from radon.metrics import h_visit, mi_visit
+    from radon.complexity import cc_visit
+    from radon.metrics import h_visit, mi_visit
 except ImportError:
-   logging.error("radon is not installed. Please install it using 'pip install radon'.")
-   raise
+    logging.error("radon is not installed. Please install it using 'pip install radon'.")
+    raise
 
 try:
-   import libcst as cst
-   from libcst import FunctionDef, ClassDef, SimpleStatementLine, Expr, SimpleString
+    import libcst as cst
+    from libcst import FunctionDef, ClassDef, SimpleStatementLine, Expr, SimpleString
 except ImportError:
-   logging.error("libcst is not installed. Please install it using 'pip install libcst'.")
-   raise
+    logging.error("libcst is not installed. Please install it using 'pip install libcst'.")
+    raise
 
 from language_functions.base_handler import BaseHandler
 
@@ -61,16 +61,10 @@ class PythonHandler(BaseHandler):
                 "comprehensions": [],
             }
             complexity_scores = cc_visit(code)
-				function_complexity = {score.fullname: score.complexity for score in complexity_scores}
-				total_complexity = sum(score.complexity for score in complexity_scores)
-				code_structure["complexity"] = total_complexity
-            if halstead_metrics:
-                metrics = halstead_metrics[0]
-                code_structure["halstead"] = {
-                    "volume": metrics.volume,
-                    "difficulty": metrics.difficulty,
-                    "effort": metrics.effort,
-                }
+            function_complexity = {score.fullname: score.complexity for score in complexity_scores}
+            total_complexity = sum(score.complexity for score in complexity_scores)
+            code_structure["complexity"] = total_complexity
+
             mi_score = mi_visit(code, True)
             code_structure["maintainability_index"] = mi_score
 
@@ -286,163 +280,158 @@ class PythonHandler(BaseHandler):
         except Exception as e:
             logger.error(f"Error extracting Python structure: {e}", exc_info=True)
             return {}
-            
-   def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-       """
-       Inserts docstrings into the Python code based on the provided documentation.
 
-       Args:
-           code (str): The original source code.
-           documentation (Dict[str, Any]): Documentation details obtained from AI.
+    def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
+        """
+        Inserts docstrings into the Python code based on the provided documentation.
 
-       Returns:
-           str: The source code with inserted documentation.
-       """
-       logger.debug("Starting docstring insertion for Python code (Google Style).")
-       try:
-           docstrings_mapping = {}
-           for func_doc in documentation.get("functions", []):
-               name = func_doc.get("name")
-               if name:
-                   docstrings_mapping[name] = self._format_google_docstring(func_doc)
-           for class_doc in documentation.get("classes", []):
-               class_name = class_doc.get("name")
-               if class_name:
-                   docstrings_mapping[class_name] = self._format_google_docstring(class_doc)
-                   for method_doc in class_doc.get("methods", []):
-                       method_name = method_doc.get("name")
-                       if method_name:
-                           full_method_name = f"{class_name}.{method_name}"
-                           docstrings_mapping[full_method_name] = self._format_google_docstring(method_doc)
+        Args:
+            code (str): The original source code.
+            documentation (Dict[str, Any]): Documentation details obtained from AI.
 
-           class DocstringInserter(cst.CSTTransformer):
-               def __init__(self, docstrings_mapping: Dict[str, str]):
-                   self.docstrings_mapping = docstrings_mapping
-                   self.scope_stack = []
+        Returns:
+            str: The source code with inserted documentation.
+        """
+        logger.debug("Starting docstring insertion for Python code (Google Style).")
+        try:
+            docstrings_mapping = {}
+            for func_doc in documentation.get("functions", []):
+                name = func_doc.get("name")
+                if name:
+                    docstrings_mapping[name] = self._format_google_docstring(func_doc)
+            for class_doc in documentation.get("classes", []):
+                class_name = class_doc.get("name")
+                if class_name:
+                    docstrings_mapping[class_name] = self._format_google_docstring(class_doc)
+                    for method_doc in class_doc.get("methods", []):
+                        method_name = method_doc.get("name")
+                        if method_name:
+                            full_method_name = f"{class_name}.{method_name}"
+                            docstrings_mapping[full_method_name] = self._format_google_docstring(method_doc)
 
-               def visit_FunctionDef(self, node: FunctionDef):
-                   self.scope_stack.append(node.name.value)
+            class DocstringInserter(cst.CSTTransformer):
+                def __init__(self, docstrings_mapping: Dict[str, str]):
+                    self.docstrings_mapping = docstrings_mapping
+                    self.scope_stack = []
 
-               def leave_FunctionDef(self, original_node: FunctionDef, updated_node: FunctionDef) -> FunctionDef:
-                   full_name = ".".join(self.scope_stack)
-                   docstring = self.docstrings_mapping.get(full_name)
-                   if docstring and not original_node.get_docstring():
-                       new_doc = SimpleStatementLine([Expr(SimpleString(f'"""{docstring}"""'))])
-                       new_body = [new_doc] + list(updated_node.body.body)
-                       updated_node = updated_node.with_changes(body=updated_node.body.with_changes(body=new_body))
-                       logger.debug(f"Inserted docstring for function: {full_name}")
-                   self.scope_stack.pop()
-                   return updated_node
+                def visit_FunctionDef(self, node: FunctionDef):
+                    self.scope_stack.append(node.name.value)
 
-               def visit_ClassDef(self, node: ClassDef):
-                   self.scope_stack.append(node.name.value)
+                def leave_FunctionDef(self, original_node: FunctionDef, updated_node: FunctionDef) -> FunctionDef:
+                    full_name = ".".join(self.scope_stack)
+                    docstring = self.docstrings_mapping.get(full_name)
+                    if docstring and not original_node.get_docstring():
+                        new_doc = SimpleStatementLine([Expr(SimpleString(f'"""{docstring}"""'))])
+                        new_body = [new_doc] + list(updated_node.body.body)
+                        updated_node = updated_node.with_changes(body=updated_node.body.with_changes(body=new_body))
+                        logger.debug(f"Inserted docstring for function: {full_name}")
+                    self.scope_stack.pop()
+                    return updated_node
 
-               def leave_ClassDef(self, original_node: ClassDef, updated_node: ClassDef) -> ClassDef:
-                   full_name = ".".join(self.scope_stack)
-                   docstring = self.docstrings_mapping.get(full_name)
-                   if docstring and not original_node.get_docstring():
-                       new_doc = SimpleStatementLine([Expr(SimpleString(f'"""{docstring}"""'))])
-                       new_body = [new_doc] + list(updated_node.body.body)
-                       updated_node = updated_node.with_changes(body=updated_node.body.with_changes(body=new_body))
-                       logger.debug(f"Inserted docstring for class: {full_name}")
-                   self.scope_stack.pop()
-                   return updated_node
+                def visit_ClassDef(self, node: ClassDef):
+                    self.scope_stack.append(node.name.value)
 
-           tree = cst.parse_module(code)
-           inserter = DocstringInserter(docstrings_mapping)
-           modified_tree = tree.visit(inserter)
-           modified_code = modified_tree.code
-           logger.debug("Docstring insertion completed successfully.")
-           return modified_code
-       except Exception as e:
-           logger.error(f"Error inserting docstrings: {e}", exc_info=True)
-           return code
+                def leave_ClassDef(self, original_node: ClassDef, updated_node: ClassDef) -> ClassDef:
+                    full_name = ".".join(self.scope_stack)
+                    docstring = self.docstrings_mapping.get(full_name)
+                    if docstring and not original_node.get_docstring():
+                        new_doc = SimpleStatementLine([Expr(SimpleString(f'"""{docstring}"""'))])
+                        new_body = [new_doc] + list(updated_node.body.body)
+                        updated_node = updated_node.with_changes(body=updated_node.body.with_changes(body=new_body))
+                        logger.debug(f"Inserted docstring for class: {full_name}")
+                    self.scope_stack.pop()
+                    return updated_node
 
-   def _format_google_docstring(self, doc: Dict[str, Any]) -> str:
-       """
-       Formats a docstring in Google style.
+            tree = cst.parse_module(code)
+            inserter = DocstringInserter(docstrings_mapping)
+            modified_tree = tree.visit(inserter)
+            modified_code = modified_tree.code
+            logger.debug("Docstring insertion completed successfully.")
+            return modified_code
+        except Exception as e:
+            logger.error(f"Error inserting docstrings: {e}", exc_info=True)
+            return code
 
-       Args:
-           doc (Dict[str, Any]): The documentation details.
+    def _format_google_docstring(self, doc: Dict[str, Any]) -> str:
+        """
+        Formats a docstring in Google style.
 
-       Returns:
-           str: The formatted docstring.
-       """
-       docstring = f'"""{doc.get("docstring", "")}\n\n'
+        Args:
+            doc (Dict[str, Any]): The documentation details.
 
-       arguments = doc.get("arguments", [])
-       if arguments:
-           docstring += "Args:\n"
-           for arg in arguments:
-               arg_name = arg.get("name", "unknown")
-               arg_type = arg.get("type", "Any")
-               arg_description = arg.get("description", "")
-               default_value = arg.get("default_value")
+        Returns:
+            str: The formatted docstring.
+        """
+        docstring = f'{doc.get("docstring", "")}\n\n'
 
-               docstring += f"    {arg_name} ({arg_type}): {arg_description}"
-               if default_value is not None:
-                   try:
-                       default_value_str = repr(default_value)
-                       docstring += f" (Default: {default_value_str})"
-                   except Exception as e:
-                       logger.warning(f"Error converting default value to string: {e}")
-               docstring += "\n"
+        arguments = doc.get("arguments", [])
+        if arguments:
+            docstring += "Args:\n"
+            for arg in arguments:
+                arg_name = arg.get("name", "unknown")
+                arg_type = arg.get("type", "Any")
+                arg_description = arg.get("description", "")
+                default_value = arg.get("default_value")
 
-       return_type = doc.get("return_type")
-       return_description = doc.get("return_description", "")
-       if return_type:
-           docstring += f"\nReturns:\n    {return_type}: {return_description}\n"
+                docstring += f"    {arg_name} ({arg_type}): {arg_description}"
+                if default_value is not None:
+                    docstring += f" (Default: {default_value})"
+                docstring += "\n"
 
-       docstring += '"""'
-       return docstring
+        return_type = doc.get("return_type")
+        return_description = doc.get("return_description", "")
+        if return_type:
+            docstring += f"\nReturns:\n    {return_type}: {return_description}\n"
 
-   def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
-       """
-       Validates the modified Python code for syntax correctness.
+        return docstring.strip()
 
-       Args:
-           code (str): The modified source code.
-           file_path (Optional[str]): Path to the Python source file (optional).
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates the modified Python code for syntax correctness.
 
-       Returns:
-           bool: True if the code is valid, False otherwise.
-       """
-       logger.debug("Starting Python code validation.")
-       try:
-           ast.parse(code)
-           logger.debug("Syntax validation passed.")
-           if file_path:
-               with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
-                   tmp.write(code)
-                   temp_file = tmp.name
-               try:
-                   result = subprocess.run(
-                       ["flake8", temp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-                   )
-                   if result.returncode != 0:
-                       logger.error(f"Flake8 validation failed for {file_path}:\n{result.stdout}\n{result.stderr}")
-                       return False
-                   else:
-                       logger.debug("Flake8 validation passed.")
-               except FileNotFoundError:
-                   logger.error(
-                       "flake8 is not installed or not found in PATH. Please install it using 'pip install flake8'."
-                   )
-                   return False
-               except subprocess.SubprocessError as e:
-                   logger.error(f"Subprocess error during flake8 execution: {e}")
-                   return False
-               finally:
-                   try:
-                       os.remove(temp_file)
-                   except OSError as e:
-                       logger.error(f"Error deleting temporary file {temp_file}: {e}")
-           else:
-               logger.warning("File path not provided for flake8 validation. Skipping flake8.")
-           return True
-       except SyntaxError as e:
-           logger.error(f"Syntax error during validation: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
-           return False
-       except Exception as e:
-           logger.error(f"Unexpected error during code validation: {e}", exc_info=True)
-           return False
+        Args:
+            code (str): The modified source code.
+            file_path (Optional[str]): Path to the Python source file (optional).
+
+        Returns:
+            bool: True if the code is valid, False otherwise.
+        """
+        logger.debug("Starting Python code validation.")
+        try:
+            ast.parse(code)
+            logger.debug("Syntax validation passed.")
+            if file_path:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
+                    tmp.write(code)
+                    temp_file = tmp.name
+                try:
+                    result = subprocess.run(
+                        ["flake8", temp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                    )
+                    if result.returncode != 0:
+                        logger.error(f"Flake8 validation failed for {file_path}:\n{result.stdout}\n{result.stderr}")
+                        return False
+                    else:
+                        logger.debug("Flake8 validation passed.")
+                except FileNotFoundError:
+                    logger.error(
+                        "flake8 is not installed or not found in PATH. Please install it using 'pip install flake8'."
+                    )
+                    return False
+                except subprocess.SubprocessError as e:
+                    logger.error(f"Subprocess error during flake8 execution: {e}")
+                    return False
+                finally:
+                    try:
+                        os.remove(temp_file)
+                    except OSError as e:
+                        logger.error(f"Error deleting temporary file {temp_file}: {e}")
+            else:
+                logger.warning("File path not provided for flake8 validation. Skipping flake8.")
+            return True
+        except SyntaxError as e:
+            logger.error(f"Syntax error during validation: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during code validation: {e}", exc_info=True)
+            return False
