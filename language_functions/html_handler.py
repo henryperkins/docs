@@ -1,4 +1,12 @@
-# language_functions/html_handler.py
+"""
+html_handler.py
+
+This module provides the `HTMLHandler` class, which is responsible for handling HTML code files.
+It includes methods for extracting the code structure, inserting comments, and validating HTML code.
+The handler uses external JavaScript scripts for parsing and modifying the code.
+
+The `HTMLHandler` class extends the `BaseHandler` abstract class.
+"""
 
 import os
 import logging
@@ -12,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class HTMLHandler(BaseHandler):
-    """Handler for HTML language."""
+    """Handler for the HTML language."""
 
     def __init__(self, function_schema: Dict[str, Any]):
         """
@@ -24,11 +32,15 @@ class HTMLHandler(BaseHandler):
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
-        """Extracts the structure of the HTML code, analyzing tags, attributes, and nesting.
+        """
+        Extracts the structure of the HTML code, analyzing tags, attributes, and nesting.
+
+        This method runs an external JavaScript parser script that processes the HTML code and outputs
+        a JSON structure representing the code elements.
 
         Args:
             code (str): The source code to analyze.
-            file_path (str): The file path for code reference.
+            file_path (str, optional): The file path for code reference.
 
         Returns:
             Dict[str, Any]: A detailed structure of the HTML components.
@@ -38,22 +50,37 @@ class HTMLHandler(BaseHandler):
             input_data = {"code": code, "language": "html"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running HTML parser script: {script_path}")
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
             structure = json.loads(result.stdout)
             logger.debug(f"Extracted HTML code structure successfully from file: {file_path}")
             return structure
+
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running html_parser.js for file {file_path}: {e.stderr}")
             return {}
+
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing output from html_parser.js for file {file_path}: {e}")
             return {}
+
         except Exception as e:
             logger.error(f"Unexpected error extracting HTML structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts comments into HTML code based on the provided documentation.
+        """
+        Inserts comments into HTML code based on the provided documentation.
+
+        This method runs an external JavaScript inserter script that processes the code and documentation
+        to insert comments.
 
         Args:
             code (str): The original source code.
@@ -68,13 +95,23 @@ class HTMLHandler(BaseHandler):
             input_data = {"code": code, "documentation": documentation, "language": "html"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running HTML inserter script: {script_path}")
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+
+            result = subprocess.run(
+                ["node", script_path],
+                input=input_json,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
             modified_code = result.stdout
             logger.debug("Completed inserting comments into HTML code.")
             return modified_code
+
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running html_inserter.js: {e.stderr}")
             return code
+
         except Exception as e:
             logger.error(f"Unexpected error inserting comments into HTML code: {e}")
             return code
@@ -93,16 +130,24 @@ class HTMLHandler(BaseHandler):
         logger.debug("Starting HTML code validation.")
         try:
             # Using 'tidy' for HTML validation
-            process = subprocess.run(["tidy", "-errors", "-quiet", "-utf8"], input=code, capture_output=True, text=True)
+            process = subprocess.run(
+                ["tidy", "-errors", "-quiet", "-utf8"],
+                input=code,
+                capture_output=True,
+                text=True
+            )
+
             if process.returncode > 0:
                 logger.error(f"HTML validation failed:\n{process.stderr}")
                 return False
             else:
                 logger.debug("HTML validation passed.")
             return True
+
         except FileNotFoundError:
             logger.error("tidy is not installed or not found in PATH. Please install it for HTML validation.")
             return False
+
         except Exception as e:
             logger.error(f"Unexpected error during HTML code validation: {e}")
             return False

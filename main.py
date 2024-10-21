@@ -1,3 +1,9 @@
+"""
+main.py
+
+This script serves as the main entry point for generating and inserting docstrings into code repositories using Azure OpenAI. It handles command-line argument parsing, configuration loading, and orchestrates the documentation generation process.
+"""
+
 import aiohttp
 import os
 import sys
@@ -5,9 +11,9 @@ import logging
 import argparse
 import asyncio
 import tracemalloc
-import aiohttp
+import json
 from dotenv import load_dotenv
-from file_handlers import process_all_files
+
 from utils import (
     load_config,
     get_all_file_paths,
@@ -15,12 +21,14 @@ from utils import (
     DEFAULT_EXCLUDED_FILES,
     DEFAULT_SKIP_TYPES,
     load_function_schema,
+    validate_schema,
 )
+from file_handlers import process_all_files
 
 # Load environment variables from .env file early
 load_dotenv()
 
-# Enable tracemalloc
+# Enable tracemalloc for memory allocation tracking
 tracemalloc.start()
 
 # Import Sentry SDK and integrations
@@ -28,49 +36,59 @@ import sentry_sdk
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 
-# Define the before_send function for data scrubbing and filtering
+# Configure basic logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ],
+)
+logger = logging.getLogger(__name__)
+
 def before_send(event, hint):
     """
-    Modify or filter out events before they are sent to Sentry.
-    """
-    # Scrub sensitive information
-    if 'password' in event.get('request', {}).get('data', {}):
-        event['request']['data']['password'] = '***REDACTED***'
+    Modify or filter events before sending to Sentry.
 
-    # Example: Filter out specific exceptions
+    Args:
+        event (dict): The event data.
+        hint (dict): Additional context about the event.
+
+    Returns:
+        dict or None: The modified event or None to drop the event.
+    """
+    if 'request' in event and 'data' in event['request'] and 'password' in event['request']['data']:
+        event['request']['data']['password'] = '***REDACTED***'
     if event.get('exception'):
         exception_type = event['exception']['values'][0]['type']
         if exception_type in ['SomeNonCriticalException', 'IgnoredException']:
-            return None  # Drop the event
-
+            return None
     return event
 
 # Configure Sentry Logging Integration
 logging_integration = LoggingIntegration(
-    level=logging.INFO,        # Capture info and above as breadcrumbs
-    event_level=logging.ERROR  # Send errors as events
+    level=logging.INFO,
+    event_level=logging.ERROR
 )
 
 # Initialize Sentry
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
-    integrations=[
-        logging_integration,
-        AioHttpIntegration(),  # Integrate with aiohttp for tracing
-    ],
-    traces_sample_rate=0.2,        # 20% sample rate for production
+    integrations=[logging_integration, AioHttpIntegration()],
+    traces_sample_rate=0.2,
     environment=os.getenv("ENVIRONMENT", "production"),
     release=os.getenv("RELEASE_VERSION", "unknown"),
-    before_send=before_send,       # Add the before_send callback
+    before_send=before_send,
 )
 
-# Configure logging
-logger = logging.getLogger(__name__)
-
 def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="Generate and insert comments/docstrings using Azure OpenAI's REST API."
-    )
+    """
+    Parses command-line arguments.
+
+    Returns:
+        argparse.Namespace: Parsed command-line arguments.
+    """
+    parser = argparse.ArgumentParser(description="Generate and insert docstrings using Azure OpenAI.")
     parser.add_argument("repo_path", help="Path to the code repository")
     parser.add_argument("-c", "--config", help="Path to config.json", default="config.json")
     parser.add_argument("--concurrency", help="Number of concurrent requests", type=int, default=5)
@@ -78,46 +96,42 @@ def parse_arguments():
     parser.add_argument("--deployment-name", help="Deployment name for Azure OpenAI", required=True)
     parser.add_argument("--skip-types", help="Comma-separated list of file extensions to skip", default="")
     parser.add_argument("--project-info", help="Information about the project", default="")
-    parser.add_argument("--style-guidelines", help="Documentation style guidelines to follow", default="")
-    parser.add_argument("--safe-mode", help="Run in safe mode (no files will be modified)", action="store_true")
+    parser.add_argument("--style-guidelines", help="Documentation style guidelines", default="")
+    parser.add_argument("--safe-mode", help="Run in safe mode (no files modified)", action="store_true")
     parser.add_argument("--log-level", help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", default="INFO")
-    parser.add_argument("--schema", help="Path to function_schema.json", default=os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "schemas", "function_schema.json"))
+    parser.add_argument("--schema", help="Path to function_schema.json", default="schemas/function_schema.json")
     parser.add_argument("--doc-output-dir", help="Directory to save documentation files", default="documentation")
     return parser.parse_args()
 
-def configure_logging(log_level):
+def configure_logging(log_level: str):
     """
-    Configures logging for the application.
+    Configures logging.
+
+    Args:
+        log_level (str): The logging level.
     """
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
     logger.setLevel(numeric_level)
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d: %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d: %(message)s")
 
-    # File handler for detailed logs
     file_handler = logging.FileHandler("docs_generation.log")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
-    # Console handler for real-time feedback
     console_handler = logging.StreamHandler()
     console_handler.setLevel(numeric_level)
     console_handler.setFormatter(formatter)
 
-    # Prevent adding multiple handlers if configure_logging is called multiple times
     if not logger.handlers:
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
 
 async def main():
+    """
+    Main function to orchestrate the documentation generation process.
+    """
     args = parse_arguments()
-
     configure_logging(args.log_level)
-
-    logger.info("Starting Documentation Generation Tool.")
-    logger.debug(f"Parsed arguments: {args}")
 
     repo_path = args.repo_path
     config_path = args.config
@@ -129,14 +143,14 @@ async def main():
     style_guidelines_arg = args.style_guidelines
     safe_mode = args.safe_mode
     schema_path = args.schema
-    output_dir = args.doc_output_dir  # Get the documentation output directory
+    output_dir = args.doc_output_dir
 
     # Ensure necessary environment variables are set for Azure OpenAI Service
-    AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
-    AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT')
-    AZURE_OPENAI_API_VERSION = os.getenv('API_VERSION')
+    azure_openai_api_key = os.getenv('AZURE_OPENAI_API_KEY')
+    azure_openai_endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
+    azure_openai_api_version = os.getenv('API_VERSION')
 
-    if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION, deployment_name]):
+    if not all([azure_openai_api_key, azure_openai_endpoint, azure_openai_api_version, deployment_name]):
         logger.critical(
             "AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, API_VERSION, or DEPLOYMENT_NAME not set. "
             "Please set them in your environment or .env file."
@@ -189,7 +203,15 @@ async def main():
         logger.info(f"Style Guidelines: {style_guidelines}")
 
     # Load function schema
-    function_schema = load_function_schema(schema_path)
+    try:
+        function_schema = load_function_schema(schema_path)
+        validate_schema(schema_path)
+    except (ValueError, FileNotFoundError, json.JSONDecodeError, OSError) as e:
+        logger.critical(f"Schema error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.critical(f"An unexpected error occurred during schema loading: {e}", exc_info=True)
+        sys.exit(1)
 
     try:
         file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files, skip_types_set)
@@ -212,10 +234,10 @@ async def main():
                 style_guidelines=style_guidelines,
                 safe_mode=safe_mode,
                 output_file=output_file,
-                azure_api_key=AZURE_OPENAI_API_KEY,
-                azure_endpoint=AZURE_OPENAI_ENDPOINT,
-                azure_api_version=AZURE_OPENAI_API_VERSION,
-                output_dir=output_dir  # Pass the documentation output directory
+                azure_api_key=azure_openai_api_key,
+                azure_endpoint=azure_openai_endpoint,
+                azure_api_version=azure_openai_api_version,
+                output_dir=output_dir
             )
 
     logger.info("Documentation generation completed successfully.")

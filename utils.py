@@ -1,4 +1,8 @@
-# utils.py
+"""
+utils.py
+
+This module provides utility functions for handling language and file operations, configuration management, code formatting, and cleanup. It includes functions for loading JSON schemas, managing file paths, and running code formatters like autoflake, black, and flake8.
+"""
 
 import os
 import sys
@@ -9,7 +13,7 @@ import asyncio
 import subprocess
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
-from jsonschema import validate, ValidationError
+from jsonschema import Draft7Validator, ValidationError, SchemaError
 
 # Load environment variables
 load_dotenv()
@@ -164,22 +168,24 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
         logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
         return None
 
-def load_function_schema(schema_path: str) -> dict:
-    """Loads a function schema from a specified path.
+def load_function_schema(schema_path: str) -> Dict[str, Any]:
+    """
+    Loads a function schema and validates it.
 
     Args:
         schema_path (str): Path to the schema file.
 
     Returns:
-        dict: The function schema loaded from the file."""
-    logger.debug(f"Attempting to load function schema from '{schema_path}'.")
-    schema = load_json_schema(schema_path)
-    if not isinstance(schema, dict):
-        logger.critical(f"Function schema should be a JSON object with a 'functions' key. Found type: {type(schema)}")
-        sys.exit(1)
+        Dict[str, Any]: The loaded and validated function schema.
+
+    Raises:
+        ValueError: If the schema is invalid or missing required keys.
+    """
+    schema = validate_schema(schema_path)
+    if not schema:
+        raise ValueError("Invalid or missing schema file.")  # Raise ValueError
     if 'functions' not in schema:
-        logger.critical(f"Function schema missing 'functions' key.")
-        sys.exit(1)
+        raise ValueError("Schema missing 'functions' key.")  # Raise ValueError
     return schema
 
 def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
@@ -219,17 +225,6 @@ def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[s
 # Code Formatting and Cleanup
 # ----------------------------
 
-def format_table(headers: list, rows: list) -> str:
-    table = "| " + " | ".join(headers) + " |\n"
-    table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
-    for row in rows:
-        table += "| " + " | ".join(row) + " |\n"
-    return table
-
-def truncate_description(description: str, max_length: int = 100) -> str:
-    return (description[:max_length] + '...') if len(description) > max_length else description
-
-
 async def clean_unused_imports_async(code: str, file_path: str) -> str:
     """
     Asynchronously removes unused imports and variables from the provided code using autoflake.
@@ -259,8 +254,16 @@ async def clean_unused_imports_async(code: str, file_path: str) -> str:
         logger.error(f'Error running Autoflake: {e}')
         return code
 
-# Example using asyncio subprocesses
 async def format_with_black_async(code: str) -> str:
+    """
+    Asynchronously formats the provided code using Black.
+
+    Args:
+        code (str): The source code to format.
+
+    Returns:
+        str: The formatted code.
+    """
     process = await asyncio.create_subprocess_exec(
         'black', '--quiet', '-',
         stdin=asyncio.subprocess.PIPE,
@@ -273,7 +276,6 @@ async def format_with_black_async(code: str) -> str:
     else:
         logger.error(f"Black formatting failed: {stderr.decode()}")
         return code
-
 
 async def run_flake8_async(file_path: str) -> Optional[str]:
     """
@@ -306,22 +308,37 @@ async def run_flake8_async(file_path: str) -> Optional[str]:
 # ----------------------------
 
 async def run_node_script_async(script_path: str, input_json: str) -> Optional[str]:
+    """
+    Runs a Node.js script asynchronously.
+
+    Args:
+        script_path (str): Path to the Node.js script.
+        input_json (str): JSON string to pass as input to the script.
+
+    Returns:
+        Optional[str]: The output from the script if successful, None otherwise.
+    """
     try:
-        process = await asyncio.create_subprocess_exec(
+        proc = await asyncio.create_subprocess_exec(
             'node', script_path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await process.communicate(input=input_json.encode())
-        if process.returncode != 0:
-            logger.error(f"Node script error:\n{stderr.decode()}")
-            return None
-        return stdout.decode()
-    except Exception as e:
-        logger.error(f'Error running Node script: {e}')
-        return None
+        stdout, stderr = await proc.communicate(input=input_json.encode())
 
+        if proc.returncode != 0:
+            logger.error(f"Node.js script '{script_path}' failed: {stderr.decode()}")
+            return None
+
+        return stdout.decode()
+    except FileNotFoundError:
+        logger.error("Node.js is not installed or not in PATH. Please install Node.js.")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while running Node.js script '{script_path}': {e}")
+        return None
+        
 def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[str]:
     """
     Runs a Node.js script to insert docstrings and returns the modified code.
@@ -360,70 +377,53 @@ def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[s
 # ----------------------------
 # Documentation Generation
 # ----------------------------
-# ----------------------------
-# Schema Validation
-# ----------------------------
 
-def validate_schema(schema: dict):
+def validate_schema(schema_path: str) -> Optional[Dict[str, Any]]:
     """
-    Validates the loaded schema against a predefined schema.
+    Validates a JSON schema and loads it if valid.
 
     Args:
-        schema (dict): The schema to validate.
+        schema_path (str): Path to the JSON schema file.
+
+    Returns:
+        Optional[Dict[str, Any]]: The loaded schema if valid, None otherwise.
     """
-    predefined_schema = {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "changes_made": {"type": "array", "items": {"type": "string"}},
-            "functions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "args": {"type": "array", "items": {"type": "string"}},
-                        "docstring": {"type": "string"},
-                        "async": {"type": "boolean"},
-                        "complexity": {"type": "integer"}
-                    },
-                    "required": ["name", "args", "docstring", "async", "complexity"]
-                }
-            },
-            "classes": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "docstring": {"type": "string"},
-                        "methods": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {"type": "string"},
-                                    "args": {"type": "array", "items": {"type": "string"}},
-                                    "docstring": {"type": "string"},
-                                    "async": {"type": "boolean"},
-                                    "type": {"type": "string"},
-                                    "complexity": {"type": "integer"}
-                                },
-                                "required": ["name", "args", "docstring", "async", "type", "complexity"]
-                            }
-                        }
-                    },
-                    "required": ["name", "docstring", "methods"]
-                }
-            }
-        },
-        "required": ["summary", "changes_made", "functions", "classes"]
-    }
     try:
-        validate(instance=schema, schema=predefined_schema)
-        logger.debug("Documentation schema is valid.")
-    except ValidationError as ve:
-        logger.critical(f"Schema validation error: {ve.message}")
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        try:
+            Draft7Validator.check_schema(schema)
+            logger.debug("Schema is valid.")
+            return schema
+        except (SchemaError, ValidationError) as e:
+            logger.error(f"Invalid schema: {e}")
+            return None
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.error(f"Error loading schema file: {e}")
+        return None
+
+def load_function_schema(schema_path: str) -> Dict[str, Any]:
+    """
+    Loads and validates the function schema.
+
+    Args:
+        schema_path (str): Path to the function schema file.
+
+    Returns:
+        Dict[str, Any]: The loaded and validated function schema.
+
+    Raises:
+        ValueError: If the schema is invalid or missing required keys.
+    """
+    try:
+        schema = validate_schema(schema_path)
+        if schema is None:
+            raise ValueError("Schema validation failed. Check the schema file.")
+        if "functions" not in schema:
+            raise ValueError("Schema missing 'functions' key.")
+        return schema
+    except ValueError as e:
+        logger.critical(f"Error loading schema: {e}")
         sys.exit(1)
 
 # ----------------------------
