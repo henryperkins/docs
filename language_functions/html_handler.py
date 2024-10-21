@@ -51,13 +51,7 @@ class HTMLHandler(BaseHandler):
             input_json = json.dumps(input_data)
             logger.debug(f"Running HTML parser script: {script_path}")
 
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             structure = json.loads(result.stdout)
             logger.debug(f"Extracted HTML code structure successfully from file: {file_path}")
@@ -96,13 +90,7 @@ class HTMLHandler(BaseHandler):
             input_json = json.dumps(input_data)
             logger.debug(f"Running HTML inserter script: {script_path}")
 
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             modified_code = result.stdout
             logger.debug("Completed inserting comments into HTML code.")
@@ -130,12 +118,7 @@ class HTMLHandler(BaseHandler):
         logger.debug("Starting HTML code validation.")
         try:
             # Using 'tidy' for HTML validation
-            process = subprocess.run(
-                ["tidy", "-errors", "-quiet", "-utf8"],
-                input=code,
-                capture_output=True,
-                text=True
-            )
+            process = subprocess.run(["tidy", "-errors", "-quiet", "-utf8"], input=code, capture_output=True, text=True)
 
             if process.returncode > 0:
                 logger.error(f"HTML validation failed:\n{process.stderr}")

@@ -54,13 +54,7 @@ class CSSHandler(BaseHandler):
             logger.debug(f"Running CSS parser script: {script_path}")
 
             # Run the parser script using Node.js
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             # Parse the output JSON structure
             structure = json.loads(result.stdout)
@@ -103,13 +97,7 @@ class CSSHandler(BaseHandler):
             logger.debug(f"Running CSS inserter script: {script_path}")
 
             # Run the inserter script using Node.js
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             modified_code = result.stdout
             logger.debug("Completed inserting comments into CSS code.")
@@ -137,12 +125,7 @@ class CSSHandler(BaseHandler):
         logger.debug("Starting CSS code validation.")
         try:
             # Use stylelint to validate CSS code
-            process = subprocess.run(
-                ["stylelint", "--stdin"],
-                input=code,
-                capture_output=True,
-                text=True
-            )
+            process = subprocess.run(["stylelint", "--stdin"], input=code, capture_output=True, text=True)
 
             # Check the result of the validation
             if process.returncode != 0:

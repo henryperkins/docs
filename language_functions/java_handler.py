@@ -51,13 +51,7 @@ class JavaHandler(BaseHandler):
             input_json = json.dumps(input_data)
             logger.debug(f"Running Java parser script: {script_path}")
 
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             structure = json.loads(result.stdout)
             logger.debug(f"Extracted Java code structure successfully from file: {file_path}")
@@ -96,13 +90,7 @@ class JavaHandler(BaseHandler):
             input_json = json.dumps(input_data)
             logger.debug(f"Running Java inserter script: {script_path}")
 
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             modified_code = result.stdout
             logger.debug("Completed inserting Javadoc docstrings into Java code.")

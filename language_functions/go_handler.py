@@ -55,11 +55,7 @@ class GoHandler(BaseHandler):
 
             # Run the parser script
             result = subprocess.run(
-                ["go", "run", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
+                ["go", "run", script_path], input=input_json, capture_output=True, text=True, check=True
             )
 
             # Parse the output JSON structure
@@ -104,11 +100,7 @@ class GoHandler(BaseHandler):
 
             # Run the inserter script
             result = subprocess.run(
-                ["go", "run", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True
+                ["go", "run", script_path], input=input_json, capture_output=True, text=True, check=True
             )
 
             modified_code = result.stdout
@@ -147,11 +139,7 @@ class GoHandler(BaseHandler):
             logger.debug(f"Wrote temporary Go file for validation: {temp_file}")
 
             # Run 'go fmt' to format the code and check syntax
-            fmt_process = subprocess.run(
-                ["go", "fmt", temp_file],
-                capture_output=True,
-                text=True
-            )
+            fmt_process = subprocess.run(["go", "fmt", temp_file], capture_output=True, text=True)
 
             # Check the result of 'go fmt'
             if fmt_process.returncode != 0:
@@ -161,11 +149,7 @@ class GoHandler(BaseHandler):
                 logger.debug("go fmt validation passed.")
 
             # Run 'go vet' to check for potential issues
-            vet_process = subprocess.run(
-                ["go", "vet", temp_file],
-                capture_output=True,
-                text=True
-            )
+            vet_process = subprocess.run(["go", "vet", temp_file], capture_output=True, text=True)
 
             # Check the result of 'go vet'
             if vet_process.returncode != 0:
