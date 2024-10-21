@@ -315,21 +315,9 @@ def sanitize_filename(filename: str) -> str:
 def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
     """
     Generates a prompt for documentation generation.
-
-    Args:
-        file_name (str): The name of the file.
-        code_structure (dict): The code structure.
-        project_info (str): Information about the project.
-        style_guidelines (str): The style guidelines.
-        language (str): The programming language.
-        function_schema (dict): The function schema.
-
-    Returns:
-        str: The generated prompt.
     """
-    docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
     prompt = f"""
-    You are a code documentation generator.
+    You are an AI code documentation assistant.
 
     Project Info:
     {project_info}
@@ -337,17 +325,19 @@ def generate_documentation_prompt(file_name, code_structure, project_info, style
     Style Guidelines:
     {style_guidelines}
 
-    Use the {docstring_format} style for docstrings.
+    Use the {function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]} style for docstrings.
 
-    Given the following code structure of the {language} file '{file_name}', generate detailed documentation according to the specified schema.
+    Given the following code structure of the {language} file '{file_name}', generate detailed documentation according to the specified function schema.
 
     Code Structure:
     {json.dumps(code_structure, indent=2)}
 
-    Schema:
-    {json.dumps(function_schema["functions"][0]["parameters"], indent=2)}
+    Function Schema:
+    {json.dumps(function_schema["functions"][0], indent=2)}
 
-    Ensure that the output is a JSON object that follows the schema exactly, including all required fields.
+    Ensure that the output is a JSON object that adheres strictly to the schema, including all required fields. Specifically, include the 'summary' and 'changes_made' fields with appropriate content.
+
+    Do not include any additional text outside of the JSON object.
     """
     return textwrap.dedent(prompt).strip()
 
@@ -361,21 +351,14 @@ async def write_documentation_report(
 ) -> Optional[str]:
     """
     Writes a documentation report to a Markdown file.
-
-    Args:
-        documentation (Optional[dict]): The documentation data.
-        language (str): The programming language.
-        file_path (str): The path to the source file.
-        repo_root (str): The root directory of the repository.
-        output_dir (str): The directory to save the documentation file.
-
-    Returns:
-        Optional[str]: The content of the documentation report or None if an error occurs.
     """
     try:
         if not documentation:
             logger.warning(f"No documentation to write for '{file_path}'")
             return None
+
+        # Extract parameters from documentation
+        documentation_parameters = documentation.get('parameters', documentation)
 
         relative_path = os.path.relpath(file_path, repo_root)
         safe_file_name = sanitize_filename(relative_path.replace(os.sep, '_'))
@@ -386,21 +369,25 @@ async def write_documentation_report(
 
         # Generate and add badges
         badges = generate_all_badges(
-            complexity=documentation.get('complexity'),
-            halstead=documentation.get('halstead', {}),
-            mi=documentation.get('maintainability_index')
+            complexity=documentation_parameters.get('complexity'),
+            halstead=documentation_parameters.get('halstead', {}),
+            mi=documentation_parameters.get('maintainability_index')
         )
         documentation_content += badges + "\n\n"
 
-        # Generate Table of Contents placeholder (will be updated later)
-        documentation_content += "# Table of Contents\n\n"
+        # Add Summary and Description
+        summary = documentation_parameters.get('summary', '')
+        if summary:
+            documentation_content += f"## Summary\n\n{sanitize_text(summary)}\n\n"
 
-        # Add Summary
-        summary = generate_summary(documentation.get('variables', []), documentation.get('constants', []))
-        documentation_content += summary + "\n"
+        # Since 'description' is not in your schema, you might skip this or adjust accordingly.
+
+        # Add Variables and Constants Summary
+        variables_summary = generate_summary(documentation_parameters.get('variables', []), documentation_parameters.get('constants', []))
+        documentation_content += variables_summary + "\n"
 
         # Add Changes Made
-        changes_made = documentation.get('changes_made', [])
+        changes_made = documentation_parameters.get('changes_made', [])
         if changes_made:
             documentation_content += f"## Changes Made\n\n"
             for change in changes_made:
@@ -408,14 +395,14 @@ async def write_documentation_report(
             documentation_content += "\n"
 
         # Add Classes and Methods
-        classes = documentation.get('classes', [])
+        classes = documentation_parameters.get('classes', [])
         if classes:
             documentation_content += "## Classes\n\n"
             documentation_content += format_classes(classes)
             documentation_content += "\n"
 
         # Add Functions
-        functions = documentation.get('functions', [])
+        functions = documentation_parameters.get('functions', [])
         if functions:
             documentation_content += "## Functions\n\n"
             documentation_content += format_functions(functions)
@@ -428,8 +415,8 @@ async def write_documentation_report(
 
         # Generate Table of Contents
         toc = generate_table_of_contents(documentation_content)
-        # Replace the placeholder with the actual TOC
-        documentation_content = documentation_content.replace("# Table of Contents\n\n", f"# Table of Contents\n\n{toc}\n\n", 1)
+        # Insert Table of Contents after the file header
+        documentation_content = file_header + "# Table of Contents\n\n" + toc + "\n\n" + documentation_content[len(file_header):]
 
         # Create the output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
