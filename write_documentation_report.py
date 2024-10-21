@@ -13,35 +13,23 @@ import logging
 import sys
 from typing import Optional, Dict, Any, List
 
-# Import default thresholds from utils (or define them here if preferred)
-from utils import DEFAULT_COMPLEXITY_THRESHOLDS, DEFAULT_HALSTEAD_THRESHOLDS, DEFAULT_MAINTAINABILITY_THRESHOLDS
+# Import default thresholds and get_threshold function from utils
+from utils import (
+    DEFAULT_COMPLEXITY_THRESHOLDS,
+    DEFAULT_HALSTEAD_THRESHOLDS,
+    DEFAULT_MAINTAINABILITY_THRESHOLDS,
+    get_threshold  # Import get_threshold function
+)
 
 logger = logging.getLogger(__name__)
 
 if not logger.hasHandlers():
     handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter('%(asctime)s - %(name%s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
-def get_threshold(metric: str, key: str, default: int) -> int:
-    """
-    Retrieves the threshold value for a given metric and key from environment variables.
-
-    Args:
-        metric (str): The metric name.
-        key (str): The threshold key (e.g., 'low', 'medium', 'high').
-        default (int): The default value if the environment variable is not set or invalid.
-
-    Returns:
-        int: The threshold value.
-    """
-    try:
-        return int(os.getenv(f"{metric.upper()}_{key.upper()}_THRESHOLD", default))
-    except ValueError:
-        logger.error(f"Invalid environment variable for {metric.upper()}_{key.upper()}_THRESHOLD")
-        return default
 
 def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], logo: str = None) -> str:
     """
@@ -62,28 +50,51 @@ def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], l
     logo_part = f"&logo={logo}" if logo else ""
     return f"![{badge_label}](https://img.shields.io/badge/{badge_label}-{value:.2f}-{color}?style=flat-square{logo_part})"
 
-def generate_all_badges(complexity: Optional[int] = None, halstead: Optional[dict] = None, mi: Optional[float] = None,
-                       thresholds: Dict[str, Dict[str, int]] = None) -> str:
+
+def generate_all_badges(
+    complexity: Optional[int] = None,
+    halstead: Optional[dict] = None,
+    mi: Optional[float] = None
+) -> str:
     """
-    Generates badges for all metrics, using provided thresholds.
+    Generates badges for all metrics, using dynamic thresholds.
 
     Args:
         complexity (Optional[int]): The complexity value.
         halstead (Optional[dict]): The Halstead metrics.
         mi (Optional[float]): The maintainability index.
-        thresholds (Dict[str, Dict[str, int]], optional): The thresholds for badge generation. Defaults to None.
 
     Returns:
         str: A string containing all generated badges.
     """
-    if thresholds is None:
-        thresholds = {
-            "complexity": DEFAULT_COMPLEXITY_THRESHOLDS,
-            "halstead_volume": DEFAULT_HALSTEAD_THRESHOLDS["volume"],
-            "halstead_difficulty": DEFAULT_HALSTEAD_THRESHOLDS["difficulty"],
-            "halstead_effort": DEFAULT_HALSTEAD_THRESHOLDS["effort"],
-            "maintainability_index": DEFAULT_MAINTAINABILITY_THRESHOLDS,
-        }
+    # Fetch thresholds using get_threshold function
+    thresholds = {
+        "complexity": {
+            "low": get_threshold("complexity", "low", DEFAULT_COMPLEXITY_THRESHOLDS["low"]),
+            "medium": get_threshold("complexity", "medium", DEFAULT_COMPLEXITY_THRESHOLDS["medium"]),
+            "high": get_threshold("complexity", "high", DEFAULT_COMPLEXITY_THRESHOLDS["high"]),
+        },
+        "halstead_volume": {
+            "low": get_threshold("halstead_volume", "low", DEFAULT_HALSTEAD_THRESHOLDS["volume"]["low"]),
+            "medium": get_threshold("halstead_volume", "medium", DEFAULT_HALSTEAD_THRESHOLDS["volume"]["medium"]),
+            "high": get_threshold("halstead_volume", "high", DEFAULT_HALSTEAD_THRESHOLDS["volume"]["high"]),
+        },
+        "halstead_difficulty": {
+            "low": get_threshold("halstead_difficulty", "low", DEFAULT_HALSTEAD_THRESHOLDS["difficulty"]["low"]),
+            "medium": get_threshold("halstead_difficulty", "medium", DEFAULT_HALSTEAD_THRESHOLDS["difficulty"]["medium"]),
+            "high": get_threshold("halstead_difficulty", "high", DEFAULT_HALSTEAD_THRESHOLDS["difficulty"]["high"]),
+        },
+        "halstead_effort": {
+            "low": get_threshold("halstead_effort", "low", DEFAULT_HALSTEAD_THRESHOLDS["effort"]["low"]),
+            "medium": get_threshold("halstead_effort", "medium", DEFAULT_HALSTEAD_THRESHOLDS["effort"]["medium"]),
+            "high": get_threshold("halstead_effort", "high", DEFAULT_HALSTEAD_THRESHOLDS["effort"]["high"]),
+        },
+        "maintainability_index": {
+            "low": get_threshold("maintainability_index", "low", DEFAULT_MAINTAINABILITY_THRESHOLDS["low"]),
+            "medium": get_threshold("maintainability_index", "medium", DEFAULT_MAINTAINABILITY_THRESHOLDS["medium"]),
+            "high": get_threshold("maintainability_index", "high", DEFAULT_MAINTAINABILITY_THRESHOLDS["high"]),
+        },
+    }
 
     badges = []
 
@@ -100,6 +111,7 @@ def generate_all_badges(complexity: Optional[int] = None, halstead: Optional[dic
 
     return " ".join(badges)
 
+
 def format_table(headers: List[str], rows: List[List[str]]) -> str:
     """
     Formats a table in Markdown.
@@ -111,11 +123,17 @@ def format_table(headers: List[str], rows: List[List[str]]) -> str:
     Returns:
         str: The formatted Markdown table.
     """
+    # Sanitize headers
+    headers = [sanitize_text(header) for header in headers]
+
     table = "| " + " | ".join(headers) + " |\n"
     table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
     for row in rows:
-        table += "| " + " | ".join(row) + " |\n"
+        # Sanitize each cell
+        sanitized_row = [sanitize_text(cell) for cell in row]
+        table += "| " + " | ".join(sanitized_row) + " |\n"
     return table
+
 
 def truncate_description(description: str, max_length: int = 100) -> str:
     """
@@ -130,6 +148,7 @@ def truncate_description(description: str, max_length: int = 100) -> str:
     """
     return (description[:max_length] + '...') if len(description) > max_length else description
 
+
 def sanitize_text(text: str) -> str:
     """
     Sanitizes text for Markdown by escaping special characters.
@@ -140,10 +159,11 @@ def sanitize_text(text: str) -> str:
     Returns:
         str: The sanitized text.
     """
-    markdown_special_chars = ['*', '_', '`', '~', '<', '>', '#']
+    markdown_special_chars = ['\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|']
     for char in markdown_special_chars:
         text = text.replace(char, f"\\{char}")
-    return text.replace('|', '\\|').replace('\n', ' ').strip()
+    return text.replace('\n', ' ').strip()
+
 
 def generate_table_of_contents(content: str) -> str:
     """
@@ -166,48 +186,6 @@ def generate_table_of_contents(content: str) -> str:
             toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
     return "\n".join(toc)
 
-def format_halstead_metrics(halstead: Dict[str, Any]) -> str:
-    """
-    Formats Halstead metrics as badges.
-
-    Args:
-        halstead (Dict[str, Any]): The Halstead metrics.
-
-    Returns:
-        str: The formatted badges.
-    """
-    if not halstead:
-        return ''
-    volume = halstead.get('volume', 0)
-    difficulty = halstead.get('difficulty', 0)
-    effort = halstead.get('effort', 0)
-
-    volume_low, volume_medium = 100, 500
-    difficulty_low, difficulty_medium = 10, 20
-    effort_low, effort_medium = 500, 1000
-
-    volume_color = "green" if volume < volume_low else "yellow" if volume < volume_medium else "red"
-    difficulty_color = "green" if difficulty < difficulty_low else "yellow" if difficulty < difficulty_medium else "red"
-    effort_color = "green" if effort < effort_low else "yellow" if effort < effort_medium else "red"
-
-    metrics = f'![Halstead Volume](https://img.shields.io/badge/Halstead%20Volume-{volume}-{volume_color}.svg?style=flat-square)\n'
-    metrics += f'![Halstead Difficulty](https://img.shields.io/badge/Halstead%20Difficulty-{difficulty}-{difficulty_color}.svg?style=flat-square)\n'
-    metrics += f'![Halstead Effort](https://img.shields.io/badge/Halstead%20Effort-{effort}-{effort_color}.svg?style=flat-square)\n'
-    return metrics
-
-def format_maintainability_index(mi_score: float) -> str:
-    """
-    Formats the maintainability index as a badge.
-
-    Args:
-        mi_score (float): The maintainability index score.
-
-    Returns:
-        str: The formatted badge.
-    """
-    if mi_score is None:
-        return ''
-    return f'![Maintainability Index](https://img.shields.io/badge/Maintainability%20Index-{mi_score:.2f}-brightgreen.svg?style=flat-square)\n'
 
 def format_methods(methods: List[Dict[str, Any]]) -> str:
     """
@@ -225,11 +203,12 @@ def format_methods(methods: List[Dict[str, Any]]) -> str:
             method.get("name", "N/A"),
             str(method.get("complexity", 0)),
             str(method.get("async", False)),
-            sanitize_text(method.get("docstring", ""))
+            truncate_description(sanitize_text(method.get("docstring", "")))
         ]
         for method in methods
     ]
     return format_table(headers, rows)
+
 
 def format_classes(classes: List[Dict[str, Any]]) -> str:
     """
@@ -245,7 +224,7 @@ def format_classes(classes: List[Dict[str, Any]]) -> str:
     rows = [
         [
             cls.get("name", "N/A"),
-            sanitize_text(cls.get("docstring", ""))
+            truncate_description(sanitize_text(cls.get("docstring", "")))
         ]
         for cls in classes
     ]
@@ -259,6 +238,7 @@ def format_classes(classes: List[Dict[str, Any]]) -> str:
     
     return class_table + "\n\n" + "\n".join(method_tables)
 
+
 def format_functions(functions: List[Dict[str, Any]]) -> str:
     """
     Formats function information into a Markdown table.
@@ -267,19 +247,23 @@ def format_functions(functions: List[Dict[str, Any]]) -> str:
         functions (List[Dict[str, Any]]): The functions to format.
 
     Returns:
-        str: The formatted Markdown table.
+        str: The formatted Markdown table or a message if no functions are found.
     """
+    if not functions:
+        return "No functions found."
+
     headers = ["Function Name", "Complexity", "Async", "Docstring"]
     rows = [
         [
             func.get("name", "N/A"),
             str(func.get("complexity", 0)),
             str(func.get("async", False)),
-            sanitize_text(func.get("docstring", ""))
+            truncate_description(sanitize_text(func.get("docstring", "")))
         ]
         for func in functions
     ]
     return format_table(headers, rows)
+
 
 def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
     """
@@ -298,17 +282,22 @@ def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, 
     # Create tooltip content for variables
     var_tooltip = ""
     if total_vars > 0:
-        var_tooltip = "<br>".join([f"- {var.get('name', 'N/A')}" for var in variables])
-        total_vars = f'<span title="{var_tooltip}">{total_vars}</span>'
+        var_tooltip = "\n".join([f"- {sanitize_text(var.get('name', 'N/A'))}" for var in variables])
+        total_vars_display = f'<span title="{var_tooltip}">{total_vars}</span>'
+    else:
+        total_vars_display = str(total_vars)
 
     # Create tooltip content for constants
     const_tooltip = ""
     if total_consts > 0:
-        const_tooltip = "<br>".join([f"- {const.get('name', 'N/A')}" for const in constants])
-        total_consts = f'<span title="{const_tooltip}">{total_consts}</span>'
+        const_tooltip = "\n".join([f"- {sanitize_text(const.get('name', 'N/A'))}" for const in constants])
+        total_consts_display = f'<span title="{const_tooltip}">{total_consts}</span>'
+    else:
+        total_consts_display = str(total_consts)
 
-    summary = f"### **Summary**\n\n- **Total Variables:** {total_vars}\n- **Total Constants:** {total_consts}\n"
+    summary = f"### **Summary**\n\n- **Total Variables:** {total_vars_display}\n- **Total Constants:** {total_consts_display}\n"
     return summary
+
 
 def sanitize_filename(filename: str) -> str:
     """
@@ -321,6 +310,7 @@ def sanitize_filename(filename: str) -> str:
         str: The sanitized filename.
     """
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
+
 
 def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
     """
@@ -361,13 +351,13 @@ def generate_documentation_prompt(file_name, code_structure, project_info, style
     """
     return textwrap.dedent(prompt).strip()
 
+
 async def write_documentation_report(
     documentation: Optional[dict],
     language: str,
     file_path: str,
     repo_root: str,
-    output_dir: str,
-    thresholds: Dict[str, Dict[str, int]] = None
+    output_dir: str
 ) -> Optional[str]:
     """
     Writes a documentation report to a Markdown file.
@@ -378,7 +368,6 @@ async def write_documentation_report(
         file_path (str): The path to the source file.
         repo_root (str): The root directory of the repository.
         output_dir (str): The directory to save the documentation file.
-        thresholds (Dict[str, Dict[str, int]], optional): The thresholds for badge generation. Defaults to None.
 
     Returns:
         Optional[str]: The content of the documentation report or None if an error occurs.
@@ -399,11 +388,13 @@ async def write_documentation_report(
         badges = generate_all_badges(
             complexity=documentation.get('complexity'),
             halstead=documentation.get('halstead', {}),
-            mi=documentation.get('maintainability_index'),
-            thresholds=thresholds
+            mi=documentation.get('maintainability_index')
         )
         documentation_content += badges + "\n\n"
-        
+
+        # Generate Table of Contents placeholder (will be updated later)
+        documentation_content += "# Table of Contents\n\n"
+
         # Add Summary
         summary = generate_summary(documentation.get('variables', []), documentation.get('constants', []))
         documentation_content += summary + "\n"
@@ -437,7 +428,8 @@ async def write_documentation_report(
 
         # Generate Table of Contents
         toc = generate_table_of_contents(documentation_content)
-        documentation_content = "# Table of Contents\n\n" + toc + "\n\n" + documentation_content
+        # Replace the placeholder with the actual TOC
+        documentation_content = documentation_content.replace("# Table of Contents\n\n", f"# Table of Contents\n\n{toc}\n\n", 1)
 
         # Create the output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)

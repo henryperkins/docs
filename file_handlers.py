@@ -280,6 +280,7 @@ async def process_file(
             if not code_structure:
                 logger.warning(f"Could not extract code structure from '{file_path}'")
             else:
+                print(f"Code structure for {file_path}: {code_structure}")  # Debug print for code structure
                 logger.debug(f"Extracted code structure for '{file_path}': {code_structure}")
 
                 # Extract critical context information and add to ContextManager
@@ -313,6 +314,7 @@ async def process_file(
                     azure_endpoint=azure_endpoint,
                     azure_api_version=azure_api_version,
                 )
+                print(f"Documentation for {file_path}: {documentation}")  # Debug print for documentation
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
                 else:
@@ -343,11 +345,21 @@ async def process_file(
                         for method in cls.get("methods", []):
                             method_name = method["name"]
                             method["complexity"] = methods_complexity.get(method_name, 0)
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error during API request for '{file_path}': {e}", exc_info=True)
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decoding error for '{file_path}': {e}", exc_info=True)
+            return None
+        except KeyError as e:
+            logger.error(f"Key error when processing documentation for '{file_path}': {e}", exc_info=True)
+            return None
         except Exception as e:
             logger.error(
                 f"Error during code structure extraction or documentation generation for '{file_path}': {e}",
                 exc_info=True,
             )
+            return None
 
         new_content = content
 
@@ -380,7 +392,7 @@ async def process_file(
         return file_content
 
     except Exception as e:
-        logger.error(f"Error processing file '{file_path}': {e}", exc_info=True)
+        logger.error(f"Unexpected error processing '{file_path}': {e}", exc_info=True)
         return None
 
 

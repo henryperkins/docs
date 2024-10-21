@@ -36,7 +36,11 @@ logger = logging.getLogger(__name__)
 # ----------------------------
 # Constants
 # ----------------------------
-
+DEFAULT_COMPLEXITY_THRESHOLDS = {"low": 10, "medium": 20, "high": 30}
+DEFAULT_HALSTEAD_THRESHOLDS = {"volume": {"low": 100, "medium": 500, "high": 1000},
+                                "difficulty": {"low": 10, "medium": 20, "high": 30},
+                                "effort": {"low": 500, "medium": 1000, "high": 2000}}
+DEFAULT_MAINTAINABILITY_THRESHOLDS = {"low": 20, "medium": 60, "high": 80}
 DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea', 'scripts'}
 DEFAULT_EXCLUDED_FILES = {".DS_Store"}
 DEFAULT_SKIP_TYPES = {".json", ".md", ".txt", ".csv", ".lock"}
