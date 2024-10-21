@@ -52,7 +52,6 @@ def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], l
     badge_url = f"https://img.shields.io/badge/{badge_label}-{value_str}-{color}?style=flat-square{logo_part}"
     return f"![{metric_name}]({badge_url})"
 
-
 def generate_all_badges(
     complexity: Optional[int] = None,
     halstead: Optional[dict] = None,
@@ -104,15 +103,14 @@ def generate_all_badges(
         badges.append(generate_badge("Complexity", complexity, thresholds["complexity"], logo="codeClimate"))
 
     if halstead:
-        badges.append(generate_badge("Halstead Volume", halstead["volume"], thresholds["halstead_volume"], logo="stackOverflow"))
-        badges.append(generate_badge("Halstead Difficulty", halstead["difficulty"], thresholds["halstead_difficulty"], logo="codewars"))
-        badges.append(generate_badge("Halstead Effort", halstead["effort"], thresholds["halstead_effort"], logo="atlassian"))
+        badges.append(generate_badge("Halstead Volume", halstead.get("volume", 0), thresholds["halstead_volume"], logo="stackOverflow"))
+        badges.append(generate_badge("Halstead Difficulty", halstead.get("difficulty", 0), thresholds["halstead_difficulty"], logo="codewars"))
+        badges.append(generate_badge("Halstead Effort", halstead.get("effort", 0), thresholds["halstead_effort"], logo="atlassian"))
 
     if mi is not None:
         badges.append(generate_badge("Maintainability Index", mi, thresholds["maintainability_index"], logo="codeclimate"))
 
     return " ".join(badges)
-
 
 def format_table(headers: List[str], rows: List[List[str]]) -> str:
     """
@@ -137,6 +135,7 @@ def format_table(headers: List[str], rows: List[List[str]]) -> str:
     return table
 
 
+
 def truncate_description(description: str, max_length: int = 100) -> str:
     """
     Truncates a description to a maximum length.
@@ -148,12 +147,13 @@ def truncate_description(description: str, max_length: int = 100) -> str:
     Returns:
         str: The truncated description.
     """
+    if not description:
+        return ''
     return (description[:max_length] + '...') if len(description) > max_length else description
-
 
 def sanitize_text(text: str) -> str:
     """
-    Sanitizes text for Markdown by escaping special characters.
+    Sanitizes text for Markdown by escaping special characters and removing unwanted characters.
 
     Args:
         text (str): The text to sanitize.
@@ -161,11 +161,17 @@ def sanitize_text(text: str) -> str:
     Returns:
         str: The sanitized text.
     """
-    markdown_special_chars = ['\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|']
-    for char in markdown_special_chars:
-        text = text.replace(char, f"\\{char}")
-    return text.replace('\n', ' ').strip()
-
+    if not text:
+        return ''
+    # Escape backslash and pipe characters
+    text = text.replace('\\', '\\\\').replace('|', '\\|')
+    # Remove control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Remove any LaTeX commands or Math expressions
+    text = re.sub(r'\$.*?\$', '', text)
+    # Replace multiple spaces with a single space
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 
 def generate_table_of_contents(content: str) -> str:
     """
@@ -212,6 +218,7 @@ def format_methods(methods: List[Dict[str, Any]]) -> str:
     return format_table(headers, rows)
 
 
+
 def format_classes(classes: List[Dict[str, Any]]) -> str:
     """
     Formats class information into a Markdown table.
@@ -231,14 +238,16 @@ def format_classes(classes: List[Dict[str, Any]]) -> str:
         for cls in classes
     ]
     class_table = format_table(headers, rows)
-    
+
     method_tables = []
     for cls in classes:
         if cls.get("methods"):
-            method_tables.append(f"#### Methods for {cls.get('name')}\n")
+            method_tables.append(f"### Methods for {cls.get('name')}\n")
             method_tables.append(format_methods(cls.get("methods", [])))
-    
+
     return class_table + "\n\n" + "\n".join(method_tables)
+
+
 
 
 def format_functions(functions: List[Dict[str, Any]]) -> str:
@@ -284,7 +293,7 @@ def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, 
     # Create tooltip content for variables
     var_tooltip = ""
     if total_vars > 0:
-        var_tooltip = "\n".join([f"- {sanitize_text(var.get('name', 'N/A'))}" for var in variables])
+        var_tooltip = "; ".join([sanitize_text(var.get('name', 'N/A')) for var in variables])
         total_vars_display = f'<span title="{var_tooltip}">{total_vars}</span>'
     else:
         total_vars_display = str(total_vars)
@@ -292,14 +301,13 @@ def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, 
     # Create tooltip content for constants
     const_tooltip = ""
     if total_consts > 0:
-        const_tooltip = "\n".join([f"- {sanitize_text(const.get('name', 'N/A'))}" for const in constants])
+        const_tooltip = "; ".join([sanitize_text(const.get('name', 'N/A')) for const in constants])
         total_consts_display = f'<span title="{const_tooltip}">{total_consts}</span>'
     else:
         total_consts_display = str(total_consts)
 
-    summary = f"### **Summary**\n\n- **Total Variables:** {total_vars_display}\n- **Total Constants:** {total_consts_display}\n"
+    summary = f"## Summary\n\n- **Total Variables:** {total_vars_display}\n- **Total Constants:** {total_consts_display}\n"
     return summary
-
 
 def sanitize_filename(filename: str) -> str:
     """
@@ -351,23 +359,18 @@ async def write_documentation_report(
     repo_root: str,
     output_dir: str
 ) -> Optional[str]:
-    """
-    Writes a documentation report to a Markdown file.
-    """
     try:
         if not documentation:
             logger.warning(f"No documentation to write for '{file_path}'")
             return None
 
-        # Extract parameters from documentation
         documentation_parameters = documentation.get('parameters', documentation)
 
         relative_path = os.path.relpath(file_path, repo_root)
         safe_file_name = sanitize_filename(relative_path.replace(os.sep, '_'))
         doc_file_path = os.path.join(output_dir, f"{safe_file_name}.md")
 
-        file_header = f"# File: {relative_path}\n\n"
-        documentation_content = file_header
+        documentation_content = ""
 
         # Generate and add badges
         badges = generate_all_badges(
@@ -377,16 +380,10 @@ async def write_documentation_report(
         )
         documentation_content += badges + "\n\n"
 
-        # Add Summary and Description
+        # Add Summary (AI-generated summary)
         summary = documentation_parameters.get('summary', '')
         if summary:
             documentation_content += f"## Summary\n\n{sanitize_text(summary)}\n\n"
-
-        # Since 'description' is not in your schema, you might skip this or adjust accordingly.
-
-        # Add Variables and Constants Summary
-        variables_summary = generate_summary(documentation_parameters.get('variables', []), documentation_parameters.get('constants', []))
-        documentation_content += variables_summary + "\n"
 
         # Add Changes Made
         changes_made = documentation_parameters.get('changes_made', [])
@@ -395,6 +392,10 @@ async def write_documentation_report(
             for change in changes_made:
                 documentation_content += f"- {sanitize_text(change)}\n"
             documentation_content += "\n"
+
+        # Add Variables and Constants Summary
+        variables_summary = generate_summary(documentation_parameters.get('variables', []), documentation_parameters.get('constants', []))
+        documentation_content += variables_summary + "\n"
 
         # Add Classes and Methods
         classes = documentation_parameters.get('classes', [])
@@ -417,8 +418,7 @@ async def write_documentation_report(
 
         # Generate Table of Contents
         toc = generate_table_of_contents(documentation_content)
-        # Insert Table of Contents after the file header
-        documentation_content = file_header + "# Table of Contents\n\n" + toc + "\n\n" + documentation_content[len(file_header):]
+        documentation_content = f"# File: {relative_path}\n\n## Table of Contents\n\n{toc}\n\n" + documentation_content
 
         # Create the output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
