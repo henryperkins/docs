@@ -33,22 +33,24 @@ if not logger.hasHandlers():
 
 def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], logo: str = None) -> str:
     """
-    Generates a dynamic badge for a given metric.
+    Generates a dynamic badge URL for a given metric.
 
     Args:
         metric_name (str): The name of the metric.
         value (float): The metric value.
         thresholds (Dict[str, int]): The thresholds for determining badge color.
-        logo (str, optional): The logo to include in the badge. Defaults to None.
+        logo (str, optional): The logo to include in the badge.
 
     Returns:
         str: The Markdown string for the badge.
     """
     low, medium, high = thresholds["low"], thresholds["medium"], thresholds["high"]
-    color = "green" if value <= low else "yellow" if value <= medium else "red"
-    badge_label = metric_name.replace("_", " ").title()
+    color = "green" if value >= high else "yellow" if value >= medium else "red"
+    badge_label = metric_name.replace(" ", "%20")
+    value_str = f"{value:.2f}"
     logo_part = f"&logo={logo}" if logo else ""
-    return f"![{badge_label}](https://img.shields.io/badge/{badge_label}-{value:.2f}-{color}?style=flat-square{logo_part})"
+    badge_url = f"https://img.shields.io/badge/{badge_label}-{value_str}-{color}?style=flat-square{logo_part}"
+    return f"![{metric_name}]({badge_url})"
 
 
 def generate_all_badges(
