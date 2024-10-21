@@ -1,12 +1,7 @@
-"""
-cpp_handler.py
+### cpp_handler.py
 
-This module provides the `CppHandler` class, which is responsible for handling C++ code files.
-It includes methods for extracting the code structure, inserting docstrings/comments, and validating C++ code.
-The handler uses external C++ scripts for parsing and modifying the code.
-
-The `CppHandler` class extends the `BaseHandler` abstract class.
-"""
+```python
+# language_functions/cpp_handler.py
 
 import os
 import logging
@@ -18,40 +13,33 @@ from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
-
 class CppHandler(BaseHandler):
-    """Handler for the C++ programming language."""
+    """Handler for C++ language."""
 
     def __init__(self, function_schema: Dict[str, Any]):
         """
-        Initializes the `CppHandler` with a function schema.
-
+        Initializes the CppHandler with a function schema.
+    
         Args:
-            function_schema (Dict[str, Any]): The schema defining functions for documentation generation.
+            function_schema (Dict[str, Any]): The schema used for function operations.
         """
         self.function_schema = function_schema
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
-        """
-        Extracts the structure of the C++ code, analyzing classes, functions, and variables.
-
-        This method runs an external C++ parser executable that processes the code and outputs a JSON structure
-        representing the code elements.
+        """Extracts the structure of the C++ code, analyzing classes, functions, and variables.
 
         Args:
             code (str): The source code to analyze.
-            file_path (str, optional): The file path for code reference. Defaults to None.
+            file_path (str): The file path for code reference.
 
         Returns:
             Dict[str, Any]: A detailed structure of the code components.
         """
         try:
-            # Path to the C++ parser script
             script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'cpp_parser.cpp')
-            # The executable path after compilation
+            # Assuming cpp_parser.cpp is a compiled executable that accepts code via stdin and outputs JSON
+            # Compile the cpp_parser.cpp if not already compiled
             executable_path = os.path.splitext(script_path)[0]  # Remove .cpp extension
-
-            # Compile the C++ parser if not already compiled
             if not os.path.exists(executable_path):
                 logger.debug(f"Compiling C++ parser script: {script_path}")
                 compile_process = subprocess.run(
@@ -63,16 +51,12 @@ class CppHandler(BaseHandler):
                 if compile_process.returncode != 0:
                     logger.error(f"Compilation of cpp_parser.cpp failed: {compile_process.stderr}")
                     return {}
-
-            # Prepare input data for the parser
             input_data = {
                 "code": code,
                 "language": "cpp"
             }
             input_json = json.dumps(input_data)
             logger.debug(f"Running C++ parser executable: {executable_path}")
-
-            # Run the parser executable
             result = subprocess.run(
                 [executable_path],
                 input=input_json,
@@ -80,30 +64,21 @@ class CppHandler(BaseHandler):
                 text=True,
                 check=True
             )
-
-            # Parse the output JSON structure
             structure = json.loads(result.stdout)
             logger.debug(f"Extracted C++ code structure successfully from file: {file_path}")
             return structure
-
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running cpp_parser executable for file {file_path}: {e.stderr}")
             return {}
-
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing output from cpp_parser for file {file_path}: {e}")
             return {}
-
         except Exception as e:
             logger.error(f"Unexpected error extracting C++ structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """
-        Inserts comments into C++ code based on the provided documentation.
-
-        This method runs an external C++ inserter executable that processes the code and documentation
-        to insert comments.
+        """Inserts comments into C++ code based on the provided documentation.
 
         Args:
             code (str): The original source code.
@@ -114,12 +89,10 @@ class CppHandler(BaseHandler):
         """
         logger.debug("Inserting comments into C++ code.")
         try:
-            # Path to the C++ inserter script
             script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'cpp_inserter.cpp')
-            # The executable path after compilation
+            # Assuming cpp_inserter.cpp is a compiled executable that accepts code and documentation via stdin and outputs modified code
+            # Compile the cpp_inserter.cpp if not already compiled
             executable_path = os.path.splitext(script_path)[0]  # Remove .cpp extension
-
-            # Compile the C++ inserter if not already compiled
             if not os.path.exists(executable_path):
                 logger.debug(f"Compiling C++ inserter script: {script_path}")
                 compile_process = subprocess.run(
@@ -131,8 +104,6 @@ class CppHandler(BaseHandler):
                 if compile_process.returncode != 0:
                     logger.error(f"Compilation of cpp_inserter.cpp failed: {compile_process.stderr}")
                     return code
-
-            # Prepare input data for the inserter
             input_data = {
                 "code": code,
                 "documentation": documentation,
@@ -140,8 +111,6 @@ class CppHandler(BaseHandler):
             }
             input_json = json.dumps(input_data)
             logger.debug(f"Running C++ inserter executable: {executable_path}")
-
-            # Run the inserter executable
             result = subprocess.run(
                 [executable_path],
                 input=input_json,
@@ -149,26 +118,23 @@ class CppHandler(BaseHandler):
                 text=True,
                 check=True
             )
-
             modified_code = result.stdout
             logger.debug("Completed inserting comments into C++ code.")
             return modified_code
-
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running cpp_inserter executable: {e.stderr}")
             return code
-
         except Exception as e:
             logger.error(f"Unexpected error inserting comments into C++ code: {e}")
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates C++ code for syntax correctness using 'g++' with the '-fsyntax-only' flag.
+        Validates C++ code for syntax correctness using 'g++' with -fsyntax-only flag.
 
         Args:
             code (str): The C++ code to validate.
-            file_path (Optional[str]): The path to the C++ source file. Required for validation.
+            file_path (Optional[str]): The path to the C++ source file.
 
         Returns:
             bool: True if the code is valid, False otherwise.
@@ -192,21 +158,17 @@ class CppHandler(BaseHandler):
                 text=True
             )
 
-            # Check the result of the syntax check
             if process.returncode != 0:
                 logger.error(f"g++ syntax validation failed for {file_path}:\n{process.stderr}")
                 return False
             else:
                 logger.debug("g++ syntax validation passed.")
-
-            # Remove the temporary file
-            os.remove(temp_file)
+                os.remove(temp_file)
             return True
-
         except FileNotFoundError:
             logger.error("g++ is not installed or not found in PATH. Please install a C++ compiler.")
             return False
-
         except Exception as e:
             logger.error(f"Unexpected error during C++ code validation: {e}")
             return False
+````
