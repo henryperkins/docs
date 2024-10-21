@@ -63,7 +63,7 @@ class PythonHandler(BaseHandler):
             complexity_scores = cc_visit(code)
             function_complexity = {score.fullname: score.complexity for score in complexity_scores}
             total_complexity = sum(score.complexity for score in complexity_scores)
-            code_structure["complexity"] = total_complexity
+            code_structure["complexity"] = total_complexity  # Add this line
 
             mi_score = mi_visit(code, True)
             code_structure["maintainability_index"] = mi_score

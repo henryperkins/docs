@@ -314,7 +314,7 @@ async def process_file(
                     azure_endpoint=azure_endpoint,
                     azure_api_version=azure_api_version,
                 )
-                print(f"Documentation for {file_path}: {documentation}")  # Debug print for documentation
+                print(f"Documentation for {file_path}: {json.dumps(documentation, indent=2)}")
                 if not documentation:
                     logger.error(f"Failed to generate documentation for '{file_path}'.")
                 else:

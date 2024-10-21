@@ -103,14 +103,15 @@ def generate_all_badges(
         badges.append(generate_badge("Complexity", complexity, thresholds["complexity"], logo="codeClimate"))
 
     if halstead:
-        badges.append(generate_badge("Halstead Volume", halstead.get("volume", 0), thresholds["halstead_volume"], logo="stackOverflow"))
-        badges.append(generate_badge("Halstead Difficulty", halstead.get("difficulty", 0), thresholds["halstead_difficulty"], logo="codewars"))
-        badges.append(generate_badge("Halstead Effort", halstead.get("effort", 0), thresholds["halstead_effort"], logo="atlassian"))
+        badges.append(generate_badge("Halstead Volume", halstead["volume"], thresholds["halstead_volume"], logo="stackOverflow"))
+        badges.append(generate_badge("Halstead Difficulty", halstead["difficulty"], thresholds["halstead_difficulty"], logo="codewars"))
+        badges.append(generate_badge("Halstead Effort", halstead["effort"], thresholds["halstead_effort"], logo="atlassian"))
 
     if mi is not None:
         badges.append(generate_badge("Maintainability Index", mi, thresholds["maintainability_index"], logo="codeclimate"))
 
     return " ".join(badges)
+
 
 def format_table(headers: List[str], rows: List[List[str]]) -> str:
     """
@@ -135,7 +136,6 @@ def format_table(headers: List[str], rows: List[List[str]]) -> str:
     return table
 
 
-
 def truncate_description(description: str, max_length: int = 100) -> str:
     """
     Truncates a description to a maximum length.
@@ -150,6 +150,7 @@ def truncate_description(description: str, max_length: int = 100) -> str:
     if not description:
         return ''
     return (description[:max_length] + '...') if len(description) > max_length else description
+
 
 def sanitize_text(text: str) -> str:
     """
@@ -218,7 +219,6 @@ def format_methods(methods: List[Dict[str, Any]]) -> str:
     return format_table(headers, rows)
 
 
-
 def format_classes(classes: List[Dict[str, Any]]) -> str:
     """
     Formats class information into a Markdown table.
@@ -238,16 +238,14 @@ def format_classes(classes: List[Dict[str, Any]]) -> str:
         for cls in classes
     ]
     class_table = format_table(headers, rows)
-
+    
     method_tables = []
     for cls in classes:
         if cls.get("methods"):
-            method_tables.append(f"### Methods for {cls.get('name')}\n")
+            method_tables.append(f"#### Methods for {cls.get('name')}\n")
             method_tables.append(format_methods(cls.get("methods", [])))
-
+    
     return class_table + "\n\n" + "\n".join(method_tables)
-
-
 
 
 def format_functions(functions: List[Dict[str, Any]]) -> str:
@@ -275,7 +273,25 @@ def format_functions(functions: List[Dict[str, Any]]) -> str:
     ]
     return format_table(headers, rows)
 
+def extract_module_docstring(file_path: str) -> str:
+    """
+    Extracts the module docstring from a Python file.
 
+    Args:
+        file_path (str): Path to the Python source file.
+
+    Returns:
+        str: The module docstring if found, otherwise an empty string.
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            source = f.read()
+        module = ast.parse(source)
+        return ast.get_docstring(module) or ''
+    except Exception as e:
+        logger.error(f"Error extracting module docstring from '{file_path}': {e}", exc_info=True)
+        return ''
+    
 def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, Any]]) -> str:
     """
     Generates a summary with tooltips for variables and constants.
@@ -293,7 +309,7 @@ def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, 
     # Create tooltip content for variables
     var_tooltip = ""
     if total_vars > 0:
-        var_tooltip = "; ".join([sanitize_text(var.get('name', 'N/A')) for var in variables])
+        var_tooltip = "\n".join([f"- {sanitize_text(var.get('name', 'N/A'))}" for var in variables])
         total_vars_display = f'<span title="{var_tooltip}">{total_vars}</span>'
     else:
         total_vars_display = str(total_vars)
@@ -301,13 +317,14 @@ def generate_summary(variables: List[Dict[str, Any]], constants: List[Dict[str, 
     # Create tooltip content for constants
     const_tooltip = ""
     if total_consts > 0:
-        const_tooltip = "; ".join([sanitize_text(const.get('name', 'N/A')) for const in constants])
+        const_tooltip = "\n".join([f"- {sanitize_text(const.get('name', 'N/A'))}" for const in constants])
         total_consts_display = f'<span title="{const_tooltip}">{total_consts}</span>'
     else:
         total_consts_display = str(total_consts)
 
-    summary = f"## Summary\n\n- **Total Variables:** {total_vars_display}\n- **Total Constants:** {total_consts_display}\n"
+    summary = f"### **Summary**\n\n- **Total Variables:** {total_vars_display}\n- **Total Constants:** {total_consts_display}\n"
     return summary
+
 
 def sanitize_filename(filename: str) -> str:
     """
@@ -350,7 +367,6 @@ def generate_documentation_prompt(file_name, code_structure, project_info, style
     Do not include any additional text outside of the JSON object.
     """
     return textwrap.dedent(prompt).strip()
-
 
 async def write_documentation_report(
     documentation: Optional[dict],
