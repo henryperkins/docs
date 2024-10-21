@@ -37,6 +37,16 @@ logger = logging.getLogger(__name__)
 # Constants
 # ----------------------------
 
+DEFAULT_COMPLEXITY_THRESHOLDS = {"low": 10, "medium": 20, "high": 30}
+
+DEFAULT_HALSTEAD_THRESHOLDS = {
+    "volume": {"low": 100, "medium": 500, "high": 1000},
+    "difficulty": {"low": 10, "medium": 20, "high": 30},
+    "effort": {"low": 500, "medium": 1000, "high": 2000}
+}
+
+DEFAULT_MAINTAINABILITY_THRESHOLDS = {"low": 50, "medium": 70, "high": 85}
+
 DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea', 'scripts'}
 DEFAULT_EXCLUDED_FILES = {".DS_Store"}
 DEFAULT_SKIP_TYPES = {".json", ".md", ".txt", ".csv", ".lock"}
@@ -89,6 +99,24 @@ def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     logger.debug(f"Extension '{ext}' is valid: {is_valid}")
     return is_valid
 
+def get_threshold(metric: str, key: str, default: int) -> int:
+    """
+    Retrieves the threshold value for a given metric and key from environment variables.
+
+    Args:
+        metric (str): The metric name.
+        key (str): The threshold key (e.g., 'low', 'medium', 'high').
+        default (int): The default value if the environment variable is not set or invalid.
+
+    Returns:
+        int: The threshold value.
+    """
+    try:
+        return int(os.getenv(f"{metric.upper()}_{key.upper()}_THRESHOLD", default))
+    except ValueError:
+        logger.error(f"Invalid environment variable for {metric.upper()}_{key.upper()}_THRESHOLD")
+        return default
+    
 def is_binary(file_path: str) -> bool:
     """
     Checks if a file is binary.
