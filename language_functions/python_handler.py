@@ -362,7 +362,7 @@ class PythonHandler(BaseHandler):
         Returns:
             str: The formatted docstring.
         """
-        docstring = f'"""{doc.get("docstring", "")}\n\n'
+        docstring = f'{doc.get("docstring", "")}\n\n'
 
         arguments = doc.get("arguments", [])
         if arguments:
@@ -375,11 +375,7 @@ class PythonHandler(BaseHandler):
 
                 docstring += f"    {arg_name} ({arg_type}): {arg_description}"
                 if default_value is not None:
-                    try:
-                        default_value_str = repr(default_value)
-                        docstring += f" (Default: {default_value_str})"
-                    except Exception as e:
-                        logger.warning(f"Error converting default value to string: {e}")
+                    docstring += f" (Default: {default_value})"
                 docstring += "\n"
 
         return_type = doc.get("return_type")
@@ -387,8 +383,7 @@ class PythonHandler(BaseHandler):
         if return_type:
             docstring += f"\nReturns:\n    {return_type}: {return_description}\n"
 
-        docstring += '"""'
-        return docstring
+        return docstring.strip()
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
