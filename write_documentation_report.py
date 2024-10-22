@@ -327,8 +327,9 @@ def sanitize_filename(filename: str) -> str:
     Returns:
         str: The sanitized filename.
     """
-    return re.sub(r'[<>:"/\\|?*]', '_', filename)
-
+    # Replace invalid characters with underscores
+    invalid_chars = r'<>:"/\\|?*'
+    return ''.join('_' if c in invalid_chars else c for c in filename)
 
 def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
     """
@@ -445,91 +446,101 @@ async def write_documentation_report(
     repo_root: str,
     output_dir: str
 ) -> Optional[str]:
-    """
-    Writes a comprehensive documentation report to a Markdown file.
-
-    Args:
-        documentation (Optional[dict]): The documentation data.
-        language (str): The programming language.
-        file_path (str): The path to the source file.
-        repo_root (str): The root directory of the repository.
-        output_dir (str): The directory to save the documentation file.
-
-    Returns:
-        Optional[str]: The content of the documentation report or None if an error occurs.
-    """
     try:
         if not documentation:
             logger.warning(f"No documentation to write for '{file_path}'")
             return None
 
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create documentation directory '{output_dir}': {e}")
+            return None
+
         relative_path = os.path.relpath(file_path, repo_root)
-        safe_file_name = sanitize_filename(relative_path.replace(os.sep, '_'))
-        doc_file_path = os.path.join(output_dir, f"{safe_file_name}.md")
+        safe_file_name = sanitize_filename(os.path.basename(relative_path))
+        doc_file_path = os.path.join(output_dir, safe_file_name + '.md')
+
+        # Read the source code
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_code = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read source file '{file_path}': {e}")
+            source_code = "Failed to read source code"
 
         # Start building the Markdown content
-        content = f"# File: {relative_path}\n\n"
+        sections = []
 
-        # Add badges
-        complexity_badge = generate_badge("Complexity", documentation.get('complexity', 0), DEFAULT_COMPLEXITY_THRESHOLDS)
-        halstead_volume_badge = generate_badge("Halstead Volume", documentation.get('halstead', {}).get('volume', 0), DEFAULT_HALSTEAD_THRESHOLDS['volume'])
-        maintainability_badge = generate_badge("Maintainability Index", documentation.get('maintainability_index', 0), DEFAULT_MAINTAINABILITY_THRESHOLDS)
-        content += f"{complexity_badge} {halstead_volume_badge} {maintainability_badge}\n\n"
+        # File header and badges
+        sections.append(f"# {relative_path}")
+        
+        badges = [
+            generate_badge("Complexity", documentation.get('complexity', 0), DEFAULT_COMPLEXITY_THRESHOLDS),
+            generate_badge("Halstead Volume", documentation.get('halstead', {}).get('volume', 0), DEFAULT_HALSTEAD_THRESHOLDS['volume']),
+            generate_badge("Maintainability Index", documentation.get('maintainability_index', 0), DEFAULT_MAINTAINABILITY_THRESHOLDS)
+        ]
+        sections.append(" ".join(badges))
 
-        # Add summary
-        content += f"## Summary\n\n{documentation.get('summary', 'No summary available.')}\n\n"
+        # Source Code (at the top, right after badges)
+        sections.append("## Source Code")
+        sections.append(f"```{language}\n{source_code}\n```")
 
-        # Add recent changes
+        # Summary
+        sections.append("## Summary")
+        sections.append(documentation.get('summary', 'No summary available.'))
+
+        # Recent Changes
         changes = documentation.get('changes_made', [])
         if changes:
-            content += "## Recent Changes\n\n"
-            for change in changes:
-                content += f"- {change}\n"
-            content += "\n"
+            sections.append("## Recent Changes")
+            sections.append("\n".join(f"- {change}" for change in changes))
 
-        # Add functions table
+        # Functions
         functions = documentation.get('functions', [])
         if functions:
-            content += "## Functions\n\n"
-            content += "| Name | Async | Complexity | Arguments | Description |\n"
-            content += "|------|-------|------------|-----------|-------------|\n"
+            sections.append("## Functions")
+            table = ["| Name | Async | Complexity | Arguments | Description |",
+                    "|------|-------|------------|-----------|-------------|"]
             for func in functions:
                 name = func.get('name', 'N/A')
                 is_async = 'Yes' if func.get('async', False) else 'No'
                 complexity = func.get('complexity', 'N/A')
                 args = ', '.join(func.get('args', []))
-                description = func.get('docstring', 'No description').split('\n')[0]  # First line of docstring
-                content += f"| {name} | {is_async} | {complexity} | {args} | {description} |\n"
-            content += "\n"
+                description = func.get('docstring', 'No description').split('\n')[0]
+                table.append(f"| {name} | {is_async} | {complexity} | {args} | {description} |")
+            sections.append("\n".join(table))
 
-        # Add classes and methods tables
+        # Classes
         classes = documentation.get('classes', [])
         if classes:
-            content += "## Classes\n\n"
+            sections.append("## Classes")
             for cls in classes:
                 class_name = cls.get('name', 'N/A')
-                class_description = cls.get('docstring', 'No description').split('\n')[0]  # First line of docstring
-                content += f"### {class_name}\n\n{class_description}\n\n"
+                class_description = cls.get('docstring', 'No description').split('\n')[0]
+                sections.append(f"### {class_name}")
+                sections.append(class_description)
+                
                 methods = cls.get('methods', [])
                 if methods:
-                    content += "| Method | Async | Type | Complexity | Arguments | Description |\n"
-                    content += "|--------|-------|------|------------|-----------|-------------|\n"
+                    table = ["| Method | Async | Type | Complexity | Arguments | Description |",
+                            "|--------|-------|------|------------|-----------|-------------|"]
                     for method in methods:
                         name = method.get('name', 'N/A')
                         is_async = 'Yes' if method.get('async', False) else 'No'
                         method_type = method.get('type', 'N/A')
                         complexity = method.get('complexity', 'N/A')
                         args = ', '.join(method.get('args', []))
-                        description = method.get('docstring', 'No description').split('\n')[0]  # First line of docstring
-                        content += f"| {name} | {is_async} | {method_type} | {complexity} | {args} | {description} |\n"
-                content += "\n"
+                        description = method.get('docstring', 'No description').split('\n')[0]
+                        table.append(f"| {name} | {is_async} | {method_type} | {complexity} | {args} | {description} |")
+                    sections.append("\n".join(table))
 
-        # Add variables table
+        # Variables
         variables = documentation.get('variables', [])
         if variables:
-            content += "## Variables\n\n"
-            content += "| Name | Type | Description | File | Line | Example | References |\n"
-            content += "|------|------|-------------|------|------|---------|------------|\n"
+            sections.append("## Variables")
+            table = ["| Name | Type | Description | File | Line | Example | References |",
+                    "|------|------|-------------|------|------|---------|------------|"]
             for var in variables:
                 name = var.get('name', 'N/A')
                 var_type = var.get('type', 'N/A')
@@ -538,15 +549,15 @@ async def write_documentation_report(
                 line = var.get('line', 'N/A')
                 example = var.get('example', 'N/A')
                 references = var.get('references', 'N/A')
-                content += f"| {name} | {var_type} | {description} | {file} | {line} | {example} | {references} |\n"
-            content += "\n"
+                table.append(f"| {name} | {var_type} | {description} | {file} | {line} | {example} | {references} |")
+            sections.append("\n".join(table))
 
-        # Add constants table
+        # Constants
         constants = documentation.get('constants', [])
         if constants:
-            content += "## Constants\n\n"
-            content += "| Name | Type | Description | File | Line | Example | References |\n"
-            content += "|------|------|-------------|------|------|---------|------------|\n"
+            sections.append("## Constants")
+            table = ["| Name | Type | Description | File | Line | Example | References |",
+                    "|------|------|-------------|------|------|---------|------------|"]
             for const in constants:
                 name = const.get('name', 'N/A')
                 const_type = const.get('type', 'N/A')
@@ -555,32 +566,41 @@ async def write_documentation_report(
                 line = const.get('line', 'N/A')
                 example = const.get('example', 'N/A')
                 references = const.get('references', 'N/A')
-                content += f"| {name} | {const_type} | {description} | {file} | {line} | {example} | {references} |\n"
-            content += "\n"
+                table.append(f"| {name} | {const_type} | {description} | {file} | {line} | {example} | {references} |")
+            sections.append("\n".join(table))
 
-        # Add Halstead metrics
+        # Metrics
         halstead = documentation.get('halstead', {})
         if halstead:
-            content += "## Halstead Metrics\n\n"
-            content += f"- Volume: {halstead.get('volume', 'N/A')}\n"
-            content += f"- Difficulty: {halstead.get('difficulty', 'N/A')}\n"
-            content += f"- Effort: {halstead.get('effort', 'N/A')}\n\n"
+            sections.append("## Halstead Metrics")
+            metrics = [
+                f"- Volume: {halstead.get('volume', 'N/A')}",
+                f"- Difficulty: {halstead.get('difficulty', 'N/A')}",
+                f"- Effort: {halstead.get('effort', 'N/A')}"
+            ]
+            sections.append("\n".join(metrics))
 
-        # Add Maintainability Index
         maintainability_index = documentation.get('maintainability_index')
         if maintainability_index is not None:
-            content += f"## Maintainability Index\n\n{maintainability_index}\n\n"
+            sections.append("## Maintainability Index")
+            sections.append(str(maintainability_index))
 
-        # Generate and add Table of Contents
+        # Join all sections with double newlines for better readability
+        content = "\n\n".join(sections)
+
+        # Generate and add Table of Contents at the start
         toc = generate_table_of_contents(content)
         content = f"# Table of Contents\n\n{toc}\n\n{content}"
 
-        # Write content to file
-        async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
-            await f.write(content)
-        logger.info(f"Documentation written to '{doc_file_path}' successfully.")
-        
-        return content
+        # Write the file
+        try:
+            async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
+                await f.write(content)
+            logger.info(f"Documentation written to '{doc_file_path}' successfully.")
+            return content
+        except Exception as e:
+            logger.error(f"Error writing to file '{doc_file_path}': {e}")
+            return None
 
     except Exception as e:
         logger.error(f"Error writing documentation report for '{file_path}': {e}", exc_info=True)

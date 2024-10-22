@@ -11,8 +11,9 @@ import aiofiles
 import aiohttp
 import json
 import asyncio
+import jsonschema
 from typing import Set, List, Dict, Any, Optional
-
+from jsonschema import validate, ValidationError  # Add these imports
 from language_functions import get_handler
 from language_functions.base_handler import BaseHandler
 from utils import (
@@ -92,6 +93,7 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
                 logger.info(f"Restored original file from backup for '{file_path}'.")
             except Exception as restore_error:
                 logger.error(f"Failed to restore backup for '{file_path}': {restore_error}", exc_info=True)
+                
 
 def validate_ai_response(response: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -107,12 +109,11 @@ def validate_ai_response(response: Dict[str, Any], schema: Dict[str, Any]) -> Di
     try:
         validate(instance=response, schema=schema)
         return response
-    except jsonschema.exceptions.ValidationError as validation_error:
+    except ValidationError as validation_error:
         logger.error(f"AI response does not match schema: {validation_error}")
         # Here you could implement logic to try to correct the response
         # For now, we'll just return None to indicate failure
         return None
-    
 
 async def fetch_documentation_rest(
     session: aiohttp.ClientSession,
@@ -127,20 +128,8 @@ async def fetch_documentation_rest(
 ) -> Optional[Dict[str, Any]]:
     """
     Fetches documentation from Azure OpenAI API using the provided prompt and schema.
-
-    Args:
-        session (aiohttp.ClientSession): The HTTP session for making requests.
-        prompt (str): The prompt to send to the API.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API requests.
-        deployment_name (str): The Azure OpenAI deployment name.
-        function_schema (Dict[str, Any]): The schema defining functions.
-        azure_api_key (str): The API key for Azure OpenAI.
-        azure_endpoint (str): The endpoint URL for the Azure OpenAI service.
-        azure_api_version (str): The API version to use.
-        retry (int, optional): Number of retry attempts. Defaults to 3.
-
-    Returns:
-        Optional[Dict[str, Any]]: The documentation data if successful, None otherwise.
+    
+    ... (rest of the docstring)
     """
     logger.debug(f"Fetching documentation using REST API for deployment: {deployment_name}")
 
@@ -150,7 +139,6 @@ async def fetch_documentation_rest(
         "api-key": azure_api_key,
     }
 
-    # Define the payload with the required parameters
     payload = {
         "messages": [{"role": "user", "content": prompt}],
         "functions": function_schema.get("functions", []),

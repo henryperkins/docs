@@ -39,13 +39,22 @@ def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
             - total_operands: Total number of operands
     """
     try:
-        halstead_visitor = h_visit(code)
+        # Get the metrics from radon
+        halstead_visit = h_visit(code)
         
-        # Extract basic metrics
-        h1 = len(halstead_visitor.operators)  # distinct operators
-        h2 = len(halstead_visitor.operands)   # distinct operands
-        N1 = sum(halstead_visitor.operators.values())  # total operators
-        N2 = sum(halstead_visitor.operands.values())   # total operands
+        # The h_visit() function returns a list of HalsteadVisitor objects
+        # We'll take the first one (module level) if available
+        if not halstead_visit:
+            raise ValueError("No Halstead metrics available")
+            
+        # Get the first visitor
+        visitor = halstead_visit[0]
+        
+        # Access the h1, h2, N1, N2 properties directly
+        h1 = visitor.h1  # distinct operators
+        h2 = visitor.h2  # distinct operands
+        N1 = visitor.N1  # total operators
+        N2 = visitor.N2  # total operands
         
         # Calculate derived metrics
         vocabulary = h1 + h2
@@ -73,9 +82,7 @@ def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
             "distinct_operators": h1,
             "distinct_operands": h2,
             "total_operators": N1,
-            "total_operands": N2,
-            "operator_counts": dict(halstead_visitor.operators),
-            "operand_counts": dict(halstead_visitor.operands)
+            "total_operands": N2
         }
     except Exception as e:
         logger.error(f"Error calculating Halstead metrics: {e}")
@@ -88,10 +95,9 @@ def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
             "distinct_operators": 0,
             "distinct_operands": 0,
             "total_operators": 0,
-            "total_operands": 0,
-            "operator_counts": {},
-            "operand_counts": {}
+            "total_operands": 0
         }
+
 
 def calculate_complexity_metrics(code: str) -> Tuple[Dict[str, int], int]:
     """
@@ -133,13 +139,23 @@ def calculate_maintainability_index(code: str) -> Optional[float]:
 def calculate_all_metrics(code: str) -> Dict[str, Any]:
     """
     Calculates all available metrics for the given code.
+
+    Args:
+        code (str): The source code to analyze.
+
+    Returns:
+        Dict[str, Any]: Dictionary containing all calculated metrics:
+            - halstead: Halstead complexity metrics
+            - complexity: Cyclomatic complexity metrics
+            - maintainability_index: Maintainability index score
+            - function_complexity: Individual function complexity scores
     """
     metrics = {}
     
-    # Calculate Halstead metrics using the new safe calculator
-    metrics["halstead"] = calculate_halstead_metrics_safe(code)
+    # Calculate Halstead metrics
+    metrics["halstead"] = calculate_halstead_metrics(code)
     
-    # Calculate other metrics (keeping existing functionality)
+    # Calculate complexity metrics
     function_complexity, total_complexity = calculate_complexity_metrics(code)
     metrics["complexity"] = total_complexity
     metrics["function_complexity"] = function_complexity
@@ -148,39 +164,3 @@ def calculate_all_metrics(code: str) -> Dict[str, Any]:
     metrics["maintainability_index"] = calculate_maintainability_index(code)
     
     return metrics
-
-def get_complexity_level(complexity: int) -> str:
-    """
-    Determines the complexity level based on the complexity score.
-
-    Args:
-        complexity (int): The complexity score to evaluate.
-
-    Returns:
-        str: Complexity level ('Low', 'Moderate', 'High', or 'Very High').
-    """
-    if complexity <= 5:
-        return "Low"
-    elif complexity <= 10:
-        return "Moderate"
-    elif complexity <= 20:
-        return "High"
-    else:
-        return "Very High"
-
-def get_maintainability_level(mi_score: float) -> str:
-    """
-    Determines the maintainability level based on the maintainability index score.
-
-    Args:
-        mi_score (float): The maintainability index score to evaluate.
-
-    Returns:
-        str: Maintainability level ('Low', 'Moderate', or 'High').
-    """
-    if mi_score < 65:
-        return "Low"
-    elif mi_score < 85:
-        return "Moderate"
-    else:
-        return "High"
