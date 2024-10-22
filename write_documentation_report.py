@@ -332,7 +332,7 @@ def sanitize_filename(filename: str) -> str:
 
 def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
     """
-    Generates a prompt for documentation generation.
+    Generates a prompt for documentation generation that is compatible with the provided schema.
 
     Args:
         file_name (str): The name of the file.
@@ -346,9 +346,10 @@ def generate_documentation_prompt(file_name, code_structure, project_info, style
         str: The generated prompt.
     """
     docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
+    
     prompt = f"""
-    You are a code documentation generator.
-
+    You are a code documentation generator. Your task is to generate documentation for the following {language} file: '{file_name}'.
+    
     Project Info:
     {project_info}
 
@@ -357,15 +358,83 @@ def generate_documentation_prompt(file_name, code_structure, project_info, style
 
     Use the {docstring_format} style for docstrings.
 
-    Given the following code structure of the {language} file '{file_name}', generate detailed documentation according to the specified schema.
+    The documentation should strictly follow this schema:
+    {{
+        "docstring_format": "{docstring_format}",
+        "summary": "A detailed summary of the file.",
+        "changes_made": ["List of changes made"],
+        "functions": [
+            {{
+                "name": "Function name",
+                "docstring": "Detailed description in {docstring_format} style",
+                "args": ["List of argument names"],
+                "async": true/false,
+                "complexity": integer
+            }}
+        ],
+        "classes": [
+            {{
+                "name": "Class name",
+                "docstring": "Detailed description in {docstring_format} style",
+                "methods": [
+                    {{
+                        "name": "Method name",
+                        "docstring": "Detailed description in {docstring_format} style",
+                        "args": ["List of argument names"],
+                        "async": true/false,
+                        "type": "instance/class/static",
+                        "complexity": integer
+                    }}
+                ]
+            }}
+        ],
+        "halstead": {{
+            "volume": number,
+            "difficulty": number,
+            "effort": number
+        }},
+        "maintainability_index": number,
+        "variables": [
+            {{
+                "name": "Variable name",
+                "type": "Inferred data type",
+                "description": "Description of the variable",
+                "file": "File name",
+                "line": integer,
+                "link": "Link to definition",
+                "example": "Example usage",
+                "references": "References to the variable"
+            }}
+        ],
+        "constants": [
+            {{
+                "name": "Constant name",
+                "type": "Inferred data type",
+                "description": "Description of the constant",
+                "file": "File name",
+                "line": integer,
+                "link": "Link to definition",
+                "example": "Example usage",
+                "references": "References to the constant"
+            }}
+        ]
+    }}
 
-    Code Structure:
+    Ensure that all required fields are included and properly formatted according to the schema.
+
+    Given the following code structure:
     {json.dumps(code_structure, indent=2)}
 
-    Schema:
-    {json.dumps(function_schema["functions"][0]["parameters"], indent=2)}
+    Generate detailed documentation that strictly follows the provided schema. Include the following:
+    1. A comprehensive summary of the file's purpose and functionality.
+    2. A list of recent changes or modifications made to the file.
+    3. Detailed documentation for all functions, including their arguments, return types, and whether they are asynchronous.
+    4. Comprehensive documentation for all classes and their methods, including inheritance information if applicable.
+    5. Information about all variables and constants, including their types, descriptions, and usage examples.
+    6. Accurate Halstead metrics (volume, difficulty, and effort) for the entire file.
+    7. The maintainability index of the file.
 
-    Ensure that the output is a JSON object that follows the schema exactly, including all required fields.
+    Ensure that all docstrings follow the {docstring_format} format and provide clear, concise, and informative descriptions.
     """
     return textwrap.dedent(prompt).strip()
 
@@ -377,7 +446,7 @@ async def write_documentation_report(
     output_dir: str
 ) -> Optional[str]:
     """
-    Writes a documentation report to a Markdown file.
+    Writes a comprehensive documentation report to a Markdown file.
 
     Args:
         documentation (Optional[dict]): The documentation data.
@@ -398,63 +467,120 @@ async def write_documentation_report(
         safe_file_name = sanitize_filename(relative_path.replace(os.sep, '_'))
         doc_file_path = os.path.join(output_dir, f"{safe_file_name}.md")
 
-        file_header = f"# File: {relative_path}\n\n"
-        documentation_content = file_header
+        # Start building the Markdown content
+        content = f"# File: {relative_path}\n\n"
 
-        # Generate and add badges
-        badges = generate_all_badges(
-            complexity=documentation.get('complexity'),
-            halstead=documentation.get('halstead', {}),
-            mi=documentation.get('maintainability_index')
-        )
-        documentation_content += badges + "\n\n"
+        # Add badges
+        complexity_badge = generate_badge("Complexity", documentation.get('complexity', 0), DEFAULT_COMPLEXITY_THRESHOLDS)
+        halstead_volume_badge = generate_badge("Halstead Volume", documentation.get('halstead', {}).get('volume', 0), DEFAULT_HALSTEAD_THRESHOLDS['volume'])
+        maintainability_badge = generate_badge("Maintainability Index", documentation.get('maintainability_index', 0), DEFAULT_MAINTAINABILITY_THRESHOLDS)
+        content += f"{complexity_badge} {halstead_volume_badge} {maintainability_badge}\n\n"
 
-        # Generate Table of Contents placeholder (will be updated later)
-        documentation_content += "# Table of Contents\n\n"
+        # Add summary
+        content += f"## Summary\n\n{documentation.get('summary', 'No summary available.')}\n\n"
 
-        # Add Summary
-        summary = generate_summary(documentation.get('variables', []), documentation.get('constants', []))
-        documentation_content += summary + "\n"
+        # Add recent changes
+        changes = documentation.get('changes_made', [])
+        if changes:
+            content += "## Recent Changes\n\n"
+            for change in changes:
+                content += f"- {change}\n"
+            content += "\n"
 
-        # Add Changes Made
-        changes_made = documentation.get('changes_made', [])
-        if changes_made:
-            documentation_content += f"## Changes Made\n\n"
-            for change in changes_made:
-                documentation_content += f"- {sanitize_text(change)}\n"
-            documentation_content += "\n"
-
-        # Add Classes and Methods
-        classes = documentation.get('classes', [])
-        if classes:
-            documentation_content += "## Classes\n\n"
-            documentation_content += format_classes(classes)
-            documentation_content += "\n"
-
-        # Add Functions
+        # Add functions table
         functions = documentation.get('functions', [])
         if functions:
-            documentation_content += "## Functions\n\n"
-            documentation_content += format_functions(functions)
-            documentation_content += "\n"
+            content += "## Functions\n\n"
+            content += "| Name | Async | Complexity | Arguments | Description |\n"
+            content += "|------|-------|------------|-----------|-------------|\n"
+            for func in functions:
+                name = func.get('name', 'N/A')
+                is_async = 'Yes' if func.get('async', False) else 'No'
+                complexity = func.get('complexity', 'N/A')
+                args = ', '.join(func.get('args', []))
+                description = func.get('docstring', 'No description').split('\n')[0]  # First line of docstring
+                content += f"| {name} | {is_async} | {complexity} | {args} | {description} |\n"
+            content += "\n"
 
-        # Add Source Code
-        async with aiofiles.open(file_path, 'r', encoding='utf-8') as file:
-            source_code = await file.read()
-        documentation_content += f"## Source Code\n\n```{language}\n{source_code}\n```\n"
+        # Add classes and methods tables
+        classes = documentation.get('classes', [])
+        if classes:
+            content += "## Classes\n\n"
+            for cls in classes:
+                class_name = cls.get('name', 'N/A')
+                class_description = cls.get('docstring', 'No description').split('\n')[0]  # First line of docstring
+                content += f"### {class_name}\n\n{class_description}\n\n"
+                methods = cls.get('methods', [])
+                if methods:
+                    content += "| Method | Async | Type | Complexity | Arguments | Description |\n"
+                    content += "|--------|-------|------|------------|-----------|-------------|\n"
+                    for method in methods:
+                        name = method.get('name', 'N/A')
+                        is_async = 'Yes' if method.get('async', False) else 'No'
+                        method_type = method.get('type', 'N/A')
+                        complexity = method.get('complexity', 'N/A')
+                        args = ', '.join(method.get('args', []))
+                        description = method.get('docstring', 'No description').split('\n')[0]  # First line of docstring
+                        content += f"| {name} | {is_async} | {method_type} | {complexity} | {args} | {description} |\n"
+                content += "\n"
 
-        # Generate Table of Contents
-        toc = generate_table_of_contents(documentation_content)
-        # Replace the placeholder with the actual TOC
-        documentation_content = documentation_content.replace("# Table of Contents\n\n", f"# Table of Contents\n\n{toc}\n\n", 1)
+        # Add variables table
+        variables = documentation.get('variables', [])
+        if variables:
+            content += "## Variables\n\n"
+            content += "| Name | Type | Description | File | Line | Example | References |\n"
+            content += "|------|------|-------------|------|------|---------|------------|\n"
+            for var in variables:
+                name = var.get('name', 'N/A')
+                var_type = var.get('type', 'N/A')
+                description = var.get('description', 'No description')
+                file = var.get('file', 'N/A')
+                line = var.get('line', 'N/A')
+                example = var.get('example', 'N/A')
+                references = var.get('references', 'N/A')
+                content += f"| {name} | {var_type} | {description} | {file} | {line} | {example} | {references} |\n"
+            content += "\n"
 
-        # Create the output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
+        # Add constants table
+        constants = documentation.get('constants', [])
+        if constants:
+            content += "## Constants\n\n"
+            content += "| Name | Type | Description | File | Line | Example | References |\n"
+            content += "|------|------|-------------|------|------|---------|------------|\n"
+            for const in constants:
+                name = const.get('name', 'N/A')
+                const_type = const.get('type', 'N/A')
+                description = const.get('description', 'No description')
+                file = const.get('file', 'N/A')
+                line = const.get('line', 'N/A')
+                example = const.get('example', 'N/A')
+                references = const.get('references', 'N/A')
+                content += f"| {name} | {const_type} | {description} | {file} | {line} | {example} | {references} |\n"
+            content += "\n"
 
+        # Add Halstead metrics
+        halstead = documentation.get('halstead', {})
+        if halstead:
+            content += "## Halstead Metrics\n\n"
+            content += f"- Volume: {halstead.get('volume', 'N/A')}\n"
+            content += f"- Difficulty: {halstead.get('difficulty', 'N/A')}\n"
+            content += f"- Effort: {halstead.get('effort', 'N/A')}\n\n"
+
+        # Add Maintainability Index
+        maintainability_index = documentation.get('maintainability_index')
+        if maintainability_index is not None:
+            content += f"## Maintainability Index\n\n{maintainability_index}\n\n"
+
+        # Generate and add Table of Contents
+        toc = generate_table_of_contents(content)
+        content = f"# Table of Contents\n\n{toc}\n\n{content}"
+
+        # Write content to file
         async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
-            await f.write(documentation_content)
+            await f.write(content)
         logger.info(f"Documentation written to '{doc_file_path}' successfully.")
-        return documentation_content
+        
+        return content
 
     except Exception as e:
         logger.error(f"Error writing documentation report for '{file_path}': {e}", exc_info=True)

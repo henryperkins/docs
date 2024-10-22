@@ -11,6 +11,7 @@ Functions:
 
 import json
 import logging
+import subprocess
 from typing import Dict, Any, Optional
 
 from .base_handler import BaseHandler

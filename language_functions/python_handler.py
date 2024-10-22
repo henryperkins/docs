@@ -9,8 +9,8 @@ import os
 import tempfile
 import subprocess
 import ast
-from typing import Dict, Any, Optional, List
-
+from typing import Dict, Any, Optional, List, Union
+from metrics import calculate_all_metrics
 # External dependencies
 try:
     from radon.complexity import cc_visit
@@ -54,19 +54,23 @@ class PythonHandler(BaseHandler):
                 "functions": [],
                 "variables": [],
                 "constants": [],
-                "halstead": {},
-                "maintainability_index": None,
                 "decorators": [],
                 "context_managers": [],
                 "comprehensions": [],
-            }
-            complexity_scores = cc_visit(code)
-            function_complexity = {score.fullname: score.complexity for score in complexity_scores}
-            total_complexity = sum(score.complexity for score in complexity_scores)
-            code_structure["complexity"] = total_complexity  # Add this line
+            }   
 
-            mi_score = mi_visit(code, True)
-            code_structure["maintainability_index"] = mi_score
+            # Calculate all metrics
+            metrics = calculate_all_metrics(code)
+        
+            # Add metrics to code structure
+            code_structure.update({
+                "halstead": metrics["halstead"],
+                "complexity": metrics["complexity"],
+                "maintainability_index": metrics["maintainability_index"]
+            })
+        
+            # Store function complexity for use in visitor
+            function_complexity = metrics["function_complexity"]
 
             class CodeVisitor(ast.NodeVisitor):
                 """AST visitor for traversing Python code structures and extracting functional and class definitions."""
@@ -86,13 +90,38 @@ class PythonHandler(BaseHandler):
                             comments.setdefault(lineno, []).append(comment)
                     return comments
 
+                def _get_method_type(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> str:
+                    """
+                    Determines the type of method based on decorators and context.
+
+                    Args:
+                        node: The AST node for the method.
+
+                    Returns:
+                        str: The method type (instance, class, static, or async).
+                    """
+                    if isinstance(node, ast.AsyncFunctionDef):
+                        return "async"
+
+                    for decorator in node.decorator_list:
+                        if isinstance(decorator, ast.Name):
+                            if decorator.id == "classmethod":
+                                return "class"
+                            elif decorator.id == "staticmethod":
+                                return "static"
+                        elif isinstance(decorator, ast.Attribute):
+                            # Handle cases like @decorators.classmethod
+                            if decorator.attr in ["classmethod", "staticmethod"]:
+                                return decorator.attr
+                    return "instance"
+
                 def visit_FunctionDef(self, node: ast.FunctionDef):
                     self._visit_function(node)
 
                 def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
                     self._visit_function(node, is_async=True)
 
-                def _visit_function(self, node: ast.FunctionDef, is_async: bool = False) -> None:
+                def _visit_function(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef], is_async: bool = False) -> None:
                     self.scope_stack.append(node)
                     full_name = ".".join([scope.name for scope in self.scope_stack if hasattr(scope, "name")])
                     complexity = function_complexity.get(full_name, 0)
@@ -138,7 +167,7 @@ class PythonHandler(BaseHandler):
                                 "async": isinstance(body_item, ast.AsyncFunctionDef),
                                 "complexity": complexity,
                                 "decorators": decorators,
-                                "type": "async" if isinstance(body_item, ast.AsyncFunctionDef) else "instance",
+                                "type": self._get_method_type(body_item),
                             }
                             class_info["methods"].append(method_info)
                             self.scope_stack.pop()
@@ -198,36 +227,6 @@ class PythonHandler(BaseHandler):
                         else:
                             code_structure["variables"].append(var_info)
 
-                def visit_With(self, node: ast.With):
-                    for item in node.items:
-                        if isinstance(item.context_expr, ast.Call):
-                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, "unparse") else ""
-                            code_structure.setdefault("context_managers", []).append(context_manager)
-                    self.generic_visit(node)
-
-                def visit_AsyncWith(self, node: ast.AsyncWith):
-                    for item in node.items:
-                        if isinstance(item.context_expr, ast.Call):
-                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, "unparse") else ""
-                            code_structure.setdefault("context_managers", []).append(context_manager)
-                    self.generic_visit(node)
-
-                def visit_ListComp(self, node: ast.ListComp):
-                    code_structure.setdefault("comprehensions", []).append("ListComprehension")
-                    self.generic_visit(node)
-
-                def visit_DictComp(self, node: ast.DictComp):
-                    code_structure.setdefault("comprehensions", []).append("DictComprehension")
-                    self.generic_visit(node)
-
-                def visit_SetComp(self, node: ast.SetComp):
-                    code_structure.setdefault("comprehensions", []).append("SetComprehension")
-                    self.generic_visit(node)
-
-                def visit_GeneratorExp(self, node: ast.GeneratorExp):
-                    code_structure.setdefault("comprehensions", []).append("GeneratorExpression")
-                    self.generic_visit(node)
-
                 def _infer_type(self, value: ast.AST) -> str:
                     if isinstance(value, ast.Constant):
                         return type(value.value).__name__
@@ -270,10 +269,41 @@ class PythonHandler(BaseHandler):
                         return " ".join(comments)
                     return "N/A"
 
+                def visit_With(self, node: ast.With):
+                    for item in node.items:
+                        if isinstance(item.context_expr, ast.Call):
+                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, "unparse") else ""
+                            code_structure.setdefault("context_managers", []).append(context_manager)
+                    self.generic_visit(node)
+
+                def visit_AsyncWith(self, node: ast.AsyncWith):
+                    for item in node.items:
+                        if isinstance(item.context_expr, ast.Call):
+                            context_manager = ast.unparse(item.context_expr) if hasattr(ast, "unparse") else ""
+                            code_structure.setdefault("context_managers", []).append(context_manager)
+                    self.generic_visit(node)
+
+                def visit_ListComp(self, node: ast.ListComp):
+                    code_structure.setdefault("comprehensions", []).append("ListComprehension")
+                    self.generic_visit(node)
+
+                def visit_DictComp(self, node: ast.DictComp):
+                    code_structure.setdefault("comprehensions", []).append("DictComprehension")
+                    self.generic_visit(node)
+
+                def visit_SetComp(self, node: ast.SetComp):
+                    code_structure.setdefault("comprehensions", []).append("SetComprehension")
+                    self.generic_visit(node)
+
+                def visit_GeneratorExp(self, node: ast.GeneratorExp):
+                    code_structure.setdefault("comprehensions", []).append("GeneratorExpression")
+                    self.generic_visit(node)
+
             visitor = CodeVisitor(file_path)
             visitor.visit(tree)
             logger.debug(f"Extracted structure for '{file_path}': {code_structure}")
             return code_structure
+
         except SyntaxError as e:
             logger.error(f"Syntax error in code: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
             return {}

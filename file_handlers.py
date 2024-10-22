@@ -93,6 +93,26 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
             except Exception as restore_error:
                 logger.error(f"Failed to restore backup for '{file_path}': {restore_error}", exc_info=True)
 
+def validate_ai_response(response: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validates and potentially reformats the AI's response to match the required schema.
+
+    Args:
+        response (Dict[str, Any]): The AI's response.
+        schema (Dict[str, Any]): The expected schema.
+
+    Returns:
+        Dict[str, Any]: The validated and potentially reformatted response.
+    """
+    try:
+        validate(instance=response, schema=schema)
+        return response
+    except jsonschema.exceptions.ValidationError as validation_error:
+        logger.error(f"AI response does not match schema: {validation_error}")
+        # Here you could implement logic to try to correct the response
+        # For now, we'll just return None to indicate failure
+        return None
+    
 
 async def fetch_documentation_rest(
     session: aiohttp.ClientSession,
@@ -106,8 +126,7 @@ async def fetch_documentation_rest(
     retry: int = 3,
 ) -> Optional[Dict[str, Any]]:
     """
-    Fetches documentation from Azure OpenAI API using the provided prompt and schema,
-    handling retries for rate limiting and other transient errors.
+    Fetches documentation from Azure OpenAI API using the provided prompt and schema.
 
     Args:
         session (aiohttp.ClientSession): The HTTP session for making requests.
@@ -131,19 +150,27 @@ async def fetch_documentation_rest(
         "api-key": azure_api_key,
     }
 
-    for attempt in range(retry):  # Retry loop
-        try:
-            async with semaphore:  # Concurrency control
-                async with session.post(
-                    url,
-                    headers=headers,
-                    json={
-                        "messages": [{"role": "user", "content": prompt}],
-                        "functions": function_schema.get("functions", []),
-                        "function_call": {"name": "generate_documentation"},
-                    },
-                ) as response:
+    # Define the payload with the required parameters
+    payload = {
+        "messages": [{"role": "user", "content": prompt}],
+        "functions": function_schema.get("functions", []),
+        "function_call": {"name": "generate_documentation"}
+    }
 
+    async def handle_api_error(response: aiohttp.ClientResponse) -> None:
+        """Handle API errors and log appropriate messages."""
+        error_text = await response.text()
+        try:
+            error_json = json.loads(error_text)
+            error_message = error_json.get("error", {}).get("message", "Unknown error")
+            logger.error(f"Azure OpenAI API request failed: {response.status} - {error_message}")
+        except json.JSONDecodeError:
+            logger.error(f"API request failed with non-JSON response: {response.status} - {error_text}")
+
+    for attempt in range(retry):
+        try:
+            async with semaphore:
+                async with session.post(url, headers=headers, json=payload) as response:
                     if response.status == 200:
                         data = await response.json()
                         logger.debug(f"API Response: {data}")
@@ -151,53 +178,50 @@ async def fetch_documentation_rest(
                         if "choices" in data and data["choices"]:
                             choice = data["choices"][0]
                             message = choice.get("message")
-
+                            
                             if message and "function_call" in message:
                                 function_call = message["function_call"]
                                 if function_call.get("name") == "generate_documentation":
                                     arguments = function_call.get("arguments")
                                     try:
                                         documentation = json.loads(arguments)
-                                        logger.debug("Received documentation via function_call.")
-                                        return documentation  # Success!
+                                        # Validate the AI's response against the schema
+                                        validated_documentation = validate_ai_response(
+                                            documentation, 
+                                            function_schema["functions"][0]["parameters"]
+                                        )
+                                        if validated_documentation:
+                                            logger.debug("Successfully validated documentation response")
+                                            return validated_documentation
+                                        else:
+                                            logger.error("AI response validation failed")
+                                            # Add more context to the prompt for retry
+                                            payload["messages"][0]["content"] = (
+                                                prompt + "\n\nPlease ensure your response exactly matches "
+                                                "the provided schema and includes all required fields."
+                                            )
+                                            continue
                                     except json.JSONDecodeError as e:
                                         logger.error(f"Error decoding JSON: {e}")
                                         logger.error(f"Arguments Content: {arguments}")
-                                else:  # Incorrect function name called
+                                else:
                                     logger.error(f"Unexpected function called: {function_call.get('name')}")
-                            else:  # No function call in response
+                            else:
                                 logger.error("No function_call found in the response.")
-                        else:  # No choices in response
+                        else:
                             logger.error("No choices found in the API response.")
-                    else:  # Non-200 status code
-                        error_text = await response.text()
-                        try:
-                            error_json = json.loads(error_text)
-                            error_message = error_json.get("error", {}).get("message", "Unknown error")
-                            status_code = response.status
-                            logger.error(f"Azure OpenAI API request failed: {status_code} - {error_message}")
+                    elif response.status == 429:  # Rate limit hit
+                        retry_after = response.headers.get("Retry-After", str(2 ** attempt))
+                        wait_time = int(retry_after)
+                        logger.warning(f"Rate limited. Retrying after {wait_time} seconds...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        await handle_api_error(response)
 
-                            if status_code == 429:  # Rate limited
-                                retry_after = response.headers.get("Retry-After")
-                                wait_time = int(retry_after) if retry_after else 2 ** attempt
-                                logger.warning(f"Rate limited. Retrying after {wait_time} seconds...")
-                                await asyncio.sleep(wait_time)
-                                continue  # Retry the request
-                            elif status_code == 400:  # Bad request
-                                logger.error("Bad request. Check your request parameters and schema.")
-                                return None
-                            # Handle other status codes as needed
-                            return None
-                        except json.JSONDecodeError:
-                            logger.exception(
-                                f"API request failed with non-JSON response: {response.status} - {error_text}"
-                            )
-                            return None  # Or raise an exception
-
-        except aiohttp.ClientError as e:  # Network error
+        except aiohttp.ClientError as e:
             logger.error(f"Network error during API request: {e}", exc_info=True)
-            # Retry logic will handle this
-        except Exception as e:  # Catch-all for other errors
+        except Exception as e:
             logger.error(f"Unexpected error during API request: {e}", exc_info=True)
 
         if attempt < retry - 1:
@@ -206,7 +230,38 @@ async def fetch_documentation_rest(
             await asyncio.sleep(wait_time)
 
     logger.error("All retry attempts to fetch documentation failed.")
-    return None  # All retries failed
+    return None
+
+
+async def handle_api_error(response):
+    error_text = await response.text()
+    try:
+        error_json = json.loads(error_text)
+        error_message = error_json.get("error", {}).get("message", "Unknown error")
+        logger.error(f"Azure OpenAI API request failed: {response.status} - {error_message}")
+    except json.JSONDecodeError:
+        logger.error(f"API request failed with non-JSON response: {response.status} - {error_text}")
+
+
+def validate_documentation(documentation: Dict[str, Any], schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Validates the given documentation against the provided JSON schema.
+
+    Args:
+        documentation (Dict[str, Any]): The documentation to be validated.
+        schema (Dict[str, Any]): The JSON schema to validate against.
+
+    Returns:
+        Optional[Dict[str, Any]]: The validated documentation if it passes the schema validation, 
+        otherwise None if validation fails.
+    """
+    try:
+        jsonschema.validate(instance=documentation, schema=schema)
+        return documentation
+    except jsonschema.exceptions.ValidationError as e:
+        logger.error(f"Documentation validation failed: {e}")
+        # You might want to add logic here to attempt to fix the documentation
+        return None
 
 
 async def process_file(
@@ -249,47 +304,64 @@ async def process_file(
     """
     logger.debug(f"Processing file: {file_path}")
     try:
-        _, ext = os.path.splitext(file_path)
-        if not is_valid_extension(ext, skip_types) or is_binary(file_path):
-            logger.debug(f"Skipping file '{file_path}' due to invalid extension or binary content.")
+        # Check if file exists
+        if not os.path.exists(file_path):
+            logger.error(f"File not found: {file_path}")
             return None
 
+        # Get file extension and check if we should process this file
+        _, ext = os.path.splitext(file_path)
+        
+        # Additional skip types for config and hidden files
+        extra_skip_types = {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git'}
+        if ext in extra_skip_types or ext in skip_types or not ext:
+            logger.debug(f"Skipping file '{file_path}' due to extension: {ext}")
+            return None
+
+        # Check if file is binary
+        if is_binary(file_path):
+            logger.debug(f"Skipping binary file: {file_path}")
+            return None
+
+        # Get language and handler
         language = get_language(ext)
         logger.debug(f"Detected language for '{file_path}': {language}")
 
-        handler: Optional[BaseHandler] = get_handler(language, function_schema)
-        if handler is None:
-            logger.warning(f"Unsupported language: {language}")
+        if language == "plaintext":
+            logger.debug(f"Skipping plaintext file: {file_path}")
             return None
 
-        logger.info(f"Processing file: {file_path}")
+        handler = get_handler(language, function_schema)
+        if not handler:
+            logger.debug(f"No handler available for language: {language}")
+            return None
 
+        # Read file content
         try:
             async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 content = await f.read()
-            logger.debug(f"File content for '{file_path}' read successfully.")
+            logger.debug(f"Successfully read content from {file_path}")
+        except UnicodeDecodeError:
+            logger.warning(f"Skipping file due to encoding issues: {file_path}")
+            return None
         except Exception as e:
             logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
             return None
 
-        documentation = None
-        code_structure = None
-
+        # Extract code structure
         try:
             code_structure = await extract_code_structure(content, file_path, language, handler)
             if not code_structure:
                 logger.warning(f"Could not extract code structure from '{file_path}'")
-            else:
-                print(f"Code structure for {file_path}: {code_structure}")  # Debug print for code structure
-                logger.debug(f"Extracted code structure for '{file_path}': {code_structure}")
+                return None
 
-                # Extract critical context information and add to ContextManager
-                critical_info = extract_critical_info(code_structure, file_path)
-                context_manager.add_context(critical_info)
+            # Add to context manager
+            critical_info = extract_critical_info(code_structure, file_path)
+            context_manager.add_context(critical_info)
 
-                persistent_context = "\n".join(context_manager.get_context())
-                # Modify the prompt to include persistent context
-                prompt = f"""
+            # Generate prompt with context
+            persistent_context = "\n".join(context_manager.get_context())
+            prompt = f"""
 [Context Start]
 {persistent_context}
 [Context End]
@@ -304,97 +376,100 @@ async def process_file(
 )}
 """.strip()
 
-                documentation = await fetch_documentation_rest(
-                    session=session,
-                    prompt=prompt,
-                    semaphore=semaphore,
-                    deployment_name=deployment_name,
-                    function_schema=function_schema,
-                    azure_api_key=azure_api_key,
-                    azure_endpoint=azure_endpoint,
-                    azure_api_version=azure_api_version,
-                )
-                print(f"Documentation for {file_path}: {json.dumps(documentation, indent=2)}")
-                if not documentation:
-                    logger.error(f"Failed to generate documentation for '{file_path}'.")
-                else:
-                    # Combine code_structure with documentation as per schema
-                    documentation["halstead"] = code_structure.get("halstead", {})
-                    documentation["maintainability_index"] = code_structure.get("maintainability_index", None)
-                    documentation["variables"] = code_structure.get("variables", [])
-                    documentation["constants"] = code_structure.get("constants", [])
-                    # Ensure 'changes_made' exists as per schema
-                    documentation["changes_made"] = documentation.get("changes_made", [])
-                    # Update functions and methods with complexity
-                    function_complexity = {}
-                    for func in code_structure.get("functions", []):
-                        function_complexity[func["name"]] = func.get("complexity", 0)
-                    for func in documentation.get("functions", []):
-                        func_name = func["name"]
-                        func["complexity"] = function_complexity.get(func_name, 0)
-                    class_complexity = {}
-                    for cls in code_structure.get("classes", []):
-                        class_name = cls["name"]
-                        methods_complexity = {}
-                        for method in cls.get("methods", []):
-                            methods_complexity[method["name"]] = method.get("complexity", 0)
-                        class_complexity[class_name] = methods_complexity
-                    for cls in documentation.get("classes", []):
-                        class_name = cls["name"]
-                        methods_complexity = class_complexity.get(class_name, {})
-                        for method in cls.get("methods", []):
-                            method_name = method["name"]
-                            method["complexity"] = methods_complexity.get(method_name, 0)
-        except aiohttp.ClientError as e:
-            logger.error(f"Network error during API request for '{file_path}': {e}", exc_info=True)
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decoding error for '{file_path}': {e}", exc_info=True)
-            return None
-        except KeyError as e:
-            logger.error(f"Key error when processing documentation for '{file_path}': {e}", exc_info=True)
-            return None
-        except Exception as e:
-            logger.error(
-                f"Error during code structure extraction or documentation generation for '{file_path}': {e}",
-                exc_info=True,
+            # Generate documentation
+            documentation = await fetch_documentation_rest(
+                session=session,
+                prompt=prompt,
+                semaphore=semaphore,
+                deployment_name=deployment_name,
+                function_schema=function_schema,
+                azure_api_key=azure_api_key,
+                azure_endpoint=azure_endpoint,
+                azure_api_version=azure_api_version,
             )
+
+            if not documentation:
+                logger.error(f"Failed to generate documentation for '{file_path}'")
+                return None
+
+            # Update documentation with code structure metrics
+            documentation.update({
+                "halstead": code_structure.get("halstead", {}),
+                "maintainability_index": code_structure.get("maintainability_index"),
+                "variables": code_structure.get("variables", []),
+                "constants": code_structure.get("constants", []),
+                "changes_made": documentation.get("changes_made", [])
+            })
+
+            # Update complexity metrics
+            function_complexity = {
+                func["name"]: func.get("complexity", 0)
+                for func in code_structure.get("functions", [])
+            }
+            for func in documentation.get("functions", []):
+                func["complexity"] = function_complexity.get(func["name"], 0)
+
+            class_complexity = {}
+            for cls in code_structure.get("classes", []):
+                class_name = cls["name"]
+                methods_complexity = {
+                    method["name"]: method.get("complexity", 0)
+                    for method in cls.get("methods", [])
+                }
+                class_complexity[class_name] = methods_complexity
+
+            for cls in documentation.get("classes", []):
+                class_name = cls["name"]
+                methods_complexity = class_complexity.get(class_name, {})
+                for method in cls.get("methods", []):
+                    method["complexity"] = methods_complexity.get(method["name"], 0)
+
+            # Process documentation
+            if not safe_mode:
+                try:
+                    new_content = await asyncio.to_thread(
+                        handler.insert_docstrings,
+                        content,
+                        documentation
+                    )
+
+                    if language.lower() == "python":
+                        new_content = await clean_unused_imports_async(new_content, file_path)
+                        new_content = await format_with_black_async(new_content)
+
+                    is_valid = await asyncio.to_thread(
+                        handler.validate_code,
+                        new_content,
+                        file_path
+                    )
+
+                    if is_valid:
+                        await backup_and_write_new_content(file_path, new_content)
+                        logger.info(f"Documentation inserted into '{file_path}'")
+                    else:
+                        logger.error(f"Code validation failed for '{file_path}'")
+                except Exception as e:
+                    logger.error(f"Error processing documentation for '{file_path}': {e}", exc_info=True)
+
+            # Generate documentation report
+            file_content = await write_documentation_report(
+                documentation=documentation,
+                language=language,
+                file_path=file_path,
+                repo_root=repo_root,
+                output_dir=output_dir,
+            )
+
+            logger.info(f"Finished processing '{file_path}'")
+            return file_content
+
+        except Exception as e:
+            logger.error(f"Error processing '{file_path}': {e}", exc_info=True)
             return None
-
-        new_content = content
-
-        if documentation and not safe_mode:
-            try:
-                new_content = await asyncio.to_thread(handler.insert_docstrings, content, documentation)
-
-                if language.lower() == "python":
-                    new_content = await clean_unused_imports_async(new_content, file_path)
-                    new_content = await format_with_black_async(new_content)
-
-                is_valid = await asyncio.to_thread(handler.validate_code, new_content, file_path)
-                if is_valid:
-                    await backup_and_write_new_content(file_path, new_content)
-                    logger.info(f"Documentation inserted into '{file_path}'")
-                else:
-                    logger.error(f"Code validation failed for '{file_path}'.")
-            except Exception as e:
-                logger.error(f"Error processing code documentation for '{file_path}': {e}", exc_info=True)
-                new_content = content
-
-        file_content = await write_documentation_report(
-            documentation=documentation or {},
-            language=language,
-            file_path=file_path,
-            repo_root=repo_root,
-            output_dir=output_dir,
-        )
-        logger.info(f"Finished processing '{file_path}'")
-        return file_content
 
     except Exception as e:
         logger.error(f"Unexpected error processing '{file_path}': {e}", exc_info=True)
         return None
-
 
 async def process_all_files(
     session: aiohttp.ClientSession,
@@ -413,29 +488,6 @@ async def process_all_files(
     azure_api_version: str = "",
     output_dir: str = "documentation",
 ) -> None:
-    """
-    Processes multiple files to extract their structures and generate documentation.
-
-    Args:
-        session (aiohttp.ClientSession): The HTTP session for making requests.
-        file_paths (List[str]): List of file paths to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API requests.
-        deployment_name (str): The Azure OpenAI deployment name.
-        function_schema (Dict[str, Any]): The schema defining functions.
-        repo_root (str): Root directory of the repository.
-        project_info (Optional[str]): Information about the project.
-        style_guidelines (Optional[str]): Documentation style guidelines.
-        safe_mode (bool, optional): If True, no files will be modified. Defaults to False.
-        output_file (str, optional): Path to the output Markdown file. Defaults to 'output.md'.
-        azure_api_key (str, optional): The API key for Azure OpenAI. Defaults to ''.
-        azure_endpoint (str, optional): The endpoint URL for the Azure OpenAI service. Defaults to ''.
-        azure_api_version (str, optional): The API version to use. Defaults to ''.
-        output_dir (str, optional): Directory to save documentation files. Defaults to 'documentation'.
-
-    Returns:
-        None
-    """
     logger.info("Starting process of all files.")
     tasks = [
         process_file(
@@ -465,8 +517,6 @@ async def process_all_files(
                 documentation_contents.append(file_content)
         except Exception as e:
             logger.error(f"Error processing a file: {e}", exc_info=True)
-            if "sentry_sdk" in globals():
-                sentry_sdk.capture_exception(e)
 
     logger.info("Completed processing all files.")
 
@@ -484,19 +534,11 @@ async def process_all_files(
             logger.info(f"Documentation report written to '{output_file}'")
         except Exception as e:
             logger.error(f"Error writing final documentation to '{output_file}': {e}", exc_info=True)
-            if "sentry_sdk" in globals():
-                sentry_sdk.capture_exception(e)
+
     else:
         logger.warning("No documentation was generated.")
 
-    logger.info("Running Flake8 on processed files for final linting.")
-    for file_path in file_paths:
-        _, ext = os.path.splitext(file_path)
-        if ext.lower() in {".py"}:
-            flake8_output = await run_flake8_async(file_path)
-            if flake8_output:
-                logger.warning(f"Flake8 issues found in {file_path}:\n{flake8_output}")
-    logger.info("Flake8 linting completed.")
+    logger.info("Documentation generation process completed.")
 
 
 def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str:
