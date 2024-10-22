@@ -1,0 +1,24 @@
+{
+   "build":
+   {
+      "babel": { "source": "src", "destination": "dist" }
+   },
+
+   "publish":
+   {
+      "prepublish": { "scripts": ["npm run eslint", "npm run test", "npm run build"] }
+   },
+
+   "test":
+   {
+      // Provides a `coverage` handling command that is appended when running on Travis CI.
+      "travis":
+      {
+         "istanbul": { "command": "cover", "options": ["--report lcovonly", "--include-all-sources --root src"] },
+         "report": "./node_modules/.bin/codecov"
+      },
+
+      "istanbul": { "command": "cover", "options": ["--include-all-sources --root src"] },
+      "mocha": { "source": "./test/src", "options": [ "--compilers js:babel-register", "-t 15000 --recursive" ] }
+   }
+}

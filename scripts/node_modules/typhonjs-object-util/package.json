@@ -1,0 +1,42 @@
+{
+  "name": "typhonjs-object-util",
+  "version": "0.4.2",
+  "description": "Provides common object manipulation utilities.",
+  "author": "typhonrt",
+  "homepage": "https://github.com/typhonjs-node-utils/typhonjs-object-util",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/typhonjs-node-utils/typhonjs-object-util"
+  },
+  "scripts": {
+    "build": "babel-node ./node_modules/typhonjs-npm-scripts-build-babel/scripts/build.js",
+    "esdoc": "esdoc -c .esdocrc",
+    "eslint": "eslint .",
+    "prepublish": "babel-node ./node_modules/typhonjs-npm-scripts-publish/scripts/prepublish.js",
+    "test": "babel-node ./node_modules/typhonjs-npm-scripts-test-mocha/scripts/mocha.js",
+    "test-coverage": "babel-node ./node_modules/typhonjs-npm-scripts-test-mocha/scripts/mocha-istanbul.js"
+  },
+  "dependencies": {
+    "babel-runtime": "^6.0.0"
+  },
+  "devDependencies": {
+    "typhonjs-config-eslint": "^0.4.0",
+    "typhonjs-npm-build-test": "^0.4.0"
+  },
+  "keywords": [
+    "typhonjs",
+    "object",
+    "util"
+  ],
+  "files": [
+    ".tjsdoc",
+    "dist",
+    "src",
+    "AUTHORS.md"
+  ],
+  "main": "dist/ObjectUtil.js",
+  "bugs": {
+    "url": "https://github.com/typhonjs-node-utils/typhonjs-object-util/issues"
+  }
+}
