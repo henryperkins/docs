@@ -291,6 +291,12 @@ async def process_file(
         Optional[str]: The content of the documentation report or None if processing fails.
     """
     logger.debug(f"Processing file: {file_path}")
+
+    # Early checks for file processing
+    if not should_process_file(file_path):
+        logger.debug(f"Skipping file: {file_path}")
+        return None
+
     try:
         # Check if file exists
         if not os.path.exists(file_path):
@@ -301,9 +307,14 @@ async def process_file(
         _, ext = os.path.splitext(file_path)
         
         # Additional skip types for config and hidden files
-        extra_skip_types = {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git'}
+        extra_skip_types = {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'}
         if ext in extra_skip_types or ext in skip_types or not ext:
             logger.debug(f"Skipping file '{file_path}' due to extension: {ext}")
+            return None
+
+        # Skip files in node_modules
+        if "node_modules" in file_path:
+            logger.debug(f"Skipping node_modules file: {file_path}")
             return None
 
         # Check if file is binary
@@ -344,8 +355,14 @@ async def process_file(
                 return None
 
             # Add to context manager
-            critical_info = extract_critical_info(code_structure, file_path)
-            context_manager.add_context(critical_info)
+            try:
+                critical_info = extract_critical_info(code_structure, file_path)
+                context_manager.add_context(critical_info)
+            except Exception as e:
+                logger.error(f"Error extracting critical info from '{file_path}': {e}", exc_info=True)
+                # Continue processing even if critical info extraction fails
+                critical_info = f"File: {file_path}\n# Failed to extract detailed information"
+                context_manager.add_context(critical_info)
 
             # Generate prompt with context
             persistent_context = "\n".join(context_manager.get_context())
@@ -440,24 +457,62 @@ async def process_file(
                     logger.error(f"Error processing documentation for '{file_path}': {e}", exc_info=True)
 
             # Generate documentation report
-            file_content = await write_documentation_report(
-                documentation=documentation,
-                language=language,
-                file_path=file_path,
-                repo_root=repo_root,
-                output_dir=output_dir,
-            )
+            try:
+                file_content = await write_documentation_report(
+                    documentation=documentation,
+                    language=language,
+                    file_path=file_path,
+                    repo_root=repo_root,
+                    output_dir=output_dir,
+                )
 
-            logger.info(f"Finished processing '{file_path}'")
-            return file_content
+                logger.info(f"Finished processing '{file_path}'")
+                return file_content
+
+            except Exception as e:
+                logger.error(f"Error generating documentation report for '{file_path}': {e}", exc_info=True)
+                return None
 
         except Exception as e:
-            logger.error(f"Error processing '{file_path}': {e}", exc_info=True)
+            logger.error(f"Error processing structure for '{file_path}': {e}", exc_info=True)
             return None
 
     except Exception as e:
         logger.error(f"Unexpected error processing '{file_path}': {e}", exc_info=True)
         return None
+
+def should_process_file(file_path: str) -> bool:
+    """
+    Determines if a file should be processed based on various criteria.
+
+    Args:
+        file_path (str): Path to the file.
+
+    Returns:
+        bool: True if the file should be processed, False otherwise.
+    """
+    # Skip symlinks
+    if os.path.islink(file_path):
+        return False
+
+    # Skip node_modules related paths
+    if any(part in file_path for part in ['node_modules', '.bin']):
+        return False
+
+    # Skip if file doesn't exist
+    if not os.path.exists(file_path):
+        return False
+
+    # Skip TypeScript declaration files
+    if file_path.endswith('.d.ts'):
+        return False
+
+    # Skip certain directories
+    excluded_dirs = {'.git', '__pycache__', 'node_modules', '.bin', 'build', 'dist'}
+    if any(excluded in file_path for excluded in excluded_dirs):
+        return False
+
+    return True
 
 async def process_all_files(
     session: aiohttp.ClientSession,
@@ -541,32 +596,40 @@ def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str
         str: A formatted string containing critical context information.
     """
     info_lines = [f"File: {file_path}"]
+    
     # Extract function signatures
     functions = code_structure.get("functions", [])
     for func in functions:
-        signature = f"def {func.get('name')}({', '.join(func.get('args', []))}):"
-        doc = func.get("docstring", "").split("\n")[0]
-        info_lines.append(f"{signature}  # {doc}")
+        if isinstance(func, dict):  # Check if func is a dictionary
+            signature = f"def {func.get('name', 'unknown')}({', '.join(func.get('args', []))}):"
+            doc = func.get('docstring', '').split('\n')[0]
+            info_lines.append(f"{signature}  # {doc}")
 
     # Extract class definitions
     classes = code_structure.get("classes", [])
     for cls in classes:
-        class_info = f"class {cls.get('name')}:"
-        doc = cls.get("docstring", "").split("\n")[0]
-        info_lines.append(f"{class_info}  # {doc}")
-        # Include methods
-        for method in cls.get("methods", []):
-            method_signature = f"    def {method.get('name')}({', '.join(method.get('args', []))}):"
-            method_doc = method.get("docstring", "").split("\n")[0]
-            info_lines.append(f"{method_signature}  # {method_doc}")
+        if isinstance(cls, dict):  # Check if cls is a dictionary
+            class_info = f"class {cls.get('name', 'unknown')}:"
+            doc = cls.get('docstring', '').split('\n')[0]
+            info_lines.append(f"{class_info}  # {doc}")
+            
+            # Include methods
+            for method in cls.get('methods', []):
+                if isinstance(method, dict):  # Check if method is a dictionary
+                    method_signature = f"    def {method.get('name', 'unknown')}({', '.join(method.get('args', []))}):"
+                    method_doc = method.get('docstring', '').split('\n')[0]
+                    info_lines.append(f"{method_signature}  # {method_doc}")
 
     # Extract important variables
     variables = code_structure.get("variables", [])
     for var in variables:
-        var_info = f"{var.get('name')} = "
-        var_type = var.get("type", "Unknown")
-        var_desc = var.get("description", "").split("\n")[0]
-        info_lines.append(f"{var_info}  # Type: {var_type}, {var_desc}")
+        if isinstance(var, dict):  # Check if var is a dictionary
+            var_info = f"{var.get('name', 'unknown')} = "
+            var_type = var.get('type', 'Unknown')
+            var_desc = var.get('description', '').split('\n')[0]
+            info_lines.append(f"{var_info}  # Type: {var_type}, {var_desc}")
+        elif isinstance(var, str):  # Handle string variables
+            info_lines.append(f"{var} = ")  # Just add the variable name if it's a string
 
     critical_info = "\n".join(info_lines)
     return critical_info

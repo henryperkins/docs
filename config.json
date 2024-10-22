@@ -1,6 +1,42 @@
 {
-  "directory": "/root/docs",
-  "excluded_dirs": [".git", "simple", ".github", ".vscode", "modules", "vids", "node_modules", "__pycache__", "pipmodules", "pip"],
-  "excluded_files": [".env", "files.md", "documentation_generation.log", "docs_generation.log", "file_handlers.log", "language_functions.log", ".gitignore", "package.json", "package-lock.json", "README.md", "output.md", "docs_generation.log", "tsconfig.json"],
-  "skip_types": [".bak"]
+  "excluded_dirs": [
+    ".git",
+    "simple",
+    ".github",
+    ".vscode",
+    "modules",
+    "vids",
+    "node_modules",
+    "__pycache__",
+    "pipmodules",
+    "pip",
+    ".bin",
+    "**/node_modules/**",
+    "**/node_modules/**/.bin",
+    "**/node_modules/**/node_modules"
+  ],
+  "excluded_files": [
+    ".env",
+    "files.md",
+    "documentation_generation.log",
+    "docs_generation.log",
+    "file_handlers.log",
+    "language_functions.log",
+    ".gitignore",
+    "package.json",
+    "package-lock.json",
+    "README.md",
+    "output.md",
+    "docs_generation.log",
+    "tsconfig.json"
+  ],
+  "skip_types": [
+    ".bak",
+    ".cmd",
+    ".d.ts",
+    ".ps1"
+  ]
+  ],
+  "project_info": "Documentation generation system that analyzes code files, extracts structure, and generates comprehensive documentation with metrics.",
+  "style_guidelines": "Use Google-style docstrings with comprehensive descriptions, arguments, returns, and examples."
 }

@@ -446,162 +446,137 @@ async def write_documentation_report(
     repo_root: str,
     output_dir: str
 ) -> Optional[str]:
+    """
+    Generates enhanced documentation with improved formatting and structure.
+    """
+    if not documentation:
+        logger.warning(f"No documentation to write for '{file_path}'")
+        return None
+
     try:
-        if not documentation:
-            logger.warning(f"No documentation to write for '{file_path}'")
-            return None
-
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-        except Exception as e:
-            logger.error(f"Failed to create documentation directory '{output_dir}': {e}")
-            return None
-
+        os.makedirs(output_dir, exist_ok=True)
         relative_path = os.path.relpath(file_path, repo_root)
-        safe_file_name = sanitize_filename(os.path.basename(relative_path))
-        doc_file_path = os.path.join(output_dir, safe_file_name + '.md')
-
-        # Read the source code
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                source_code = f.read()
-        except Exception as e:
-            logger.error(f"Failed to read source file '{file_path}': {e}")
-            source_code = "Failed to read source code"
-
-        # Start building the Markdown content
-        sections = []
-
-        # File header and badges
-        sections.append(f"# {relative_path}")
         
-        badges = [
-            generate_badge("Complexity", documentation.get('complexity', 0), DEFAULT_COMPLEXITY_THRESHOLDS),
-            generate_badge("Halstead Volume", documentation.get('halstead', {}).get('volume', 0), DEFAULT_HALSTEAD_THRESHOLDS['volume']),
-            generate_badge("Maintainability Index", documentation.get('maintainability_index', 0), DEFAULT_MAINTAINABILITY_THRESHOLDS)
+        # Generate table of contents
+        toc = [
+            "# Table of Contents\n",
+            "1. [Overview](#overview)",
+            "2. [Code Structure](#code-structure)",
+            "3. [Dependencies](#dependencies)",
+            "4. [Metrics](#metrics)",
+            "\n---\n"
         ]
-        sections.append(" ".join(badges))
 
-        # Source Code (at the top, right after badges)
-        sections.append("## Source Code")
-        sections.append(f"```{language}\n{source_code}\n```")
+        # Generate Overview section
+        overview = [
+            "# Overview\n",
+            f"**File:** `{os.path.basename(file_path)}`  ",
+            f"**Language:** {language}  ",
+            f"**Path:** `{relative_path}`  \n",
+            "## Summary\n",
+            f"{documentation.get('summary', 'No summary available.')}\n",
+            "## Recent Changes\n",
+            "\n".join(f"- {change}" for change in documentation.get('changes_made', ['No recent changes.'])),
+            "\n"
+        ]
 
-        # Summary
-        sections.append("## Summary")
-        sections.append(documentation.get('summary', 'No summary available.'))
+        # Generate Code Structure section
+        code_structure = [
+            "# Code Structure\n",
+            "## Classes\n"
+        ]
 
-        # Recent Changes
-        changes = documentation.get('changes_made', [])
-        if changes:
-            sections.append("## Recent Changes")
-            sections.append("\n".join(f"- {change}" for change in changes))
+        for cls in documentation.get('classes', []):
+            code_structure.extend([
+                f"### {cls['name']}\n",
+                f"{cls['docstring']}\n",
+                "#### Methods\n",
+                "| Method | Description | Complexity |",
+                "|--------|-------------|------------|",
+            ])
+            for method in cls.get('methods', []):
+                desc = method['docstring'].split('\n')[0]
+                code_structure.append(
+                    f"| `{method['name']}` | {desc} | {method.get('complexity', 'N/A')} |"
+                )
+            code_structure.append("\n")
 
-        # Functions
-        functions = documentation.get('functions', [])
-        if functions:
-            sections.append("## Functions")
-            table = ["| Name | Async | Complexity | Arguments | Description |",
-                    "|------|-------|------------|-----------|-------------|"]
-            for func in functions:
-                name = func.get('name', 'N/A')
-                is_async = 'Yes' if func.get('async', False) else 'No'
-                complexity = func.get('complexity', 'N/A')
-                args = ', '.join(func.get('args', []))
-                description = func.get('docstring', 'No description').split('\n')[0]
-                table.append(f"| {name} | {is_async} | {complexity} | {args} | {description} |")
-            sections.append("\n".join(table))
+        # Generate Dependencies section
+        dependencies = [
+            "# Dependencies\n",
+            "```mermaid",
+            "graph TD;",
+        ]
+        
+        # Create dependency graph
+        dep_map = {}
+        for dep in documentation.get('variables', []) + documentation.get('constants', []):
+            if dep.get('type') == 'import':
+                dep_name = dep['name']
+                dep_refs = dep.get('references', [])
+                dep_map[dep_name] = dep_refs
+                dependencies.append(f"    {dep_name}[{dep_name}];")
+        
+        for dep, refs in dep_map.items():
+            for ref in refs:
+                if ref in dep_map:
+                    dependencies.append(f"    {dep} --> {ref};")
+        
+        dependencies.extend([
+            "```\n"
+        ])
 
-        # Classes
-        classes = documentation.get('classes', [])
-        if classes:
-            sections.append("## Classes")
-            for cls in classes:
-                class_name = cls.get('name', 'N/A')
-                class_description = cls.get('docstring', 'No description').split('\n')[0]
-                sections.append(f"### {class_name}")
-                sections.append(class_description)
-                
-                methods = cls.get('methods', [])
-                if methods:
-                    table = ["| Method | Async | Type | Complexity | Arguments | Description |",
-                            "|--------|-------|------|------------|-----------|-------------|"]
-                    for method in methods:
-                        name = method.get('name', 'N/A')
-                        is_async = 'Yes' if method.get('async', False) else 'No'
-                        method_type = method.get('type', 'N/A')
-                        complexity = method.get('complexity', 'N/A')
-                        args = ', '.join(method.get('args', []))
-                        description = method.get('docstring', 'No description').split('\n')[0]
-                        table.append(f"| {name} | {is_async} | {method_type} | {complexity} | {args} | {description} |")
-                    sections.append("\n".join(table))
+        # Generate Metrics section
+        metrics = [
+            "# Metrics\n",
+            "## Code Quality\n",
+            "| Metric | Value | Status |",
+            "|--------|-------|--------|",
+            f"| Maintainability | {documentation.get('maintainability_index', 0):.1f} | {get_metric_status(documentation.get('maintainability_index', 0))} |",
+        ]
 
-        # Variables
-        variables = documentation.get('variables', [])
-        if variables:
-            sections.append("## Variables")
-            table = ["| Name | Type | Description | File | Line | Example | References |",
-                    "|------|------|-------------|------|------|---------|------------|"]
-            for var in variables:
-                name = var.get('name', 'N/A')
-                var_type = var.get('type', 'N/A')
-                description = var.get('description', 'No description')
-                file = var.get('file', 'N/A')
-                line = var.get('line', 'N/A')
-                example = var.get('example', 'N/A')
-                references = var.get('references', 'N/A')
-                table.append(f"| {name} | {var_type} | {description} | {file} | {line} | {example} | {references} |")
-            sections.append("\n".join(table))
+        if 'halstead' in documentation:
+            halstead = documentation['halstead']
+            metrics.extend([
+                "## Complexity Metrics\n",
+                "| Metric | Value |",
+                "|--------|--------|",
+                f"| Volume | {halstead.get('volume', 0):.1f} |",
+                f"| Difficulty | {halstead.get('difficulty', 0):.1f} |",
+                f"| Effort | {halstead.get('effort', 0):.1f} |",
+            ])
 
-        # Constants
-        constants = documentation.get('constants', [])
-        if constants:
-            sections.append("## Constants")
-            table = ["| Name | Type | Description | File | Line | Example | References |",
-                    "|------|------|-------------|------|------|---------|------------|"]
-            for const in constants:
-                name = const.get('name', 'N/A')
-                const_type = const.get('type', 'N/A')
-                description = const.get('description', 'No description')
-                file = const.get('file', 'N/A')
-                line = const.get('line', 'N/A')
-                example = const.get('example', 'N/A')
-                references = const.get('references', 'N/A')
-                table.append(f"| {name} | {const_type} | {description} | {file} | {line} | {example} | {references} |")
-            sections.append("\n".join(table))
+        # Combine all sections
+        content = "\n".join([
+            *toc,
+            *overview,
+            *code_structure,
+            *dependencies,
+            *metrics
+        ])
 
-        # Metrics
-        halstead = documentation.get('halstead', {})
-        if halstead:
-            sections.append("## Halstead Metrics")
-            metrics = [
-                f"- Volume: {halstead.get('volume', 'N/A')}",
-                f"- Difficulty: {halstead.get('difficulty', 'N/A')}",
-                f"- Effort: {halstead.get('effort', 'N/A')}"
-            ]
-            sections.append("\n".join(metrics))
+        # Write the documentation file
+        safe_filename = sanitize_filename(os.path.basename(file_path))
+        output_path = os.path.join(output_dir, f"{safe_filename}.md")
+        
+        async with aiofiles.open(output_path, 'w', encoding='utf-8') as f:
+            await f.write(content)
 
-        maintainability_index = documentation.get('maintainability_index')
-        if maintainability_index is not None:
-            sections.append("## Maintainability Index")
-            sections.append(str(maintainability_index))
-
-        # Join all sections with double newlines for better readability
-        content = "\n\n".join(sections)
-
-        # Generate and add Table of Contents at the start
-        toc = generate_table_of_contents(content)
-        content = f"# Table of Contents\n\n{toc}\n\n{content}"
-
-        # Write the file
-        try:
-            async with aiofiles.open(doc_file_path, 'w', encoding='utf-8') as f:
-                await f.write(content)
-            logger.info(f"Documentation written to '{doc_file_path}' successfully.")
-            return content
-        except Exception as e:
-            logger.error(f"Error writing to file '{doc_file_path}': {e}")
-            return None
+        logger.info(f"Documentation written to {output_path}")
+        return content
 
     except Exception as e:
-        logger.error(f"Error writing documentation report for '{file_path}': {e}", exc_info=True)
+        logger.error(f"Error writing documentation report: {e}", exc_info=True)
         return None
+
+def get_metric_status(value: float) -> str:
+    """Returns a status indicator based on metric value."""
+    if value >= 80:
+        return "✅ Good"
+    elif value >= 60:
+        return "⚠️ Warning"
+    return "❌ Needs Improvement"
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitizes filename by removing invalid characters."""
+    return re.sub(r'[<>:"/\\|?*]', '_', filename)

@@ -134,6 +134,34 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking if file is binary '{file_path}': {e}")
         return True
 
+import os
+import pathspec  # You'll need to add this to requirements.txt
+from typing import List, Set
+
+def load_gitignore(repo_path: str) -> pathspec.PathSpec:
+    """
+    Loads .gitignore patterns into a PathSpec object.
+    
+    Args:
+        repo_path (str): Path to the repository root
+        
+    Returns:
+        pathspec.PathSpec: Compiled gitignore patterns
+    """
+    gitignore_path = os.path.join(repo_path, '.gitignore')
+    patterns = []
+    
+    if os.path.exists(gitignore_path):
+        with open(gitignore_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    patterns.append(line)
+    
+    return pathspec.PathSpec.from_lines(
+        pathspec.patterns.GitWildMatchPattern, patterns
+    )
+
 def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
     """
     Retrieves all file paths in the repository, excluding specified directories and files.
@@ -149,23 +177,73 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
     """
     file_paths = []
     normalized_excluded_dirs = {os.path.normpath(os.path.join(repo_path, d)) for d in excluded_dirs}
+    
+    # Add common node_modules patterns to excluded dirs
+    node_modules_patterns = {
+        'node_modules',
+        '.bin',
+        'node_modules/.bin',
+        '**/node_modules/**/.bin',
+        '**/node_modules/**/node_modules'
+    }
+    normalized_excluded_dirs.update({os.path.normpath(os.path.join(repo_path, d)) for d in node_modules_patterns})
 
     for root, dirs, files in os.walk(repo_path, topdown=True):
+        # Skip node_modules and other excluded directories
+        if any(excluded in root for excluded in ['node_modules', '.bin']):
+            dirs[:] = []  # Skip processing subdirectories
+            continue
+
         # Exclude directories
-        dirs[:] = [d for d in dirs if os.path.normpath(os.path.join(root, d)) not in normalized_excluded_dirs]
+        dirs[:] = [
+            d for d in dirs 
+            if os.path.normpath(os.path.join(root, d)) not in normalized_excluded_dirs
+            and not any(excluded in d for excluded in ['node_modules', '.bin'])
+        ]
 
         for file in files:
-            # Exclude files
+            # Skip excluded files
             if file in excluded_files:
                 continue
-            file_ext = os.path.splitext(file)[1]
+                
             # Skip specified file types
+            file_ext = os.path.splitext(file)[1]
             if file_ext in skip_types:
                 continue
+
+            # Skip symlinks
             full_path = os.path.join(root, file)
+            if os.path.islink(full_path):
+                continue
+
             file_paths.append(full_path)
+            
     logger.debug(f"Collected {len(file_paths)} files from '{repo_path}'.")
     return file_paths
+
+def should_process_file(file_path: str) -> bool:
+    """
+    Determines if a file should be processed based on various criteria.
+
+    Args:
+        file_path (str): Path to the file.
+
+    Returns:
+        bool: True if the file should be processed, False otherwise.
+    """
+    # Skip symlinks
+    if os.path.islink(file_path):
+        return False
+
+    # Skip node_modules related paths
+    if any(part in file_path for part in ['node_modules', '.bin']):
+        return False
+
+    # Skip if file doesn't exist
+    if not os.path.exists(file_path):
+        return False
+
+    return True
 
 # ----------------------------
 # Configuration Management

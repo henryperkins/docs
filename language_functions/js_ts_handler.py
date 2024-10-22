@@ -1,11 +1,7 @@
 """
 js_ts_handler.py
 
-This module provides the JSTsHandler class, which is responsible for handling JavaScript and TypeScript code files.
-It includes methods for extracting the code structure, inserting JSDoc comments, and validating JS/TS code.
-The handler uses Node.js scripts to interface with JavaScript tools like Babel for parsing and modifying the code.
-
-The JSTsHandler class extends the BaseHandler abstract class.
+Handles JavaScript and TypeScript code analysis, documentation generation, and modification.
 """
 
 import os
@@ -18,213 +14,252 @@ from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
-
 class JSTsHandler(BaseHandler):
     """Handler for JavaScript and TypeScript languages."""
 
     def __init__(self, function_schema: Dict[str, Any]):
         """
-        Initializes the JSTsHandler with a function schema.
+        Initialize the JavaScript/TypeScript handler.
 
         Args:
-            function_schema (Dict[str, Any]): The schema defining functions for documentation generation.
+            function_schema (Dict[str, Any]): Schema defining documentation structure.
         """
         self.function_schema = function_schema
+        self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         """
-        Extracts the structure of the JavaScript/TypeScript code, analyzing classes, functions, methods, variables, and constants.
-
-        This method runs an external Node.js script that uses Babel to parse the code and outputs
-        a JSON structure representing the code elements.
+        Extracts the structure of the JavaScript/TypeScript code.
 
         Args:
-            code (str): The source code to analyze.
-            file_path (str, optional): The file path for code reference.
+            code (str): Source code to analyze.
+            file_path (str, optional): Path to the source file.
 
         Returns:
-            Dict[str, Any]: A detailed structure of the code components.
+            Dict[str, Any]: Extracted code structure or empty structure on failure.
         """
         try:
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "js_ts_parser.js")
-            _, ext = os.path.splitext(file_path or "")
-            language = "typescript" if ext.lower() in [".ts", ".tsx"] else "javascript"
+            # Skip if file should be excluded
+            if self._should_skip_file(file_path):
+                return self._get_empty_structure(f"Skipped: {file_path}")
 
-            input_data = {"code": code, "language": language}
-            input_json = json.dumps(input_data)
-            logger.debug(f"Running JS/TS parser script: {script_path}")
+            # Determine language based on file extension
+            language = self._get_language(file_path)
 
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True,
+            # Prepare input for parser
+            input_data = {
+                "code": code,
+                "language": language,
+                "filePath": file_path or "unknown",
+                "options": {
+                    "errorRecovery": True,
+                    "plugins": self._get_parser_plugins(language)
+                }
+            }
+
+            # Run parser script
+            structure = self._run_script(
+                script_name="js_ts_parser.js",
+                input_data=input_data,
+                error_message=f"Error parsing {file_path}"
             )
 
-            structure = json.loads(result.stdout)
-            logger.debug(f"Extracted JS/TS code structure successfully from file: {file_path}")
+            # Run metrics analysis
+            metrics = self._run_script(
+                script_name="js_ts_metrics.js",
+                input_data=input_data,
+                error_message=f"Error calculating metrics for {file_path}"
+            )
+
+            # Merge metrics into structure
+            if metrics and isinstance(metrics, dict):
+                structure.update(metrics)
+
             return structure
 
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Error running js_ts_parser.js for file {file_path}: {e.stderr}")
-            return {}
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing output from js_ts_parser.js for file {file_path}: {e}")
-            return {}
-
         except Exception as e:
-            logger.error(f"Unexpected error extracting JS/TS structure from file {file_path}: {e}")
-            return {}
+            logger.error(f"Unexpected error analyzing {file_path}: {e}", exc_info=True)
+            return self._get_empty_structure(f"Error: {str(e)}")
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
         """
-        Inserts JSDoc comments into JS/TS code based on the provided documentation.
-
-        This method runs an external Node.js script that processes the code and documentation
-        to insert JSDoc comments.
+        Inserts documentation into JavaScript/TypeScript code.
 
         Args:
-            code (str): The original source code.
-            documentation (Dict[str, Any]): Documentation details obtained from AI.
+            code (str): Original source code.
+            documentation (Dict[str, Any]): Documentation to insert.
 
         Returns:
-            str: The source code with inserted documentation.
+            str: Modified source code with documentation.
         """
-        logger.debug("Inserting JSDoc comments into JS/TS code.")
         try:
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "js_ts_inserter.js")
-            language = documentation.get("language", "javascript")
-
             input_data = {
                 "code": code,
                 "documentation": documentation,
-                "language": language,
+                "options": {
+                    "docStyle": "JSDoc",  # or 'TSDoc' for TypeScript
+                    "insertSpacing": True,
+                    "preserveExisting": True
+                }
             }
-            input_json = json.dumps(input_data)
-            logger.debug(f"Running JS/TS inserter script: {script_path}")
 
-            result = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                capture_output=True,
-                text=True,
-                check=True,
+            result = self._run_script(
+                script_name="js_ts_inserter.js",
+                input_data=input_data,
+                error_message="Error inserting documentation"
             )
 
-            modified_code = result.stdout
-            logger.debug("Completed inserting JSDoc comments into JS/TS code.")
-            return modified_code
+            if result and isinstance(result, str):
+                return result
 
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Error running js_ts_inserter.js: {e.stderr}")
-            return code
+            return code  # Return original code if insertion fails
 
         except Exception as e:
-            logger.error(f"Unexpected error inserting JSDoc comments: {e}")
+            logger.error(f"Error inserting documentation: {e}", exc_info=True)
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates JavaScript/TypeScript code for syntax correctness and style compliance.
-
-        For JavaScript, uses ESLint to check for syntax errors.
-        For TypeScript, uses the TypeScript compiler 'tsc' to perform type checking and syntax validation.
+        Validates JavaScript/TypeScript code syntax.
 
         Args:
-            code (str): The JS/TS code to validate.
-            file_path (Optional[str]): The path to the file being validated.
+            code (str): Code to validate.
+            file_path (Optional[str]): Path to the source file.
 
         Returns:
-            bool: True if the code is valid, False otherwise.
+            bool: True if code is valid, False otherwise.
         """
-        logger.debug(f"Starting JS/TS code validation for file: {file_path}")
-
         try:
-            _, ext = os.path.splitext(file_path or "")
-            is_typescript = ext.lower() in [".ts", ".tsx"]
-            temp_file_ext = ".temp.ts" if is_typescript else ".temp.js"
+            input_data = {
+                "code": code,
+                "language": self._get_language(file_path),
+                "filePath": file_path or "unknown"
+            }
 
-            temp_file = f"{(file_path or 'temp')}{temp_file_ext}"
-            with open(temp_file, "w", encoding="utf-8") as f:
-                f.write(code)
+            result = self._run_script(
+                script_name="js_ts_validator.js",
+                input_data=input_data,
+                error_message=f"Error validating {file_path}"
+            )
 
-            if is_typescript:
-                process = subprocess.run(
-                    ["tsc", "--noEmit", temp_file],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            else:
-                process = subprocess.run(
-                    ["eslint", temp_file],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-
-            os.remove(temp_file)
-
-            if process.returncode != 0:
-                logger.error(f"Code validation failed for {file_path}:\n{process.stdout}\n{process.stderr}")
-                return False
-            else:
-                logger.debug(f"Code validation successful for {file_path}.")
-            return True
-
-        except FileNotFoundError as e:
-            logger.error(f"Validation tool not found: {e}. Please ensure ESLint and TypeScript are installed.")
-            return False
+            return bool(result and result.get("isValid", False))
 
         except Exception as e:
-            logger.error(f"Unexpected error during code validation for {file_path}: {e}")
+            logger.error(f"Error during validation: {e}", exc_info=True)
             return False
 
-    def calculate_metrics(self, code: str, file_path: str = None) -> Dict[str, Any]:
+    def _run_script(
+        self,
+        script_name: str,
+        input_data: Dict[str, Any],
+        error_message: str,
+        timeout: int = 30
+    ) -> Any:
         """
-        Calculates code complexity metrics for JS/TS code.
-
-        Uses external tools to compute cyclomatic complexity, Halstead metrics, and maintainability index.
+        Runs a Node.js script with the given input data.
 
         Args:
-            code (str): The JS/TS code to analyze.
-            file_path (str, optional): The file path for reference.
+            script_name (str): Name of the script to run.
+            input_data (Dict[str, Any]): Input data for the script.
+            error_message (str): Error message prefix for logging.
+            timeout (int): Timeout in seconds.
 
         Returns:
-            Dict[str, Any]: A dictionary containing the metrics.
+            Any: Script output or None on failure.
         """
-        logger.debug(f"Calculating metrics for file: {file_path}")
+        script_path = os.path.join(self.script_dir, script_name)
+        
         try:
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "js_ts_metrics.js")
-            _, ext = os.path.splitext(file_path or "")
-            language = "typescript" if ext.lower() in [".ts", ".tsx"] else "javascript"
+            # Ensure proper string encoding
+            input_json = json.dumps(input_data, ensure_ascii=False)
 
-            input_data = {"code": code, "language": language}
-            input_json = json.dumps(input_data)
-            logger.debug(f"Running metrics calculation script: {script_path}")
-
-            result = subprocess.run(
+            process = subprocess.run(
                 ["node", script_path],
                 input=input_json,
+                encoding='utf-8',
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=timeout
             )
 
-            metrics = json.loads(result.stdout)
-            logger.debug(f"Calculated metrics for file: {file_path}")
-            return metrics
+            if process.returncode == 0:
+                try:
+                    return json.loads(process.stdout)
+                except json.JSONDecodeError:
+                    if script_name == "js_ts_inserter.js":
+                        return process.stdout  # Return raw output for inserter
+                    logger.error(f"{error_message}: Invalid JSON output")
+                    return None
+            else:
+                logger.error(f"{error_message}: {process.stderr}")
+                return None
 
+        except subprocess.TimeoutExpired:
+            logger.error(f"{error_message}: Script timeout after {timeout}s")
+            return None
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running js_ts_metrics.js for file {file_path}: {e.stderr}")
-            return {}
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing metrics output for file {file_path}: {e}")
-            return {}
-
+            logger.error(f"{error_message}: {e.stderr}")
+            return None
         except Exception as e:
-            logger.error(f"Unexpected error calculating metrics for file {file_path}: {e}")
-            return {}
+            logger.error(f"{error_message}: {str(e)}")
+            return None
+
+    def _get_language(self, file_path: Optional[str]) -> str:
+        """Determines the language based on file extension."""
+        if not file_path:
+            return "javascript"
+        ext = os.path.splitext(file_path)[1].lower()
+        return "typescript" if ext in [".ts", ".tsx"] else "javascript"
+
+    def _should_skip_file(self, file_path: Optional[str]) -> bool:
+        """Determines if a file should be skipped."""
+        if not file_path:
+            return False
+            
+        skip_patterns = [
+            "node_modules",
+            ".d.ts",
+            ".test.",
+            ".spec.",
+            ".min.",
+            "dist/",
+            "build/"
+        ]
+        return any(pattern in file_path for pattern in skip_patterns)
+
+    def _get_parser_plugins(self, language: str) -> list:
+        """Gets the appropriate parser plugins based on language."""
+        plugins = [
+            "jsx",
+            "decorators-legacy",
+            ["decorators", { "decoratorsBeforeExport": True }],
+            "classProperties",
+            "classPrivateProperties",
+            "classPrivateMethods",
+            "exportDefaultFrom",
+            "exportNamespaceFrom",
+            "dynamicImport"
+        ]
+        
+        if language == "typescript":
+            plugins.append("typescript")
+        
+        return plugins
+
+    def _get_empty_structure(self, reason: str = "") -> Dict[str, Any]:
+        """Returns an empty structure with optional reason."""
+        return {
+            "classes": [],
+            "functions": [],
+            "variables": [],
+            "constants": [],
+            "summary": f"Skipped: {reason}" if reason else "Empty structure",
+            "changes_made": [],
+            "halstead": {
+                "volume": 0,
+                "difficulty": 0,
+                "effort": 0
+            },
+            "maintainability_index": 0
+        }
