@@ -1,0 +1,25 @@
+{
+    "ignore": [
+        "*.md",
+        "*.bak",
+        "*.json",
+        "*.toml",
+        "node_modules/",
+        "schemas/",
+        "scripts/",
+        "pip/",
+        "*.log",
+        "*.txt",
+        ".gitignore",
+        ".vscode/",
+        ".github/",
+        ".flake8",
+        "codecov/",
+        "*/node_modules/*",
+        "package-lock.json",
+        "scripts/package-lock.json",
+        "scripts/node_modules/",
+        "SECURITY.md",
+        ".git/"
+    ]
+}
