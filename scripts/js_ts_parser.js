@@ -1,31 +1,312 @@
-// js_ts_parser.js
+// Enhanced JavaScript/TypeScript parser with comprehensive analysis capabilities
 
-const fs = require('fs');
 const babelParser = require('@babel/parser');
 const traverse = require('@babel/traverse').default;
+const t = require('@babel/types');
+const tsEstree = require('@typescript-eslint/typescript-estree');
+const escomplex = require('typhonjs-escomplex');
 
-function parseCode(code, language) {
-    // Skip if file is empty or not text
-    if (!code || typeof code !== 'string') {
-        return {
-            classes: [],
-            functions: [],
-            variables: [],
-            constants: [],
-            summary: "Empty or invalid file",
-            changes_made: [],
-            halstead: { volume: 0, difficulty: 0, effort: 0 },
-            maintainability_index: 0
+class JSTSParser {
+    constructor(options = {}) {
+        this.options = {
+            sourceType: 'module',
+            errorRecovery: true,
+            ...options
         };
     }
 
-    // Configure parser options
-    const parserOptions = {
-        sourceType: 'module',
-        errorRecovery: true,  // Continue parsing even if there are errors
-        plugins: [
+    parse(code, language = 'javascript') {
+        try {
+            const isTypeScript = language === 'typescript';
+            const ast = this._parseCode(code, isTypeScript);
+            const structure = this._initializeStructure();
+            
+            // Calculate metrics first
+            const metrics = this._calculateMetrics(code, isTypeScript);
+            Object.assign(structure, metrics);
+            
+            this._traverseAST(ast, structure, isTypeScript);
+            
+            return structure;
+        } catch (error) {
+            console.error(`Parse error: ${error.message}`);
+            return this._getEmptyStructure(error.message);
+        }
+    }
+
+    _parseCode(code, isTypeScript) {
+        if (isTypeScript) {
+            return tsEstree.parse(code, {
+                jsx: true,
+                tokens: true,
+                loc: true,
+                range: true,
+                comment: true,
+            });
+        }
+
+        return babelParser.parse(code, {
+            sourceType: this.options.sourceType,
+            plugins: this._getBabelPlugins(isTypeScript),
+            errorRecovery: this.options.errorRecovery,
+            tokens: true,
+        });
+    }
+
+    _calculateMetrics(code, isTypeScript) {
+        try {
+            const analysis = escomplex.analyzeModule(code, {
+                sourceType: 'module',
+                useTypeScriptEstree: isTypeScript,
+                loc: true,
+                newmi: true,
+                skipCalculation: false
+            });
+
+            return {
+                complexity: analysis.aggregate.cyclomatic,
+                maintainability_index: analysis.maintainability,
+                halstead: {
+                    volume: analysis.aggregate.halstead.volume,
+                    difficulty: analysis.aggregate.halstead.difficulty,
+                    effort: analysis.aggregate.halstead.effort
+                },
+                function_metrics: analysis.methods.reduce((acc, method) => {
+                    acc[method.name] = {
+                        complexity: method.cyclomatic,
+                        sloc: method.sloc,
+                        params: method.params
+                    };
+                    return acc;
+                }, {})
+            };
+        } catch (error) {
+            console.error(`Metrics calculation error: ${error.message}`);
+            return {
+                complexity: 0,
+                maintainability_index: 0,
+                halstead: { volume: 0, difficulty: 0, effort: 0 },
+                function_metrics: {}
+            };
+        }
+    }
+
+    _traverseAST(ast, structure, isTypeScript) {
+        const visitors = {
+            // Class handling
+            ClassDeclaration: (path) => {
+                const classInfo = this._extractClassInfo(path, isTypeScript);
+                structure.classes.push(classInfo);
+            },
+
+            // Function handling
+            FunctionDeclaration: (path) => {
+                const functionInfo = this._extractFunctionInfo(path, isTypeScript);
+                structure.functions.push(functionInfo);
+            },
+
+            // Variable declarations
+            VariableDeclaration: (path) => {
+                const declarations = this._extractVariableInfo(path, isTypeScript);
+                const collection = path.node.kind === 'const' ? 
+                    structure.constants : structure.variables;
+                collection.push(...declarations);
+            },
+
+            // Import/Export handling
+            ImportDeclaration: (path) => {
+                const importInfo = this._extractImportInfo(path);
+                structure.imports.push(importInfo);
+            },
+
+            ExportDefaultDeclaration: (path) => {
+                const exportInfo = this._extractExportInfo(path, true);
+                structure.exports.push(exportInfo);
+            },
+
+            ExportNamedDeclaration: (path) => {
+                const exportInfo = this._extractExportInfo(path, false);
+                structure.exports.push(exportInfo);
+            },
+
+            // React component handling
+            JSXElement: (path) => {
+                if (this._isReactComponent(path)) {
+                    const componentInfo = this._extractReactComponentInfo(path);
+                    structure.react_components.push(componentInfo);
+                }
+            },
+
+            // TypeScript specific handlers
+            TSInterfaceDeclaration: (path) => {
+                if (isTypeScript) {
+                    const interfaceInfo = this._extractInterfaceInfo(path);
+                    structure.interfaces.push(interfaceInfo);
+                }
+            },
+
+            TSTypeAliasDeclaration: (path) => {
+                if (isTypeScript) {
+                    const typeInfo = this._extractTypeInfo(path);
+                    structure.types.push(typeInfo);
+                }
+            }
+        };
+
+        traverse(ast, visitors);
+    }
+
+    _extractClassInfo(path, isTypeScript) {
+        const node = path.node;
+        const className = node.id?.name || 'Anonymous';
+        const decorators = this._extractDecorators(node);
+        const superClass = node.superClass?.name;
+        const implementedInterfaces = isTypeScript ? 
+            this._extractImplementedInterfaces(node) : [];
+
+        const methods = node.body.body
+            .filter(member => t.isClassMethod(member) || t.isClassPrivateMethod(member))
+            .map(method => this._extractMethodInfo(method, isTypeScript));
+
+        const properties = node.body.body
+            .filter(member => t.isClassProperty(member) || t.isClassPrivateProperty(member))
+            .map(prop => this._extractPropertyInfo(prop, isTypeScript));
+
+        return {
+            name: className,
+            superClass,
+            interfaces: implementedInterfaces,
+            decorators,
+            methods,
+            properties,
+            docstring: this._extractDocstring(node),
+            isAbstract: node.abstract || false,
+            isExported: this._isExported(path)
+        };
+    }
+
+    _extractMethodInfo(node, isTypeScript) {
+        const methodName = this._getMethodName(node);
+        const params = this._extractParameters(node.params, isTypeScript);
+        const returnType = isTypeScript ? this._extractReturnType(node) : null;
+        const decorators = this._extractDecorators(node);
+        const accessibility = this._getAccessibility(node);
+        const isAsync = node.async || false;
+        const isStatic = node.static || false;
+        const isAbstract = node.abstract || false;
+
+        return {
+            name: methodName,
+            params,
+            returnType,
+            decorators,
+            accessibility,
+            isAsync,
+            isStatic,
+            isAbstract,
+            docstring: this._extractDocstring(node),
+            complexity: this._calculateMethodComplexity(node)
+        };
+    }
+
+    _extractReactComponentInfo(path) {
+        const component = path.findParent(p => 
+            t.isFunctionDeclaration(p) || 
+            t.isArrowFunctionExpression(p) || 
+            t.isClassDeclaration(p)
+        );
+
+        if (!component) return null;
+
+        const props = this._extractReactProps(component);
+        const hooks = this._extractReactHooks(component);
+        const state = this._extractReactState(component);
+        const effects = this._extractReactEffects(component);
+
+        return {
+            name: component.node.id?.name || 'Anonymous',
+            type: t.isClassDeclaration(component) ? 'class' : 'function',
+            props,
+            hooks,
+            state,
+            effects,
+            docstring: this._extractDocstring(component.node),
+            isExported: this._isExported(component)
+        };
+    }
+
+    _extractReactProps(component) {
+        const props = [];
+
+        if (t.isClassDeclaration(component)) {
+            // Handle class component props
+            const constructor = component.node.body.body
+                .find(node => t.isClassMethod(node) && node.kind === 'constructor');
+            
+            if (constructor && constructor.params[0]) {
+                const propsParam = constructor.params[0];
+                props.push(...this._extractPropsFromTypeAnnotation(propsParam));
+            }
+        } else {
+            // Handle functional component props
+            const param = component.node.params[0];
+            if (param) {
+                props.push(...this._extractPropsFromTypeAnnotation(param));
+            }
+        }
+
+        return props;
+    }
+
+    _extractPropsFromTypeAnnotation(param) {
+        if (!param.typeAnnotation) return [];
+
+        const propsType = param.typeAnnotation.typeAnnotation;
+        if (!t.isTSTypeLiteral(propsType)) return [];
+
+        return propsType.members.map(member => ({
+            name: member.key.name,
+            type: this._getTypeString(member.typeAnnotation.typeAnnotation),
+            required: !member.optional,
+            defaultValue: this._getDefaultValue(member)
+        }));
+    }
+
+    _extractReactHooks(component) {
+        const hooks = [];
+        traverse(component.node, {
+            CallExpression(path) {
+                if (t.isIdentifier(path.node.callee) && 
+                    path.node.callee.name.startsWith('use')) {
+                    hooks.push({
+                        name: path.node.callee.name,
+                        dependencies: this._extractHookDependencies(path.node)
+                    });
+                }
+            }
+        });
+        return hooks;
+    }
+
+    _extractReactEffects(component) {
+        const effects = [];
+        traverse(component.node, {
+            CallExpression(path) {
+                if (t.isIdentifier(path.node.callee) && 
+                    path.node.callee.name === 'useEffect') {
+                    effects.push({
+                        dependencies: this._extractHookDependencies(path.node),
+                        cleanup: this._hasEffectCleanup(path.node)
+                    });
+                }
+            }
+        });
+        return effects;
+    }
+
+    _getBabelPlugins(isTypeScript) {
+        const plugins = [
             'jsx',
-            language === 'typescript' ? 'typescript' : null,
             'decorators-legacy',
             ['decorators', { decoratorsBeforeExport: true }],
             'classProperties',
@@ -33,225 +314,58 @@ function parseCode(code, language) {
             'classPrivateMethods',
             'exportDefaultFrom',
             'exportNamespaceFrom',
-            'dynamicImport'
-        ].filter(Boolean),
-        tokens: true
-    };
+            'dynamicImport',
+            'nullishCoalescing',
+            'optionalChaining',
+        ];
 
-    // Parse the code
-    let ast;
-    try {
-        ast = babelParser.parse(code, parserOptions);
-    } catch (error) {
-        console.error(`Parse error: ${error.message}`);
+        if (isTypeScript) {
+            plugins.push('typescript');
+        }
+
+        return plugins;
+    }
+
+    _initializeStructure() {
         return {
             classes: [],
             functions: [],
             variables: [],
             constants: [],
-            summary: `Parse error: ${error.message}`,
-            changes_made: [],
-            halstead: { volume: 0, difficulty: 0, effort: 0 },
-            maintainability_index: 0
+            imports: [],
+            exports: [],
+            interfaces: [],
+            types: [],
+            react_components: [],
+            complexity: 0,
+            maintainability_index: 0,
+            halstead: {
+                volume: 0,
+                difficulty: 0,
+                effort: 0
+            },
+            summary: "",
+            function_metrics: {}
         };
     }
 
-    const structure = {
-        classes: [],
-        functions: [],
-        variables: [],
-        constants: [],
-        summary: "",
-        changes_made: [],
-        halstead: {
-            volume: 0,
-            difficulty: 0,
-            effort: 0
-        },
-        maintainability_index: 0
-    };
-
-    try {
-        // Traverse the AST
-        traverse(ast, {
-            enter(path) {
-                const node = path.node;
-
-                // Extract comments
-                if (node.leadingComments) {
-                    structure.summary += node.leadingComments
-                        .map(comment => comment.value.trim())
-                        .join('\n');
-                }
-
-                // Handle classes
-                if (node.type === 'ClassDeclaration' && node.id) {
-                    const classInfo = {
-                        name: node.id.name,
-                        docstring: getDocstring(node),
-                        methods: [],
-                        complexity: 1 // Base complexity
-                    };
-
-                    // Process class methods
-                    node.body.body.forEach(element => {
-                        if ((element.type === 'ClassMethod' || element.type === 'ClassPrivateMethod') && 
-                            element.key.type === 'Identifier') {
-                            const methodInfo = {
-                                name: element.key.name,
-                                docstring: getDocstring(element),
-                                args: getParams(element.params),
-                                async: element.async,
-                                type: getMethodType(element),
-                                complexity: calculateComplexity(element)
-                            };
-                            classInfo.methods.push(methodInfo);
-                            classInfo.complexity += methodInfo.complexity;
-                        }
-                    });
-
-                    structure.classes.push(classInfo);
-                }
-
-                // Handle functions
-                else if (node.type === 'FunctionDeclaration' && node.id) {
-                    const functionInfo = {
-                        name: node.id.name,
-                        docstring: getDocstring(node),
-                        args: getParams(node.params),
-                        async: node.async,
-                        complexity: calculateComplexity(node)
-                    };
-                    structure.functions.push(functionInfo);
-                }
-
-                // Handle variables and constants
-                else if (node.type === 'VariableDeclaration') {
-                    node.declarations.forEach(declaration => {
-                        const varInfo = {
-                            name: getVariableName(declaration.id),
-                            type: declaration.init ? declaration.init.type : 'undefined',
-                            description: getDocstring(node),
-                            file: 'current file',
-                            line: node.loc ? node.loc.start.line : 0,
-                            link: 'N/A',
-                            example: getExample(declaration),
-                            references: []
-                        };
-
-                        if (node.kind === 'const') {
-                            structure.constants.push(varInfo);
-                        } else {
-                            structure.variables.push(varInfo);
-                        }
-                    });
-                }
-            }
-        });
-
-        // Calculate basic halstead metrics
-        const metrics = calculateHalsteadMetrics(ast);
-        structure.halstead = metrics.halstead;
-        structure.maintainability_index = metrics.maintainability;
-
-        return structure;
-
-    } catch (error) {
-        console.error(`Error during traversal: ${error.message}`);
+    _getEmptyStructure(reason = '') {
         return {
-            classes: [],
-            functions: [],
-            variables: [],
-            constants: [],
-            summary: `Error during traversal: ${error.message}`,
-            changes_made: [],
-            halstead: { volume: 0, difficulty: 0, effort: 0 },
-            maintainability_index: 0
+            ...this._initializeStructure(),
+            summary: `Empty structure: ${reason}`
         };
     }
-}
 
-// Helper functions
-function getDocstring(node) {
-    if (node.leadingComments && node.leadingComments.length > 0) {
-        return node.leadingComments[node.leadingComments.length - 1].value.trim();
-    }
-    return '';
-}
-
-function getParams(params) {
-    return params.map(param => {
-        if (param.type === 'Identifier') {
-            return param.name;
-        } else if (param.type === 'AssignmentPattern' && param.left.type === 'Identifier') {
-            return param.left.name;
-        }
-        return 'unknown';
-    });
-}
-
-function getMethodType(node) {
-    if (node.static) return 'static';
-    if (node.kind === 'get') return 'getter';
-    if (node.kind === 'set') return 'setter';
-    return 'instance';
-}
-
-function getVariableName(id) {
-    if (id.type === 'Identifier') {
-        return id.name;
-    } else if (id.type === 'ObjectPattern') {
-        return id.properties.map(prop => 
-            prop.key && prop.key.type === 'Identifier' ? prop.key.name : 'unknown'
-        ).join(', ');
-    }
-    return 'unknown';
-}
-
-function getExample(declaration) {
-    if (declaration.init) {
-        return declaration.init.type;
-    }
-    return 'No example available';
-}
-
-function calculateComplexity(node) {
-    let complexity = 1;
-    traverse(node, {
-        enter(path) {
-            if (path.isIfStatement() || 
-                path.isWhileStatement() || 
-                path.isForStatement() || 
-                path.isForInStatement() || 
-                path.isForOfStatement() || 
-                path.isSwitchCase() || 
-                path.isConditionalExpression()) {
-                complexity++;
+    _extractDocstring(node) {
+        const comments = node.leadingComments || [];
+        for (const comment of comments) {
+            if (comment.type === 'CommentBlock' && 
+                (comment.value.startsWith('*') || comment.value.startsWith('/'))) {
+                return comment.value.replace(/^\*+/, '').trim();
             }
         }
-    });
-    return complexity;
+        return '';
+    }
 }
 
-function calculateHalsteadMetrics(ast) {
-    // Simple implementation - could be enhanced
-    return {
-        halstead: {
-            volume: ast.program.body.length * 10,
-            difficulty: ast.program.body.length * 2,
-            effort: ast.program.body.length * 20
-        },
-        maintainability: Math.max(0, 100 - ast.program.body.length)
-    };
-}
-
-// Main execution
-try {
-    const input = fs.readFileSync(0, 'utf-8');
-    const data = JSON.parse(input);
-    const structure = parseCode(data.code, data.language || 'javascript');
-    console.log(JSON.stringify(structure, null, 2));
-} catch (error) {
-    console.error(`Fatal error: ${error.message}`);
-    process.exit(1);
-}
+module.exports = JSTSParser;

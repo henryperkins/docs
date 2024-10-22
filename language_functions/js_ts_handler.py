@@ -1,152 +1,309 @@
 """
-js_ts_handler.py
+Enhanced JavaScript/TypeScript Handler with comprehensive support for modern features.
 
-Handles JavaScript and TypeScript code analysis, documentation generation, and modification.
+This handler provides robust parsing, analysis, and documentation generation for JavaScript and TypeScript code,
+including support for modern language features, React components, and detailed metrics calculation.
 """
 
 import os
 import logging
 import subprocess
 import json
-from typing import Dict, Any, Optional
+import tempfile
+from typing import Dict, Any, Optional, List, Union
+from dataclasses import dataclass
+from enum import Enum
 
 from language_functions.base_handler import BaseHandler
+from metrics import calculate_all_metrics
 
 logger = logging.getLogger(__name__)
 
+class JSDocStyle(Enum):
+    """Enumeration of supported documentation styles."""
+    JSDOC = "jsdoc"
+    TSDOC = "tsdoc"
+
+@dataclass
+class MetricsResult:
+    """Container for code metrics results."""
+    complexity: int
+    maintainability: float
+    halstead: Dict[str, float]
+    function_metrics: Dict[str, Dict[str, Any]]
+
 class JSTsHandler(BaseHandler):
-    """Handler for JavaScript and TypeScript languages."""
+    """Handler for JavaScript and TypeScript languages with enhanced capabilities."""
 
     def __init__(self, function_schema: Dict[str, Any]):
-        """
-        Initialize the JavaScript/TypeScript handler.
-
-        Args:
-            function_schema (Dict[str, Any]): Schema defining documentation structure.
-        """
+        """Initialize the handler with configuration."""
         self.function_schema = function_schema
         self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         """
-        Extracts the structure of the JavaScript/TypeScript code.
+        Extracts detailed code structure with enhanced error handling and TypeScript support.
 
         Args:
-            code (str): Source code to analyze.
-            file_path (str, optional): Path to the source file.
+            code (str): Source code to analyze
+            file_path (str, optional): Path to the source file
 
         Returns:
-            Dict[str, Any]: Extracted code structure or empty structure on failure.
+            Dict[str, Any]: Comprehensive code structure and metrics
         """
         try:
-            # Skip if file should be excluded
-            if self._should_skip_file(file_path):
-                return self._get_empty_structure(f"Skipped: {file_path}")
-
-            # Determine language based on file extension
-            language = self._get_language(file_path)
-
+            # Determine language and parser options
+            is_typescript = self._is_typescript_file(file_path)
+            parser_options = self._get_parser_options(is_typescript)
+            
             # Prepare input for parser
             input_data = {
                 "code": code,
-                "language": language,
+                "language": "typescript" if is_typescript else "javascript",
                 "filePath": file_path or "unknown",
-                "options": {
-                    "errorRecovery": True,
-                    "plugins": self._get_parser_plugins(language)
-                }
+                "options": parser_options
             }
 
+            # Get metrics first
+            metrics = self._calculate_metrics(code, is_typescript)
+
             # Run parser script
-            structure = self._run_script(
-                script_name="js_ts_parser.js",
-                input_data=input_data,
-                error_message=f"Error parsing {file_path}"
-            )
+            structure = self._run_parser_script(input_data)
+            if not structure:
+                return self._get_empty_structure("Parser error")
 
-            # Run metrics analysis
-            metrics = self._run_script(
-                script_name="js_ts_metrics.js",
-                input_data=input_data,
-                error_message=f"Error calculating metrics for {file_path}"
-            )
+            # Enhance structure with metrics
+            structure.update({
+                "halstead": metrics.halstead,
+                "complexity": metrics.complexity,
+                "maintainability_index": metrics.maintainability,
+                "function_metrics": metrics.function_metrics
+            })
 
-            # Merge metrics into structure
-            if metrics and isinstance(metrics, dict):
-                structure.update(metrics)
+            # Add React-specific analysis if needed
+            if self._is_react_file(file_path):
+                react_info = self._analyze_react_components(code, is_typescript)
+                structure["react_components"] = react_info
 
             return structure
 
         except Exception as e:
-            logger.error(f"Unexpected error analyzing {file_path}: {e}", exc_info=True)
+            logger.error(f"Error extracting structure: {str(e)}", exc_info=True)
             return self._get_empty_structure(f"Error: {str(e)}")
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
         """
-        Inserts documentation into JavaScript/TypeScript code.
+        Inserts JSDoc/TSDoc comments with improved formatting and type information.
 
         Args:
-            code (str): Original source code.
-            documentation (Dict[str, Any]): Documentation to insert.
+            code (str): Original source code
+            documentation (Dict[str, Any]): Documentation to insert
 
         Returns:
-            str: Modified source code with documentation.
+            str: Modified source code with documentation
         """
         try:
+            is_typescript = self._is_typescript_file(documentation.get("file_path"))
+            doc_style = JSDocStyle.TSDOC if is_typescript else JSDocStyle.JSDOC
+
             input_data = {
                 "code": code,
                 "documentation": documentation,
+                "language": "typescript" if is_typescript else "javascript",
                 "options": {
-                    "docStyle": "JSDoc",  # or 'TSDoc' for TypeScript
-                    "insertSpacing": True,
+                    "style": doc_style.value,
+                    "includeTypes": is_typescript,
                     "preserveExisting": True
                 }
             }
 
-            result = self._run_script(
-                script_name="js_ts_inserter.js",
-                input_data=input_data,
-                error_message="Error inserting documentation"
-            )
-
-            if result and isinstance(result, str):
-                return result
-
-            return code  # Return original code if insertion fails
+            return self._run_inserter_script(input_data) or code
 
         except Exception as e:
-            logger.error(f"Error inserting documentation: {e}", exc_info=True)
+            logger.error(f"Error inserting documentation: {str(e)}", exc_info=True)
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates JavaScript/TypeScript code syntax.
+        Validates code using ESLint with TypeScript support.
 
         Args:
-            code (str): Code to validate.
-            file_path (Optional[str]): Path to the source file.
+            code (str): Code to validate
+            file_path (Optional[str]): Path to source file
 
         Returns:
-            bool: True if code is valid, False otherwise.
+            bool: True if valid, False otherwise
         """
         try:
+            if not file_path:
+                logger.warning("File path not provided for validation")
+                return True
+
+            is_typescript = self._is_typescript_file(file_path)
+            config_path = self._get_eslint_config(is_typescript)
+
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='.ts' if is_typescript else '.js',
+                encoding='utf-8',
+                delete=False
+            ) as tmp:
+                tmp.write(code)
+                temp_path = tmp.name
+
+            try:
+                result = subprocess.run(
+                    ["eslint", "--config", config_path, temp_path],
+                    capture_output=True,
+                    text=True
+                )
+                return result.returncode == 0
+            finally:
+                os.unlink(temp_path)
+
+        except Exception as e:
+            logger.error(f"Validation error: {str(e)}", exc_info=True)
+            return False
+
+    def _calculate_metrics(self, code: str, is_typescript: bool) -> MetricsResult:
+        """Calculates comprehensive code metrics."""
+        try:
+            # Use typhonjs-escomplex for detailed metrics
             input_data = {
                 "code": code,
-                "language": self._get_language(file_path),
-                "filePath": file_path or "unknown"
+                "options": {
+                    "typescript": is_typescript,
+                    "sourceType": "module",
+                    "loc": True,
+                    "cyclomatic": True,
+                    "halstead": True,
+                    "maintainability": True
+                }
             }
 
             result = self._run_script(
-                script_name="js_ts_validator.js",
+                script_name="js_ts_metrics.js",
                 input_data=input_data,
-                error_message=f"Error validating {file_path}"
+                error_message="Error calculating metrics"
             )
 
-            return bool(result and result.get("isValid", False))
+            if not result:
+                return MetricsResult(0, 0.0, {}, {})
+
+            return MetricsResult(
+                complexity=result.get("complexity", 0),
+                maintainability=result.get("maintainability", 0.0),
+                halstead=result.get("halstead", {}),
+                function_metrics=result.get("functions", {})
+            )
 
         except Exception as e:
-            logger.error(f"Error during validation: {e}", exc_info=True)
+            logger.error(f"Error calculating metrics: {str(e)}", exc_info=True)
+            return MetricsResult(0, 0.0, {}, {})
+
+    def _analyze_react_components(self, code: str, is_typescript: bool) -> Dict[str, Any]:
+        """Analyzes React components and their properties."""
+        try:
+            input_data = {
+                "code": code,
+                "options": {
+                    "typescript": is_typescript,
+                    "plugins": ["jsx", "react"]
+                }
+            }
+
+            return self._run_script(
+                script_name="react_analyzer.js",
+                input_data=input_data,
+                error_message="Error analyzing React components"
+            ) or {}
+
+        except Exception as e:
+            logger.error(f"Error analyzing React components: {str(e)}", exc_info=True)
+            return {}
+
+    def _get_parser_options(self, is_typescript: bool) -> Dict[str, Any]:
+        """Gets appropriate parser options based on file type."""
+        options = {
+            "sourceType": "module",
+            "plugins": [
+                "jsx",
+                "decorators-legacy",
+                ["decorators", { "decoratorsBeforeExport": True }],
+                "classProperties",
+                "classPrivateProperties",
+                "classPrivateMethods",
+                "exportDefaultFrom",
+                "exportNamespaceFrom",
+                "dynamicImport",
+                "nullishCoalescing",
+                "optionalChaining",
+            ]
+        }
+        
+        if is_typescript:
+            options["plugins"].extend([
+                "typescript",
+                "decorators-legacy",
+                "classProperties"
+            ])
+
+        return options
+
+    @staticmethod
+    def _is_typescript_file(file_path: Optional[str]) -> bool:
+        """Determines if a file is TypeScript based on extension."""
+        if not file_path:
             return False
+        return file_path.lower().endswith(('.ts', '.tsx'))
+
+    @staticmethod
+    def _is_react_file(file_path: Optional[str]) -> bool:
+        """Determines if a file contains React components."""
+        if not file_path:
+            return False
+        return file_path.lower().endswith(('.jsx', '.tsx'))
+
+    def _get_eslint_config(self, is_typescript: bool) -> str:
+        """Gets appropriate ESLint configuration file path."""
+        config_name = '.eslintrc.typescript.json' if is_typescript else '.eslintrc.json'
+        return os.path.join(self.script_dir, config_name)
+
+    def _get_empty_structure(self, reason: str = "") -> Dict[str, Any]:
+        """Returns an empty structure with optional reason."""
+        return {
+            "classes": [],
+            "functions": [],
+            "variables": [],
+            "constants": [],
+            "imports": [],
+            "exports": [],
+            "react_components": [],
+            "summary": f"Empty structure: {reason}" if reason else "Empty structure",
+            "halstead": {
+                "volume": 0,
+                "difficulty": 0,
+                "effort": 0
+            },
+            "complexity": 0,
+            "maintainability_index": 0
+        }
+
+    def _run_parser_script(self, input_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Runs the parser script with error handling."""
+        return self._run_script(
+            script_name="js_ts_parser.js",
+            input_data=input_data,
+            error_message="Error running parser"
+        )
+
+    def _run_inserter_script(self, input_data: Dict[str, Any]) -> Optional[str]:
+        """Runs the documentation inserter script with error handling."""
+        return self._run_script(
+            script_name="js_ts_inserter.js",
+            input_data=input_data,
+            error_message="Error running inserter"
+        )
 
     def _run_script(
         self,
@@ -156,16 +313,16 @@ class JSTsHandler(BaseHandler):
         timeout: int = 30
     ) -> Any:
         """
-        Runs a Node.js script with the given input data.
+        Runs a Node.js script with robust error handling.
 
         Args:
-            script_name (str): Name of the script to run.
-            input_data (Dict[str, Any]): Input data for the script.
-            error_message (str): Error message prefix for logging.
-            timeout (int): Timeout in seconds.
+            script_name (str): Name of the script to run
+            input_data (Dict[str, Any]): Input data for the script
+            error_message (str): Error message prefix
+            timeout (int): Timeout in seconds
 
         Returns:
-            Any: Script output or None on failure.
+            Any: Script output or None on failure
         """
         script_path = os.path.join(self.script_dir, script_name)
         
@@ -204,62 +361,3 @@ class JSTsHandler(BaseHandler):
         except Exception as e:
             logger.error(f"{error_message}: {str(e)}")
             return None
-
-    def _get_language(self, file_path: Optional[str]) -> str:
-        """Determines the language based on file extension."""
-        if not file_path:
-            return "javascript"
-        ext = os.path.splitext(file_path)[1].lower()
-        return "typescript" if ext in [".ts", ".tsx"] else "javascript"
-
-    def _should_skip_file(self, file_path: Optional[str]) -> bool:
-        """Determines if a file should be skipped."""
-        if not file_path:
-            return False
-            
-        skip_patterns = [
-            "node_modules",
-            ".d.ts",
-            ".test.",
-            ".spec.",
-            ".min.",
-            "dist/",
-            "build/"
-        ]
-        return any(pattern in file_path for pattern in skip_patterns)
-
-    def _get_parser_plugins(self, language: str) -> list:
-        """Gets the appropriate parser plugins based on language."""
-        plugins = [
-            "jsx",
-            "decorators-legacy",
-            ["decorators", { "decoratorsBeforeExport": True }],
-            "classProperties",
-            "classPrivateProperties",
-            "classPrivateMethods",
-            "exportDefaultFrom",
-            "exportNamespaceFrom",
-            "dynamicImport"
-        ]
-        
-        if language == "typescript":
-            plugins.append("typescript")
-        
-        return plugins
-
-    def _get_empty_structure(self, reason: str = "") -> Dict[str, Any]:
-        """Returns an empty structure with optional reason."""
-        return {
-            "classes": [],
-            "functions": [],
-            "variables": [],
-            "constants": [],
-            "summary": f"Skipped: {reason}" if reason else "Empty structure",
-            "changes_made": [],
-            "halstead": {
-                "volume": 0,
-                "difficulty": 0,
-                "effort": 0
-            },
-            "maintainability_index": 0
-        }

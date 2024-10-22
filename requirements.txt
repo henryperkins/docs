@@ -19,7 +19,6 @@ chardet==5.2.0
 charset-normalizer==3.4.0
 click==8.1.6
 colorama==0.4.6
-configobj==5.0.9
 constantly==23.10.4
 cryptography==41.0.7
 distro==1.9.0
@@ -28,7 +27,6 @@ flake8==7.1.1
 frozenlist==1.4.1
 httplib2==0.20.4
 hyperlink==21.0.0
-idna==3.7
 javalang==0.13.0
 Jinja2==3.1.4
 json5==0.9.25
