@@ -50,17 +50,12 @@ def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[Base
     """
     Factory function to retrieve the appropriate language handler.
 
-    This function matches the provided programming language with its corresponding handler class.
-    If the language is supported, it returns an instance of the handler initialized with the given
-    function schema. If the language is unsupported, it logs a warning and returns None.
-
     Args:
-        language (str): The programming language of the source code (e.g., "python", "java", "javascript").
-        function_schema (Dict[str, Any]): The schema defining functions and their documentation structure.
+        language (str): The programming language of the source code.
+        function_schema (Dict[str, Any]): The schema defining functions.
 
     Returns:
-        Optional[BaseHandler]: An instance of a subclass of `BaseHandler` tailored to the specified language
-                               or `None` if the language is unsupported.
+        Optional[BaseHandler]: An instance of the corresponding language handler or None if unsupported.
     """
     if function_schema is None:
         logger.error("Function schema is None. Cannot retrieve handler.")
@@ -68,22 +63,27 @@ def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[Base
 
     # Normalize the language string to lowercase to ensure case-insensitive matching
     language = language.lower()
+    
+    # Map of supported languages to their handlers
+    handlers = {
+        "python": PythonHandler,
+        "java": JavaHandler,
+        "javascript": JSTsHandler,
+        "js": JSTsHandler,
+        "typescript": JSTsHandler,
+        "ts": JSTsHandler,
+        "go": GoHandler,
+        "cpp": CppHandler,
+        "c++": CppHandler,
+        "cxx": CppHandler,
+        "html": HTMLHandler,
+        "htm": HTMLHandler,
+        "css": CSSHandler
+    }
 
-    # Mapping of language identifiers to their corresponding handler classes
-    if language == "python":
-        return PythonHandler(function_schema)
-    elif language == "java":
-        return JavaHandler(function_schema)
-    elif language in ["javascript", "js", "typescript", "ts"]:
-        return JSTsHandler(function_schema)
-    elif language == "go":
-        return GoHandler(function_schema)
-    elif language in ["cpp", "c++", "cxx"]:
-        return CppHandler(function_schema)
-    elif language in ["html", "htm"]:
-        return HTMLHandler(function_schema)
-    elif language == "css":
-        return CSSHandler(function_schema)
+    handler_class = handlers.get(language)
+    if handler_class:
+        return handler_class(function_schema)
     else:
-        logger.warning(f"No handler available for language: {language}")
-        return None
+        logger.debug(f"No handler available for language: {language}")
+        return None  # Return None instead of raising an exception
