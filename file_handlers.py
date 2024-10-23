@@ -3,34 +3,25 @@ file_handlers.py
 
 This module contains asynchronous functions for processing individual files, extracting code structures, generating documentation via Azure OpenAI API calls, and inserting docstrings into the code. It also manages backups and uses the ContextManager to maintain persistent context across files.
 """
-
 import os
 import shutil
 import logging
-import aiofiles
 import aiohttp
 import json
 import asyncio
 import jsonschema
-from typing import Set, List, Dict, Any, Optional
-from jsonschema import validate, ValidationError  # Add these imports
+from typing import Set, List, Dict, Any, Optional, Tuple
+from jsonschema import validate, ValidationError
 from language_functions import get_handler
 from language_functions.base_handler import BaseHandler
 from utils import (
     is_binary,
     get_language,
-    is_valid_extension,
     clean_unused_imports_async,
     format_with_black_async,
-    run_flake8_async,
 )
-from write_documentation_report import (
-    generate_documentation_prompt,
-    write_documentation_report,
-    sanitize_filename,
-    generate_table_of_contents,
-)
-from context_manager import ContextManager  # Import ContextManager
+from write_documentation_report import generate_documentation_prompt, write_documentation_report
+from context_manager import ContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -251,122 +242,112 @@ def validate_documentation(documentation: Dict[str, Any], schema: Dict[str, Any]
         # You might want to add logic here to attempt to fix the documentation
         return None
 
-
 async def process_file(
-    session: aiohttp.ClientSession,
-    file_path: str,
-    skip_types: Set[str],
-    semaphore: asyncio.Semaphore,
-    deployment_name: str,
-    function_schema: Dict[str, Any],
-    repo_root: str,
-    project_info: str,
-    style_guidelines: str,
-    safe_mode: bool,
-    azure_api_key: str,
-    azure_endpoint: str,
-    azure_api_version: str,
-    output_dir: str,
+    session, file_path, skip_types, semaphore, deployment_name,
+    function_schema, repo_root, project_info, style_guidelines, safe_mode,
+    azure_api_key, azure_endpoint, azure_api_version, output_dir
 ) -> Optional[str]:
-    """
-    Processes a single file to extract its structure and generate documentation.
+    """Main file processing function."""
 
-    Args:
-        session (aiohttp.ClientSession): The HTTP session for making requests.
-        file_path (str): Path to the file to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API requests.
-        deployment_name (str): The Azure OpenAI deployment name.
-        function_schema (Dict[str, Any]): The schema defining functions.
-        repo_root (str): Root directory of the repository.
-        project_info (str): Information about the project.
-        style_guidelines (str): Documentation style guidelines.
-        safe_mode (bool): If True, no files will be modified.
-        azure_api_key (str): The API key for Azure OpenAI.
-        azure_endpoint (str): The endpoint URL for the Azure OpenAI service.
-        azure_api_version (str): The API version to use.
-        output_dir (str): Directory to save documentation files.
-
-    Returns:
-        Optional[str]: The content of the documentation report or None if processing fails.
-    """
-    logger.debug(f"Processing file: {file_path}")
-
-    # Early checks for file processing
-    if not should_process_file(file_path):
-        logger.debug(f"Skipping file: {file_path}")
+    if not should_process_file(file_path, skip_types):
         return None
 
+    content, language, handler = await _prepare_file(file_path, function_schema, skip_types)
+    if not all([content, language, handler]):  # Check if all are not None/False
+        return None
+
+    code_structure = await _extract_code_structure(content, file_path, language, handler)
+    if not code_structure:
+        return None
+
+    documentation = await _generate_documentation(
+        session, semaphore, deployment_name, function_schema,
+        repo_root, project_info, style_guidelines, code_structure, file_path,
+        azure_api_key, azure_endpoint, azure_api_version
+    )
+    if not documentation:
+        return None
+
+    _update_documentation_metrics(documentation, code_structure)
+
+    if not safe_mode:
+        await _insert_and_validate_documentation(handler, content, documentation, file_path, language)
+
+    return await _write_documentation_report(documentation, language, file_path, repo_root, output_dir)
+
+
+
+async def _prepare_file(file_path: str, function_schema: Dict[str, Any], skip_types: Set[str]) -> tuple[Optional[str], Optional[str], Optional[BaseHandler]]:
+    """Reads file content, gets language and handler."""
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return None, None, None
+
+    _, ext = os.path.splitext(file_path)
+    extra_skip_types = {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'}
+    if ext in extra_skip_types or ext in skip_types or not ext or "node_modules" in file_path:
+        logger.debug(f"Skipping file '{file_path}' due to extension/location: {ext}")
+        return None, None, None
+
+    if is_binary(file_path):
+        logger.debug(f"Skipping binary file: {file_path}")
+        return None, None, None
+
+    language = get_language(ext)
+    if language == "plaintext":
+        logger.debug(f"Skipping plaintext file: {file_path}")
+        return None, None, None
+
+    handler = get_handler(language, function_schema)
+    if not handler:
+        logger.debug(f"No handler available for language: {language}")
+        return None, None, None
+
     try:
-        # Check if file exists
-        if not os.path.exists(file_path):
-            logger.error(f"File not found: {file_path}")
+        async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+            content = await f.read()
+        logger.debug(f"Successfully read content from {file_path}")
+        return content, language, handler
+    except UnicodeDecodeError:
+        logger.warning(f"Skipping file due to encoding issues: {file_path}")
+        return None, None, None
+    except Exception as e:
+        logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
+        return None, None, None
+
+
+async def _extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler) -> Optional[Dict[str, Any]]:
+    """Extracts code structure and adds context."""
+
+    try:
+        code_structure = await extract_code_structure(content, file_path, language, handler)  # Assuming this function is defined elsewhere
+        if not code_structure:
             return None
 
-        # Get file extension and check if we should process this file
-        _, ext = os.path.splitext(file_path)
-        
-        # Additional skip types for config and hidden files
-        extra_skip_types = {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'}
-        if ext in extra_skip_types or ext in skip_types or not ext:
-            logger.debug(f"Skipping file '{file_path}' due to extension: {ext}")
-            return None
-
-        # Skip files in node_modules
-        if "node_modules" in file_path:
-            logger.debug(f"Skipping node_modules file: {file_path}")
-            return None
-
-        # Check if file is binary
-        if is_binary(file_path):
-            logger.debug(f"Skipping binary file: {file_path}")
-            return None
-
-        # Get language and handler
-        language = get_language(ext)
-        logger.debug(f"Detected language for '{file_path}': {language}")
-
-        if language == "plaintext":
-            logger.debug(f"Skipping plaintext file: {file_path}")
-            return None
-
-        handler = get_handler(language, function_schema)
-        if not handler:
-            logger.debug(f"No handler available for language: {language}")
-            return None
-
-        # Read file content
         try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-                content = await f.read()
-            logger.debug(f"Successfully read content from {file_path}")
-        except UnicodeDecodeError:
-            logger.warning(f"Skipping file due to encoding issues: {file_path}")
-            return None
+            critical_info = extract_critical_info(code_structure, file_path)  # Assuming this function is defined elsewhere
+            context_manager.add_context(critical_info)
         except Exception as e:
-            logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
-            return None
+            logger.error(f"Error extracting critical info: {e}", exc_info=True)
+            critical_info = f"File: {file_path}\n# Failed to extract detailed information"
+            context_manager.add_context(critical_info)
+        return code_structure
 
-        # Extract code structure
-        try:
-            code_structure = await extract_code_structure(content, file_path, language, handler)
-            if not code_structure:
-                logger.warning(f"Could not extract code structure from '{file_path}'")
-                return None
+    except Exception as e:
+        logger.error(f"Error extracting structure: {e}", exc_info=True)
+        return None
 
-            # Add to context manager
-            try:
-                critical_info = extract_critical_info(code_structure, file_path)
-                context_manager.add_context(critical_info)
-            except Exception as e:
-                logger.error(f"Error extracting critical info from '{file_path}': {e}", exc_info=True)
-                # Continue processing even if critical info extraction fails
-                critical_info = f"File: {file_path}\n# Failed to extract detailed information"
-                context_manager.add_context(critical_info)
 
-            # Generate prompt with context
-            persistent_context = "\n".join(context_manager.get_context())
-            prompt = f"""
+
+async def _generate_documentation(
+    session, semaphore, deployment_name, function_schema,
+    repo_root, project_info, style_guidelines, code_structure, file_path,
+    azure_api_key, azure_endpoint, azure_api_version
+) -> Optional[Dict[str, Any]]:
+    """Generates documentation from Azure OpenAI."""
+    try:
+        persistent_context = "\n".join(context_manager.get_context())
+        prompt = f"""
 [Context Start]
 {persistent_context}
 [Context End]
@@ -376,140 +357,116 @@ async def process_file(
     code_structure=code_structure,
     project_info=project_info,
     style_guidelines=style_guidelines,
-    language=language,
+    language=get_language(os.path.splitext(file_path)[1]),
     function_schema=function_schema
 )}
-""".strip()
+        """.strip()
 
-            # Generate documentation
-            documentation = await fetch_documentation_rest(
-                session=session,
-                prompt=prompt,
-                semaphore=semaphore,
-                deployment_name=deployment_name,
-                function_schema=function_schema,
-                azure_api_key=azure_api_key,
-                azure_endpoint=azure_endpoint,
-                azure_api_version=azure_api_version,
-            )
+        documentation = await fetch_documentation_rest(  # Assuming this function is defined elsewhere
+            session=session,
+            prompt=prompt,
+            semaphore=semaphore,
+            deployment_name=deployment_name,
+            function_schema=function_schema,
+            azure_api_key=azure_api_key,
+            azure_endpoint=azure_endpoint,
+            azure_api_version=azure_api_version,
+        )
 
-            if not documentation:
-                logger.error(f"Failed to generate documentation for '{file_path}'")
-                return None
-
-            # Update documentation with code structure metrics
-            documentation.update({
-                "halstead": code_structure.get("halstead", {}),
-                "maintainability_index": code_structure.get("maintainability_index"),
-                "variables": code_structure.get("variables", []),
-                "constants": code_structure.get("constants", []),
-                "changes_made": documentation.get("changes_made", [])
-            })
-
-            # Update complexity metrics
-            function_complexity = {
-                func["name"]: func.get("complexity", 0)
-                for func in code_structure.get("functions", [])
-            }
-            for func in documentation.get("functions", []):
-                func["complexity"] = function_complexity.get(func["name"], 0)
-
-            class_complexity = {}
-            for cls in code_structure.get("classes", []):
-                class_name = cls["name"]
-                methods_complexity = {
-                    method["name"]: method.get("complexity", 0)
-                    for method in cls.get("methods", [])
-                }
-                class_complexity[class_name] = methods_complexity
-
-            for cls in documentation.get("classes", []):
-                class_name = cls["name"]
-                methods_complexity = class_complexity.get(class_name, {})
-                for method in cls.get("methods", []):
-                    method["complexity"] = methods_complexity.get(method["name"], 0)
-
-            # Process documentation
-            if not safe_mode:
-                try:
-                    new_content = await asyncio.to_thread(
-                        handler.insert_docstrings,
-                        content,
-                        documentation
-                    )
-
-                    if language.lower() == "python":
-                        new_content = await clean_unused_imports_async(new_content, file_path)
-                        new_content = await format_with_black_async(new_content)
-
-                    is_valid = await asyncio.to_thread(
-                        handler.validate_code,
-                        new_content,
-                        file_path
-                    )
-
-                    if is_valid:
-                        await backup_and_write_new_content(file_path, new_content)
-                        logger.info(f"Documentation inserted into '{file_path}'")
-                    else:
-                        logger.error(f"Code validation failed for '{file_path}'")
-                except Exception as e:
-                    logger.error(f"Error processing documentation for '{file_path}': {e}", exc_info=True)
-
-            # Generate documentation report
-            try:
-                file_content = await write_documentation_report(
-                    documentation=documentation,
-                    language=language,
-                    file_path=file_path,
-                    repo_root=repo_root,
-                    output_dir=output_dir,
-                )
-
-                logger.info(f"Finished processing '{file_path}'")
-                return file_content
-
-            except Exception as e:
-                logger.error(f"Error generating documentation report for '{file_path}': {e}", exc_info=True)
-                return None
-
-        except Exception as e:
-            logger.error(f"Error processing structure for '{file_path}': {e}", exc_info=True)
-            return None
+        if not documentation:
+            logger.error(f"Failed to generate documentation for '{file_path}'")
+        return documentation
 
     except Exception as e:
-        logger.error(f"Unexpected error processing '{file_path}': {e}", exc_info=True)
+        logger.error(f"Error generating documentation: {e}", exc_info=True)
         return None
 
-def should_process_file(file_path: str) -> bool:
+
+def _update_documentation_metrics(documentation: Dict[str, Any], code_structure: Dict[str, Any]) -> None:
+    """Updates documentation with metrics from code structure."""
+
+    documentation.update({
+        "halstead": code_structure.get("halstead", {}),
+        "maintainability_index": code_structure.get("maintainability_index"),
+        "variables": code_structure.get("variables", []),
+        "constants": code_structure.get("constants", []),
+        "changes_made": documentation.get("changes_made", [])
+    })
+
+    function_complexity = {func["name"]: func.get("complexity", 0) for func in code_structure.get("functions", [])}
+    for func in documentation.get("functions", []):
+        func["complexity"] = function_complexity.get(func["name"], 0)
+
+    class_complexity = {}
+    for cls in code_structure.get("classes", []):
+        methods_complexity = {method["name"]: method.get("complexity", 0) for method in cls.get("methods", [])}
+        class_complexity[cls["name"]] = methods_complexity
+
+    for cls in documentation.get("classes", []):
+        methods_complexity = class_complexity.get(cls["name"], {})
+        for method in cls.get("methods", []):
+            method["complexity"] = methods_complexity.get(method["name"], 0)
+
+
+async def _insert_and_validate_documentation(handler: BaseHandler, content: str, documentation: Dict[str, Any], file_path: str, language: str) -> None:
+    """Inserts documentation and validates the updated code."""
+    try:
+        new_content = await asyncio.to_thread(handler.insert_docstrings, content, documentation)
+
+        if language.lower() == "python":
+            new_content = await clean_unused_imports_async(new_content, file_path)
+            new_content = await format_with_black_async(new_content)
+
+        is_valid = await asyncio.to_thread(handler.validate_code, new_content, file_path)
+
+        if is_valid:
+            await backup_and_write_new_content(file_path, new_content)  # Assuming this function is defined elsewhere
+            logger.info(f"Documentation inserted into '{file_path}'")
+        else:
+            logger.error(f"Code validation failed for '{file_path}'")
+
+    except Exception as e:
+        logger.error(f"Error processing documentation: {e}", exc_info=True)
+
+
+async def _write_documentation_report(documentation: Dict[str, Any], language: str, file_path: str, repo_root: str, output_dir: str) -> Optional[str]:
+    """Writes the documentation report to a file."""
+    try:
+        file_content = await write_documentation_report(
+            documentation=documentation,
+            language=language,
+            file_path=file_path,
+            repo_root=repo_root,
+            output_dir=output_dir,
+        )
+        logger.info(f"Finished processing '{file_path}'")
+        return file_content
+
+    except Exception as e:
+        logger.error(f"Error generating report: {e}", exc_info=True)
+        return None
+
+def should_process_file(file_path: str, skip_types: Set[str]) -> bool:
     """
-    Determines if a file should be processed based on various criteria.
-
-    Args:
-        file_path (str): Path to the file.
-
-    Returns:
-        bool: True if the file should be processed, False otherwise.
+    Checks if a file should be processed based on path, extension and skip types.
     """
-    # Skip symlinks
-    if os.path.islink(file_path):
-        return False
 
-    # Skip node_modules related paths
-    if any(part in file_path for part in ['node_modules', '.bin']):
-        return False
-
-    # Skip if file doesn't exist
     if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
         return False
 
-    # Skip TypeScript declaration files
-    if file_path.endswith('.d.ts'):
-        return False
+    _, ext = os.path.splitext(file_path)
 
-    # Skip certain directories
-    excluded_dirs = {'.git', '__pycache__', 'node_modules', '.bin', 'build', 'dist'}
-    if any(excluded in file_path for excluded in excluded_dirs):
+    # Combines all skip conditions for clarity
+    if (
+        os.path.islink(file_path) or
+        any(part in file_path for part in ['node_modules', '.bin']) or
+        file_path.endswith('.d.ts') or
+        any(excluded in file_path for excluded in {'.git', '__pycache__', 'node_modules', '.bin', 'build', 'dist'}) or
+        ext in {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'} or
+        ext in skip_types or not ext
+    ):
+        logger.debug(f"Skipping file '{file_path}' due to extension/location: {ext}")
         return False
 
     return True

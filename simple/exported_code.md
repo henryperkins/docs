@@ -1,3 +1,96 @@
+## file structure
+
+```plaintext
+(pip) azureuser@hperkin41:~/docs$ tree -L 4 --gitignore
+.
+├── README.md
+├── SECURITY.md
+├── codecov
+├── config.json
+├── context_manager.py
+├── documentation-viewer
+│   ├── README.md
+│   ├── index.css
+│   ├── index.js
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── public
+│   │   ├── favicon.ico
+│   │   ├── index.html
+│   │   ├── logo192.png
+│   │   ├── logo512.png
+│   │   ├── manifest.json
+│   │   └── robots.txt
+│   ├── server
+│   │   ├── data
+│   │   │   ├── documentation.json
+│   │   │   └── metrics.json
+│   │   ├── index.js
+│   │   ├── metrics.js
+│   │   ├── node_modules
+│   │   ├── package-lock.json
+│   │   └── package.json
+│   ├── src
+│   │   ├── App.css
+│   │   ├── App.js
+│   │   ├── App.test.js
+│   │   ├── components
+│   │   │   └── DocumentationViewer.js
+│   │   ├── index.css
+│   │   ├── index.js
+│   │   ├── logo.svg
+│   │   ├── reportWebVitals.js
+│   │   └── setupTests.js
+│   └── tailwind.config.js
+├── file_handlers.py
+├── halstead_utils.py
+├── language_functions
+│   ├── __init__.py
+│   ├── __pycache__
+│   ├── base_handler.py
+│   ├── cpp_handler.py
+│   ├── css_handler.py
+│   ├── go_handler.py
+│   ├── html_handler.py
+│   ├── java_handler.py
+│   ├── js_ts_handler.py
+│   ├── language_functions.py
+│   └── python_handler.py
+├── main.py
+├── metrics.py
+├── package-lock.json
+├── package.json
+├── pyproject.toml
+├── requirements.txt
+├── schemas
+│   └── function_schema.json
+├── scripts
+│   ├── cpp_inserter.cpp
+│   ├── cpp_parser.cpp
+│   ├── css_inserter.js
+│   ├── css_parser.js
+│   ├── go_inserter.go
+│   ├── go_parser.go
+│   ├── html_inserter.js
+│   ├── html_parser.js
+│   ├── java_inserter.js
+│   ├── java_parser.js
+│   ├── js_ts_inserter.js
+│   ├── js_ts_metrics.js
+│   ├── js_ts_parser.js
+│   ├── package-lock.json
+│   └── package.json
+├── server
+│   ├── package-lock.json
+│   └── package.json
+├── utils.py
+└── write_documentation_report.py
+
+105 directories, 71 files
+```
+
+
 ## main.py
 
 ```python
@@ -893,280 +986,6 @@ def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str
 
     critical_info = "\n".join(info_lines)
     return critical_info
-```
-
-## schemas/function_schema.json
-
-```json
-{
-  "functions": [
-    {
-      "name": "generate_documentation",
-      "description": "Generates documentation for code structures.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "docstring_format": {
-            "type": "string",
-            "description": "Format of the docstring (e.g., Google, NumPy, Sphinx).",
-            "enum": ["Google"]
-          },
-          "summary": {
-            "type": "string",
-            "description": "A detailed summary of the file."
-          },
-          "changes_made": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "List of changes made to the file."
-          },
-          "functions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Function name."
-                },
-                "docstring": {
-                  "type": "string",
-                  "description": "Detailed description of the function in Google Style."
-                },
-                "args": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "List of argument names."
-                },
-                "async": {
-                  "type": "boolean",
-                  "description": "Whether the function is asynchronous."
-                },
-                "complexity": {
-                  "type": "integer",
-                  "description": "Cyclomatic complexity of the function."
-                }
-              },
-              "required": [
-                "name",
-                "docstring",
-                "args",
-                "async",
-                "complexity"
-              ]
-            },
-            "description": "List of functions."
-          },
-          "classes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Class name."
-                },
-                "docstring": {
-                  "type": "string",
-                  "description": "Detailed description of the class in Google Style."
-                },
-                "methods": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "name": {
-                        "type": "string",
-                        "description": "Method name."
-                      },
-                      "docstring": {
-                        "type": "string",
-                        "description": "Detailed description of the method in Google Style."
-                      },
-                      "args": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        },
-                        "description": "List of argument names."
-                      },
-                      "async": {
-                        "type": "boolean",
-                        "description": "Whether the method is asynchronous."
-                      },
-                      "type": {
-                        "type": "string",
-                        "description": "Method type (e.g., 'instance', 'class', 'static')."
-                      },
-                      "complexity": {
-                        "type": "integer",
-                        "description": "Cyclomatic complexity of the method."
-                      }
-                    },
-                    "required": [
-                      "name",
-                      "docstring",
-                      "args",
-                      "async",
-                      "type",
-                      "complexity"
-                    ]
-                  },
-                  "description": "List of methods."
-                }
-              },
-              "required": [
-                "name",
-                "docstring",
-                "methods"
-              ]
-            },
-            "description": "List of classes."
-          },
-          "halstead": {
-            "type": "object",
-            "properties": {
-              "volume": {
-                "type": "number",
-                "description": "Halstead Volume"
-              },
-              "difficulty": {
-                "type": "number",
-                "description": "Halstead Difficulty"
-              },
-              "effort": {
-                "type": "number",
-                "description": "Halstead Effort"
-              }
-            },
-            "description": "Halstead complexity metrics."
-          },
-          "maintainability_index": {
-            "type": "number",
-            "description": "Maintainability index of the code."
-          },
-          "variables": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Variable name."
-                },
-                "type": {
-                  "type": "string",
-                  "description": "Inferred data type of the variable."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "Description of the variable."
-                },
-                "file": {
-                  "type": "string",
-                  "description": "File where the variable is defined."
-                },
-                "line": {
-                  "type": "integer",
-                  "description": "Line number where the variable is defined."
-                },
-                "link": {
-                  "type": "string",
-                  "description": "Link to the variable definition."
-                },
-                "example": {
-                  "type": "string",
-                  "description": "Example usage of the variable."
-                },
-                "references": {
-                  "type": "string",
-                  "description": "References to the variable."
-                }
-              },
-              "required": [
-                "name",
-                "type",
-                "description",
-                "file",
-                "line",
-                "link",
-                "example",
-                "references"
-              ]
-            },
-            "description": "List of variables in the code."
-          },
-          "constants": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Constant name."
-                },
-                "type": {
-                  "type": "string",
-                  "description": "Inferred data type of the constant."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "Description of the constant."
-                },
-                "file": {
-                  "type": "string",
-                  "description": "File where the constant is defined."
-                },
-                "line": {
-                  "type": "integer",
-                  "description": "Line number where the constant is defined."
-                },
-                "link": {
-                  "type": "string",
-                  "description": "Link to the constant definition."
-                },
-                "example": {
-                  "type": "string",
-                  "description": "Example usage of the constant."
-                },
-                "references": {
-                  "type": "string",
-                  "description": "References to the constant."
-                }
-              },
-              "required": [
-                "name",
-                "type",
-                "description",
-                "file",
-                "line",
-                "link",
-                "example",
-                "references"
-              ]
-            },
-            "description": "List of constants in the code."
-          }
-        },
-        "required": [
-          "docstring_format",
-          "summary",
-          "changes_made",
-          "functions",
-          "classes",
-          "halstead",
-          "maintainability_index",
-          "variables",
-          "constants"
-        ]
-      }
-    }
-  ]
-}
 ```
 
 ## halstead_utils.py
@@ -4231,65 +4050,41 @@ class GoHandler(BaseHandler):
 ## language_functions/js_ts_handler.py
 
 ```python
-"""
-Enhanced JavaScript/TypeScript Handler with comprehensive support for modern features.
-
-This handler provides robust parsing, analysis, and documentation generation for JavaScript and TypeScript code,
-including support for modern language features, React components, and detailed metrics calculation.
-"""
-
+# js_ts_handler.py
 import os
 import logging
 import subprocess
 import json
 import tempfile
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 
 from language_functions.base_handler import BaseHandler
-from metrics import calculate_all_metrics
 
 logger = logging.getLogger(__name__)
 
 class JSDocStyle(Enum):
-    """Enumeration of supported documentation styles."""
     JSDOC = "jsdoc"
     TSDOC = "tsdoc"
 
 @dataclass
 class MetricsResult:
-    """Container for code metrics results."""
     complexity: int
     maintainability: float
     halstead: Dict[str, float]
     function_metrics: Dict[str, Dict[str, Any]]
 
 class JSTsHandler(BaseHandler):
-    """Handler for JavaScript and TypeScript languages with enhanced capabilities."""
 
     def __init__(self, function_schema: Dict[str, Any]):
-        """Initialize the handler with configuration."""
         self.function_schema = function_schema
         self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
-        """
-        Extracts detailed code structure with enhanced error handling and TypeScript support.
-
-        Args:
-            code (str): Source code to analyze
-            file_path (str, optional): Path to the source file
-
-        Returns:
-            Dict[str, Any]: Comprehensive code structure and metrics
-        """
         try:
-            # Determine language and parser options
             is_typescript = self._is_typescript_file(file_path)
             parser_options = self._get_parser_options(is_typescript)
-            
-            # Prepare input for parser
             input_data = {
                 "code": code,
                 "language": "typescript" if is_typescript else "javascript",
@@ -4297,15 +4092,16 @@ class JSTsHandler(BaseHandler):
                 "options": parser_options
             }
 
-            # Get metrics first
+            # Get metrics
             metrics = self._calculate_metrics(code, is_typescript)
+            if metrics is None:
+                return self._get_empty_structure("Metrics calculation failed")
 
             # Run parser script
             structure = self._run_parser_script(input_data)
-            if not structure:
-                return self._get_empty_structure("Parser error")
+            if structure is None:
+                return self._get_empty_structure("Parsing failed")
 
-            # Enhance structure with metrics
             structure.update({
                 "halstead": metrics.halstead,
                 "complexity": metrics.complexity,
@@ -4313,10 +4109,11 @@ class JSTsHandler(BaseHandler):
                 "function_metrics": metrics.function_metrics
             })
 
-            # Add React-specific analysis if needed
+            # React analysis
             if self._is_react_file(file_path):
                 react_info = self._analyze_react_components(code, is_typescript)
-                structure["react_components"] = react_info
+                if react_info is not None:
+                    structure["react_components"] = react_info
 
             return structure
 
@@ -4325,16 +4122,6 @@ class JSTsHandler(BaseHandler):
             return self._get_empty_structure(f"Error: {str(e)}")
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """
-        Inserts JSDoc/TSDoc comments with improved formatting and type information.
-
-        Args:
-            code (str): Original source code
-            documentation (Dict[str, Any]): Documentation to insert
-
-        Returns:
-            str: Modified source code with documentation
-        """
         try:
             is_typescript = self._is_typescript_file(documentation.get("file_path"))
             doc_style = JSDocStyle.TSDOC if is_typescript else JSDocStyle.JSDOC
@@ -4350,23 +4137,14 @@ class JSTsHandler(BaseHandler):
                 }
             }
 
-            return self._run_inserter_script(input_data) or code
+            updated_code = self._run_inserter_script(input_data)
+            return updated_code if updated_code is not None else code
 
         except Exception as e:
             logger.error(f"Error inserting documentation: {str(e)}", exc_info=True)
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
-        """
-        Validates code using ESLint with TypeScript support.
-
-        Args:
-            code (str): Code to validate
-            file_path (Optional[str]): Path to source file
-
-        Returns:
-            bool: True if valid, False otherwise
-        """
         try:
             if not file_path:
                 logger.warning("File path not provided for validation")
@@ -4398,10 +4176,8 @@ class JSTsHandler(BaseHandler):
             logger.error(f"Validation error: {str(e)}", exc_info=True)
             return False
 
-    def _calculate_metrics(self, code: str, is_typescript: bool) -> MetricsResult:
-        """Calculates comprehensive code metrics."""
+    def _calculate_metrics(self, code: str, is_typescript: bool) -> Optional[MetricsResult]:
         try:
-            # Use typhonjs-escomplex for detailed metrics
             input_data = {
                 "code": code,
                 "options": {
@@ -4413,15 +4189,16 @@ class JSTsHandler(BaseHandler):
                     "maintainability": True
                 }
             }
-
             result = self._run_script(
                 script_name="js_ts_metrics.js",
                 input_data=input_data,
-                error_message="Error calculating metrics"
+                error_message="Metrics calculation failed"
             )
+            logger.debug(f"Metrics calculation result: {result}")
 
-            if not result:
-                return MetricsResult(0, 0.0, {}, {})
+            if result is None or not isinstance(result, dict) or not all(key in result for key in ["complexity", "maintainability", "halstead", "functions"]):
+                logger.error("Invalid metrics result format.")
+                return None
 
             return MetricsResult(
                 complexity=result.get("complexity", 0),
@@ -4432,10 +4209,9 @@ class JSTsHandler(BaseHandler):
 
         except Exception as e:
             logger.error(f"Error calculating metrics: {str(e)}", exc_info=True)
-            return MetricsResult(0, 0.0, {}, {})
+            return None
 
-    def _analyze_react_components(self, code: str, is_typescript: bool) -> Dict[str, Any]:
-        """Analyzes React components and their properties."""
+    def _analyze_react_components(self, code: str, is_typescript: bool) -> Optional[Dict[str, Any]]:
         try:
             input_data = {
                 "code": code,
@@ -4444,66 +4220,60 @@ class JSTsHandler(BaseHandler):
                     "plugins": ["jsx", "react"]
                 }
             }
-
-            return self._run_script(
+            result = self._run_script(
                 script_name="react_analyzer.js",
                 input_data=input_data,
-                error_message="Error analyzing React components"
-            ) or {}
+                error_message="React analysis failed"
+            )
+            logger.debug(f"React analysis result: {result}")
+            return result
 
         except Exception as e:
             logger.error(f"Error analyzing React components: {str(e)}", exc_info=True)
-            return {}
+            return None
 
     def _get_parser_options(self, is_typescript: bool) -> Dict[str, Any]:
-        """Gets appropriate parser options based on file type."""
         options = {
             "sourceType": "module",
             "plugins": [
                 "jsx",
                 "decorators-legacy",
-                ["decorators", { "decoratorsBeforeExport": True }],
+                ["decorators", {"decoratorsBeforeExport": True}],
                 "classProperties",
                 "classPrivateProperties",
                 "classPrivateMethods",
                 "exportDefaultFrom",
                 "exportNamespaceFrom",
                 "dynamicImport",
-                "nullishCoalescing",
+                "nullishCoalescingOperator",
                 "optionalChaining",
             ]
         }
-        
+
         if is_typescript:
             options["plugins"].extend([
-                "typescript",
-                "decorators-legacy",
-                "classProperties"
+                "typescript"
             ])
 
         return options
 
     @staticmethod
     def _is_typescript_file(file_path: Optional[str]) -> bool:
-        """Determines if a file is TypeScript based on extension."""
         if not file_path:
             return False
         return file_path.lower().endswith(('.ts', '.tsx'))
 
     @staticmethod
     def _is_react_file(file_path: Optional[str]) -> bool:
-        """Determines if a file contains React components."""
         if not file_path:
             return False
         return file_path.lower().endswith(('.jsx', '.tsx'))
 
     def _get_eslint_config(self, is_typescript: bool) -> str:
-        """Gets appropriate ESLint configuration file path."""
         config_name = '.eslintrc.typescript.json' if is_typescript else '.eslintrc.json'
         return os.path.join(self.script_dir, config_name)
 
     def _get_empty_structure(self, reason: str = "") -> Dict[str, Any]:
-        """Returns an empty structure with optional reason."""
         return {
             "classes": [],
             "functions": [],
@@ -4519,81 +4289,2298 @@ class JSTsHandler(BaseHandler):
                 "effort": 0
             },
             "complexity": 0,
-            "maintainability_index": 0
+            "maintainability_index": 0,
+            "function_metrics": {}
         }
 
     def _run_parser_script(self, input_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Runs the parser script with error handling."""
         return self._run_script(
             script_name="js_ts_parser.js",
             input_data=input_data,
-            error_message="Error running parser"
+            error_message="Parsing failed"
         )
 
     def _run_inserter_script(self, input_data: Dict[str, Any]) -> Optional[str]:
-        """Runs the documentation inserter script with error handling."""
-        return self._run_script(
+        result = self._run_script(
             script_name="js_ts_inserter.js",
             input_data=input_data,
             error_message="Error running inserter"
         )
+        if isinstance(result, str):
+            return result
+        elif isinstance(result, dict):
+            return json.dumps(result)
+        else:
+            logger.error("Inserter script did not return code string.")
+            return None
 
-    def _run_script(
-        self,
-        script_name: str,
-        input_data: Dict[str, Any],
-        error_message: str,
-        timeout: int = 30
-    ) -> Any:
-        """
-        Runs a Node.js script with robust error handling.
-
-        Args:
-            script_name (str): Name of the script to run
-            input_data (Dict[str, Any]): Input data for the script
-            error_message (str): Error message prefix
-            timeout (int): Timeout in seconds
-
-        Returns:
-            Any: Script output or None on failure
-        """
-        script_path = os.path.join(self.script_dir, script_name)
-        
+    def _run_script(self, script_name: str, input_data: Dict[str, Any], error_message: str) -> Any:
         try:
-            # Ensure proper string encoding
-            input_json = json.dumps(input_data, ensure_ascii=False)
-
+            script_path = os.path.join(self.script_dir, script_name)
             process = subprocess.run(
-                ["node", script_path],
-                input=input_json,
-                encoding='utf-8',
+                ['node', script_path],
+                input=json.dumps(input_data, ensure_ascii=False).encode('utf-8'),
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=timeout
+                timeout=60
             )
-
-            if process.returncode == 0:
-                try:
-                    return json.loads(process.stdout)
-                except json.JSONDecodeError:
-                    if script_name == "js_ts_inserter.js":
-                        return process.stdout  # Return raw output for inserter
-                    logger.error(f"{error_message}: Invalid JSON output")
-                    return None
-            else:
+            if process.returncode != 0:
                 logger.error(f"{error_message}: {process.stderr}")
                 return None
 
-        except subprocess.TimeoutExpired:
-            logger.error(f"{error_message}: Script timeout after {timeout}s")
-            return None
+            output = process.stdout.strip()
+            try:
+                return json.loads(output)
+            except json.JSONDecodeError:
+                if script_name == "js_ts_inserter.js":
+                    return output
+                logger.error(f"{error_message}: Invalid JSON output")
+                return None
+
         except subprocess.CalledProcessError as e:
             logger.error(f"{error_message}: {e.stderr}")
             return None
-        except Exception as e:
-            logger.error(f"{error_message}: {str(e)}")
+        except subprocess.TimeoutExpired:
+            logger.error(f"{error_message}: Script timed out.")
             return None
+        except Exception as e:
+            logger.error(f"{error_message}: {e}")
+            return None
+
+```
+
+## scripts/html_parser.js
+
+```javascript
+// scripts/html_parser.js
+
+const fs = require('fs');
+const cheerio = require('cheerio');
+const Ajv = require('ajv');
+const path = require('path');
+
+// Initialize AJV for JSON schema validation
+const ajv = new Ajv({ allErrors: true, strict: false });
+
+// Load the unified function_schema.json
+const schemaPath = path.join(__dirname, '../schemas/function_schema.json');
+const functionSchema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
+const validate = ajv.compile(functionSchema);
+
+// Read input from stdin
+let inputChunks = [];
+process.stdin.on('data', (chunk) => {
+  inputChunks.push(chunk);
+});
+
+process.stdin.on('end', () => {
+  const inputData = inputChunks.join('');
+
+  let parsedInput;
+  try {
+    parsedInput = JSON.parse(inputData);
+  } catch (e) {
+    console.error('Error parsing input JSON:', e.message);
+    process.exit(1);
+  }
+
+  const { code, documentation, language } = parsedInput;
+
+  if (language.toLowerCase() !== 'html') {
+    console.error('Unsupported language:', language);
+    process.exit(1);
+  }
+
+  const $ = cheerio.load(code, { xmlMode: false });
+
+  // Initialize the structure object
+  const structure = {
+    summary: "", // To be filled externally or manually
+    changes_made: [], // To be filled externally or manually
+    functions: [], // Not typically applicable for HTML
+    classes: [], // Not typically applicable for HTML
+    halstead: {
+      volume: 0,
+      difficulty: 0,
+      effort: 0
+    },
+    maintainability_index: 0,
+    variables: [], // Not typically applicable for HTML
+    constants: []  // Not typically applicable for HTML
+  };
+
+  // Traverse all elements and extract information
+  $('*').each(function(i, elem) {
+    const tagName = elem.tagName;
+    const attributes = {};
+    for (let attr in elem.attribs) {
+      attributes[attr] = elem.attribs[attr];
+    }
+    const elementDoc = documentation.elements.find(e => e.tag === tagName);
+    const docstring = elementDoc ? elementDoc.docstring : "";
+
+    // Populate classes or functions if applicable
+    // HTML does not have classes or functions, but you can treat certain tags as classes if needed
+
+    // Add to structure.elements or other relevant fields
+    // Since the unified schema does not have an "elements" field, consider mapping HTML elements to classes or variables if appropriate
+
+    // For demonstration, we'll skip adding to classes or functions
+  });
+
+  // Note: HTML does not inherently have functions or classes. Documentation can focus on tags and their purposes.
+
+  // Validate the structure against the schema
+  const valid = validate(structure);
+  if (!valid) {
+    console.error('Validation errors:', validate.errors);
+    process.exit(1);
+  }
+
+  // Output the structure as JSON
+  console.log(JSON.stringify(structure, null, 2));
+});
+
+```
+
+## scripts/js_ts_metrics.js
+
+```javascript
+// js_ts_metrics.js
+const escomplex = require('typhonjs-escomplex');
+
+process.stdin.on('data', async (data) => {
+    try {
+        const input = JSON.parse(data.toString());
+        const code = input.code;
+        const options = input.options;
+
+        const analysis = escomplex.analyzeModule(code, options);
+
+        const halstead = analysis.aggregate.halstead;
+        const functionsMetrics = analysis.functions.reduce((acc, method) => {
+            acc[method.name] = {
+                complexity: method.cyclomatic,
+                sloc: method.sloc,
+                params: method.params,
+                halstead: method.halstead
+            };
+            return acc;
+        }, {});
+
+        const result = {
+            complexity: analysis.aggregate.cyclomatic,
+            maintainability: analysis.maintainability,
+            halstead: {
+                volume: halstead.volume,
+                difficulty: halstead.difficulty,
+                effort: halstead.effort
+            },
+            functions: functionsMetrics
+        };
+
+        console.log(JSON.stringify(result));
+
+    } catch (error) {
+        console.error(`Metrics calculation error: ${error.message}`);
+        const defaultMetrics = {
+            complexity: 0,
+            maintainability: 0,
+            halstead: { volume: 0, difficulty: 0, effort: 0 },
+            functions: {}
+        };
+        console.log(JSON.stringify(defaultMetrics));
+    }
+});
+
+```
+
+## scripts/cpp_inserter.cpp
+
+```cpp
+// scripts/cpp_inserter.cpp
+
+#include <clang/AST/AST.h>
+#include <clang/AST/RecursiveASTVisitor.h>
+#include <clang/Frontend/CompilerInstance.h>
+#include <clang/Frontend/FrontendAction.h>
+#include <clang/Tooling/CommonOptionsParser.h>
+#include <clang/Tooling/Tooling.h>
+#include <clang/Rewrite/Core/Rewriter.h>
+#include <nlohmann/json.hpp>
+
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+using namespace clang;
+using namespace clang::tooling;
+using json = nlohmann::json;
+
+// Structure Definitions
+struct Function {
+    std::string name;
+    std::string docstring;
+    std::vector<std::string> args;
+    bool async;
+    int complexity; // Placeholder
+};
+
+struct Class {
+    std::string name;
+    std::string docstring;
+    std::vector<Function> methods;
+};
+
+struct Variable {
+    std::string name;
+    std::string type;
+    std::string description;
+    std::string file;
+    int line;
+    std::string link;
+    std::string example;
+    std::string references;
+};
+
+// Visitor Class
+class CppASTVisitor : public RecursiveASTVisitor<CppASTVisitor> {
+public:
+    CppASTVisitor(ASTContext *Context, Rewriter &R, const std::unordered_map<std::string, std::string>& docMap)
+        : Context(Context), TheRewriter(R), docMap(docMap) {}
+
+    bool VisitCXXRecordDecl(CXXRecordDecl *Declaration) {
+        if (Declaration->isThisDeclarationADefinition()) {
+            std::string className = Declaration->getNameAsString();
+            auto it = docMap.find(className);
+            if (it != docMap.end()) {
+                // Insert class docstring before the class declaration
+                SourceLocation loc = Declaration->getBeginLoc();
+                TheRewriter.InsertTextBefore(loc, "/**\n * " + it->second + "\n */\n");
+            }
+
+            for (auto method : Declaration->methods()) {
+                std::string methodName = method->getNameAsString();
+                std::string fullMethodName = className + "." + methodName;
+                auto mit = docMap.find(fullMethodName);
+                if (mit != docMap.end()) {
+                    // Insert method docstring before the method declaration
+                    SourceLocation loc = method->getBeginLoc();
+                    TheRewriter.InsertTextBefore(loc, "/**\n * " + mit->second + "\n */\n");
+                }
+            }
+        }
+        return true;
+    }
+
+    bool VisitFunctionDecl(FunctionDecl *Declaration) {
+        if (Declaration->isThisDeclarationADefinition() && !Declaration->isCXXClassMember()) {
+            std::string funcName = Declaration->getNameAsString();
+            auto it = docMap.find(funcName);
+            if (it != docMap.end()) {
+                // Insert function docstring before the function declaration
+                SourceLocation loc = Declaration->getBeginLoc();
+                TheRewriter.InsertTextBefore(loc, "/**\n * " + it->second + "\n */\n");
+            }
+        }
+        return true;
+    }
+
+private:
+    ASTContext *Context;
+    Rewriter &TheRewriter;
+    const std::unordered_map<std::string, std::string>& docMap;
+};
+
+// AST Consumer
+class CppASTConsumer : public ASTConsumer {
+public:
+    CppASTConsumer(ASTContext *Context, Rewriter &R, const std::unordered_map<std::string, std::string>& docMap)
+        : Visitor(Context, R, docMap) {}
+
+    virtual void HandleTranslationUnit(ASTContext &Context) {
+        Visitor.TraverseDecl(Context.getTranslationUnitDecl());
+    }
+
+private:
+    CppASTVisitor Visitor;
+};
+
+// Frontend Action
+class CppFrontendAction : public ASTFrontendAction {
+public:
+    CppFrontendAction(const std::unordered_map<std::string, std::string>& docMap)
+        : docMap(docMap) {}
+
+    void EndSourceFileAction() override {
+        SourceManager &SM = TheRewriter.getSourceMgr();
+        llvm::outs() << TheRewriter.getEditBuffer(SM.getMainFileID()).Buf;
+    }
+
+    std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
+        TheRewriter.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
+        return std::make_unique<CppASTConsumer>(&CI.getASTContext(), TheRewriter, docMap);
+    }
+
+private:
+    Rewriter TheRewriter;
+    std::unordered_map<std::string, std::string> docMap;
+};
+
+// Main Function
+int main(int argc, const char **argv) {
+    // Read input from stdin
+    std::string input;
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        input += line + "\n";
+    }
+
+    json inputData;
+    try {
+        inputData = json::parse(input);
+    } catch (json::parse_error &e) {
+        std::cerr << "Error parsing input JSON: " << e.what() << std::endl;
+        return 1;
+    }
+
+    std::string code = inputData["code"].get<std::string>();
+    std::unordered_map<std::string, std::string> documentation;
+
+    // Parse documentation into a map
+    if (inputData.contains("documentation")) {
+        json doc = inputData["documentation"];
+        // Classes
+        if (doc.contains("classes")) {
+            for (auto &cls : doc["classes"]) {
+                std::string className = cls["name"].get<std::string>();
+                std::string classDoc = cls["docstring"].get<std::string>();
+                documentation[className] = classDoc;
+                // Methods
+                if (cls.contains("methods")) {
+                    for (auto &method : cls["methods"]) {
+                        std::string methodName = method["name"].get<std::string>();
+                        std::string fullMethodName = className + "." + methodName;
+                        std::string methodDoc = method["docstring"].get<std::string>();
+                        documentation[fullMethodName] = methodDoc;
+                    }
+                }
+            }
+        }
+        // Functions
+        if (doc.contains("functions")) {
+            for (auto &func : doc["functions"]) {
+                std::string funcName = func["name"].get<std::string>();
+                std::string funcDoc = func["docstring"].get<std::string>();
+                documentation[funcName] = funcDoc;
+            }
+        }
+    }
+
+    // Create temporary file
+    std::string tempFile = "temp.cpp";
+    std::ofstream ofs(tempFile);
+    ofs << code;
+    ofs.close();
+
+    // Parse command-line options
+    CommonOptionsParser OptionsParser(argc, argv, llvm::cl::GeneralCategory);
+    ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
+
+    // Run the Clang Tool with our FrontendAction
+    CppFrontendAction action(documentation);
+    int result = Tool.run(newFrontendActionFactory(&action).get());
+
+    // Cleanup temporary file
+    remove(tempFile.c_str());
+
+    return result;
+}
+
+```
+
+## scripts/html_inserter.js
+
+```javascript
+// scripts/html_inserter.js
+
+const fs = require('fs');
+const cheerio = require('cheerio');
+const path = require('path');
+
+// Read input from stdin
+let inputChunks = [];
+process.stdin.on('data', (chunk) => {
+  inputChunks.push(chunk);
+});
+
+process.stdin.on('end', () => {
+  const inputData = inputChunks.join('');
+
+  let parsedInput;
+  try {
+    parsedInput = JSON.parse(inputData);
+  } catch (e) {
+    console.error('Error parsing input JSON:', e.message);
+    process.exit(1);
+  }
+
+  const { code, documentation, language } = parsedInput;
+
+  if (language.toLowerCase() !== 'html') {
+    console.error('Unsupported language:', language);
+    process.exit(1);
+  }
+
+  const $ = cheerio.load(code, { xmlMode: false });
+
+  // Traverse documentation to insert comments
+  if (documentation.classes) {
+    documentation.classes.forEach(cls => {
+      // HTML does not have classes in the OOP sense; skip or map as needed
+    });
+  }
+
+  if (documentation.functions) {
+    documentation.functions.forEach(func => {
+      // HTML does not have functions; skip or map as needed
+    });
+  }
+
+  if (documentation.variables) {
+    documentation.variables.forEach(varObj => {
+      // HTML does not have variables; skip or map as needed
+    });
+  }
+
+  if (documentation.constants) {
+    documentation.constants.forEach(constObj => {
+      // HTML does not have constants; skip or map as needed
+    });
+  }
+
+  // Insert docstrings as comments before specific tags
+  if (documentation.elements) {
+    documentation.elements.forEach(elemDoc => {
+      const tag = elemDoc.tag;
+      const docstring = elemDoc.docstring;
+      if (docstring) {
+        $(tag).each(function(i, elem) {
+          // Insert comment before the element
+          $(elem).before(`<!-- ${docstring} -->\n`);
+        });
+      }
+    });
+  }
+
+  // Generate the modified HTML
+  const modifiedHTML = $.html();
+  console.log(modifiedHTML);
+});
+
+```
+
+## scripts/go_inserter.go
+
+```go
+// scripts/go_inserter.go
+
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
+	"os"
+	"strings"
+)
+
+// InputData represents the structure of input JSON
+type InputData struct {
+	Code         string                 `json:"code"`
+	Documentation map[string]interface{} `json:"documentation"`
+	Language     string                 `json:"language"`
+}
+
+// Function represents a function/method in the code
+type Function struct {
+	Name       string   `json:"name"`
+	Docstring  string   `json:"docstring"`
+	Args       []string `json:"args"`
+	Async      bool     `json:"async"`
+	Complexity int      `json:"complexity"` // Placeholder for cyclomatic complexity
+}
+
+// Class represents a class/type in the code
+type Class struct {
+	Name      string    `json:"name"`
+	Docstring string    `json:"docstring"`
+	Methods   []Function `json:"methods"`
+}
+
+// Variable represents a variable in the code
+type Variable struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	File        string `json:"file"`
+	Line        int    `json:"line"`
+	Link        string `json:"link"`
+	Example     string `json:"example"`
+	References  string `json:"references"`
+}
+
+// Structure represents the overall code structure
+type Structure struct {
+	Summary              string      `json:"summary"`
+	ChangesMade          []string    `json:"changes_made"`
+	Functions            []Function  `json:"functions"`
+	Classes              []Class     `json:"classes"`
+	Halstead             map[string]float64 `json:"halstead"`
+	MaintainabilityIndex float64     `json:"maintainability_index"`
+	Variables            []Variable  `json:"variables"`
+	Constants            []Variable  `json:"constants"`
+}
+
+func main() {
+	reader := bufio.NewReader(os.Stdin)
+	inputBytes, err := reader.ReadBytes(0)
+	if err != nil && err != os.EOF {
+		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+		os.Exit(1)
+	}
+
+	var input InputData
+	if err := json.Unmarshal(inputBytes, &input); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing input JSON: %v\n", err)
+		os.Exit(1)
+	}
+
+	if strings.ToLower(input.Language) != "go" {
+		fmt.Fprintf(os.Stderr, "Unsupported language: %s\n", input.Language)
+		os.Exit(1)
+	}
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "src.go", input.Code, parser.ParseComments)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing Go code: %v\n", err)
+		os.Exit(1)
+	}
+
+	structure := Structure{
+		Summary:              "", // To be filled externally or manually
+		ChangesMade:          [], // To be filled externally or manually
+		Functions:            []Function{},
+		Classes:              []Class{},
+		Halstead:             make(map[string]float64),
+		MaintainabilityIndex: 0.0, // Placeholder
+		Variables:            []Variable{},
+		Constants:            []Variable{},
+	}
+
+	// Convert documentation map to Structure
+	docBytes, err := json.Marshal(input.Documentation)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling documentation: %v\n", err)
+		os.Exit(1)
+	}
+	if err := json.Unmarshal(docBytes, &structure); err != nil {
+		fmt.Fprintf(os.Stderr, "Error unmarshaling documentation: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Traverse the AST to insert docstrings
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			// Insert function docstring
+			for _, funcDoc := range structure.Functions {
+				if node.Name.Name == funcDoc.Name {
+					if funcDoc.Docstring != "" {
+						if node.Doc == nil {
+							node.Doc = &ast.CommentGroup{}
+						}
+						docComment := &ast.Comment{
+							Text: fmt.Sprintf("// %s", funcDoc.Docstring),
+						}
+						node.Doc.List = append([]*ast.Comment{docComment}, node.Doc.List...)
+					}
+				}
+			}
+		case *ast.TypeSpec:
+			// Insert type (struct) docstring
+			for _, classDoc := range structure.Classes {
+				if node.Name.Name == classDoc.Name {
+					if node.Doc == nil {
+						node.Doc = &ast.CommentGroup{}
+					}
+					docComment := &ast.Comment{
+						Text: fmt.Sprintf("// %s", classDoc.Docstring),
+					}
+					node.Doc.List = append([]*ast.Comment{docComment}, node.Doc.List...)
+					
+					// Insert method docstrings
+					if structType, ok := node.Type.(*ast.StructType); ok {
+						// Methods are defined outside the struct; handle separately
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	// Note: Go does not have a direct equivalent to classes. Methods are associated with types (usually structs).
+	// The above code handles inserting docstrings for functions and types.
+
+	// Generate the modified code
+	var modifiedCode strings.Builder
+	if err := printer.Fprint(&modifiedCode, fset, file); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating modified code: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Output the modified code
+	fmt.Println(modifiedCode.String())
+}
+
+```
+
+## scripts/js_ts_inserter.js
+
+```javascript
+// js_ts_inserter.js
+
+const fs = require('fs');
+const babelParser = require('@babel/parser');
+const traverse = require('@babel/traverse').default;
+const generate = require('@babel/generator').default;
+const t = require('@babel/types');
+
+function generateJSDoc(description, params = [], returns = '', examples = []) {
+    const lines = ['/**', ` * ${description}`];
+
+    params.forEach(param => {
+        lines.push(` * @param {${param.type || 'any'}} ${param.name} - ${param.description || ''}`);
+    });
+
+    if (returns) {
+        lines.push(` * @returns {${returns.type || 'any'}} - ${returns.description || ''}`);
+    }
+
+    examples.forEach(example => {
+        lines.push(' * @example');
+        lines.push(` * ${example}`);
+    });
+
+    lines.push(' */');
+    return lines.join('\n');
+}
+
+function insertJSDoc(code, documentation, language) {
+    const isTypeScript = language === 'typescript';
+
+    // Parse the code into an AST
+    const ast = babelParser.parse(code, {
+        sourceType: 'module',
+        plugins: [
+            'jsx',
+            isTypeScript ? 'typescript' : null,
+            'classProperties',
+            'decorators-legacy',
+        ].filter(Boolean),
+    });
+
+    const docsMap = new Map();
+
+    // Map documentation to code elements
+    if (documentation.functions) {
+        documentation.functions.forEach(func => {
+            docsMap.set(func.name, func);
+        });
+    }
+    if (documentation.classes) {
+        documentation.classes.forEach(cls => {
+            docsMap.set(cls.name, cls);
+            if (cls.methods) {
+                cls.methods.forEach(method => {
+                    docsMap.set(`${cls.name}.${method.name}`, method);
+                });
+            }
+        });
+    }
+
+    // Traverse the AST to insert comments
+    traverse(ast, {
+        enter(path) {
+            const node = path.node;
+            if (node.type === 'FunctionDeclaration' && node.id) {
+                const doc = docsMap.get(node.id.name);
+                if (doc) {
+                    const jsDocComment = generateJSDoc(doc.description, doc.params, doc.returns, doc.examples);
+                    node.leadingComments = node.leadingComments || [];
+                    node.leadingComments.push({
+                        type: 'CommentBlock',
+                        value: jsDocComment.replace(/^\/\*\*|\*\/$/g, '').trim(),
+                    });
+                }
+            } else if (node.type === 'ClassDeclaration' && node.id) {
+                const doc = docsMap.get(node.id.name);
+                if (doc) {
+                    const jsDocComment = generateJSDoc(doc.description, [], null, doc.examples);
+                    node.leadingComments = node.leadingComments || [];
+                    node.leadingComments.push({
+                        type: 'CommentBlock',
+                        value: jsDocComment.replace(/^\/\*\*|\*\/$/g, '').trim(),
+                    });
+                }
+                // Handle class methods
+                node.body.body.forEach(element => {
+                    if (
+                        (element.type === 'ClassMethod' || element.type === 'ClassPrivateMethod') &&
+                        element.key.type === 'Identifier'
+                    ) {
+                        const methodName = `${node.id.name}.${element.key.name}`;
+                        const doc = docsMap.get(methodName);
+                        if (doc) {
+                            const jsDocComment = generateJSDoc(doc.description, doc.params, doc.returns, doc.examples);
+                            element.leadingComments = element.leadingComments || [];
+                            element.leadingComments.push({
+                                type: 'CommentBlock',
+                                value: jsDocComment.replace(/^\/\*\*|\*\/$/g, '').trim(),
+                            });
+                        }
+                    }
+                });
+            }
+        },
+    });
+
+    // Generate the modified code
+    const output = generate(ast, { comments: true }, code);
+    return output.code;
+}
+
+function main() {
+    const input = fs.readFileSync(0, 'utf-8');
+    const data = JSON.parse(input);
+    const code = data.code;
+    const documentation = data.documentation;
+    const language = data.language || 'javascript';
+    const modifiedCode = insertJSDoc(code, documentation, language);
+    console.log(modifiedCode);
+}
+
+main();
+```
+
+## scripts/java_inserter.js
+
+```javascript
+// scripts/java_inserter.js
+
+const fs = require('fs');
+const javaParser = require('java-parser');
+const path = require('path');
+
+// Read input from stdin
+let inputChunks = [];
+process.stdin.on('data', (chunk) => {
+  inputChunks.push(chunk);
+});
+
+process.stdin.on('end', () => {
+  const inputData = inputChunks.join('');
+
+  let parsedInput;
+  try {
+    parsedInput = JSON.parse(inputData);
+  } catch (e) {
+    console.error('Error parsing input JSON:', e.message);
+    process.exit(1);
+  }
+
+  const { code, documentation, language } = parsedInput;
+
+  if (language.toLowerCase() !== 'java') {
+    console.error('Unsupported language:', language);
+    process.exit(1);
+  }
+
+  let ast;
+  try {
+    ast = javaParser.parse(code);
+  } catch (e) {
+    console.error('Parsing error:', e.message);
+    process.exit(1);
+  }
+
+  // Helper function to insert docstrings
+  function insertDocstring(node, docstring) {
+    if (node.documentation) {
+      node.documentation = `/**\n * ${docstring}\n */`;
+    } else {
+      node.documentation = `/** ${docstring} */`;
+    }
+  }
+
+  // Traverse documentation to insert into AST
+  documentation.classes.forEach(clsDoc => {
+    const cls = ast.children.find(child => child.node === 'ClassDeclaration' && child.name.identifier === clsDoc.name);
+    if (cls) {
+      insertDocstring(cls, clsDoc.docstring);
+      cls.body.body.forEach(member => {
+        if (member.node === 'MethodDeclaration') {
+          const methodDoc = clsDoc.methods.find(m => m.name === member.name.identifier);
+          if (methodDoc) {
+            insertDocstring(member, methodDoc.docstring);
+          }
+        }
+      });
+    }
+  });
+
+  documentation.functions.forEach(funcDoc => {
+    // Java functions are typically static methods; find and insert
+    const cls = ast.children.find(child => child.node === 'ClassDeclaration');
+    if (cls) {
+      const method = cls.body.body.find(member => member.node === 'MethodDeclaration' && member.name.identifier === funcDoc.name);
+      if (method) {
+        insertDocstring(method, funcDoc.docstring);
+      }
+    }
+  });
+
+  // Note: java-parser does not support code generation. To output modified code,
+  // consider using alternative libraries or integrating with Java tools that support AST modifications.
+
+  // As a placeholder, output the original code
+  // In a real-world scenario, you would need to use a Java code generation library
+  // or implement a method to serialize the modified AST back to source code.
+  console.log(code);
+});
+
+```
+
+## scripts/js_ts_parser.js
+
+```javascript
+// Enhanced JavaScript/TypeScript parser with comprehensive analysis capabilities
+
+const babelParser = require('@babel/parser');
+const traverse = require('@babel/traverse').default;
+const t = require('@babel/types');
+const generate = require('@babel/generator').default;
+const tsEstree = require('@typescript-eslint/typescript-estree');
+const escomplex = require('typhonjs-escomplex');
+
+class JSTSParser {
+    constructor(options = {}) {
+        this.options = {
+            sourceType: 'module',
+            errorRecovery: true,
+            ...options
+        };
+    }
+
+    parse(code, language = 'javascript', filePath = 'unknown') {
+        try {
+            const isTypeScript = language === 'typescript' || filePath.endsWith('.ts') || filePath.endsWith('.tsx');
+
+            const ast = this._parseCode(code, isTypeScript);
+            const structure = this._initializeStructure();
+
+            const metrics = this._calculateMetrics(code, isTypeScript, filePath);
+            Object.assign(structure, metrics);
+
+            this._traverseAST(ast, structure, isTypeScript);
+            return structure;
+
+        } catch (error) {
+            console.error(`Parse error in ${filePath}: ${error.message}`);
+            return this._getEmptyStructure(error.message);
+        }
+    }
+
+    _parseCode(code, isTypeScript) {
+        const parserOptions = {
+            sourceType: this.options.sourceType,
+            plugins: this._getBabelPlugins(isTypeScript),
+            errorRecovery: this.options.errorRecovery,
+            tokens: true,
+            ...this.options
+        };
+
+        try {
+            if (isTypeScript) {
+                return tsEstree.parse(code, { jsx: true, ...parserOptions });
+            } else {
+                return babelParser.parse(code, parserOptions);
+            }
+        } catch (error) {
+            console.error("Parsing failed:", error);
+            throw error;
+        }
+    }
+
+    _calculateMetrics(code, isTypeScript, filePath) {
+        try {
+            const analysis = escomplex.analyzeModule(code, {
+                sourceType: 'module',
+                useTypeScriptEstree: isTypeScript,
+                loc: true,
+                newmi: true,
+                skipCalculation: false
+            });
+
+            return {
+                complexity: analysis.aggregate.cyclomatic,
+                maintainability_index: analysis.maintainability,
+                halstead: {
+                    volume: analysis.aggregate.halstead.volume,
+                    difficulty: analysis.aggregate.halstead.difficulty,
+                    effort: analysis.aggregate.halstead.effort
+                },
+                function_metrics: analysis.methods.reduce((acc, method) => {
+                    acc[method.name] = {
+                        complexity: method.cyclomatic,
+                        sloc: method.sloc,
+                        params: method.params
+                    };
+                    return acc;
+                }, {})
+            };
+        } catch (error) {
+            console.error(`Metrics calculation error in ${filePath}: ${error.message}`);
+            return {
+                complexity: 0,
+                maintainability_index: 0,
+                halstead: { volume: 0, difficulty: 0, effort: 0 },
+                function_metrics: {}
+            };
+        }
+    }
+
+    _traverseAST(ast, structure, isTypeScript) {
+        traverse(ast, {
+            ClassDeclaration: (path) => {
+                structure.classes.push(this._extractClassInfo(path.node, path, isTypeScript));
+            },
+            FunctionDeclaration: (path) => {
+                structure.functions.push(this._extractFunctionInfo(path.node, path, isTypeScript));
+            },
+            VariableDeclaration: (path) => {
+                const declarations = this._extractVariableInfo(path.node, path, isTypeScript);
+                const collection = path.node.kind === 'const' ? structure.constants : structure.variables;
+                collection.push(...declarations);
+            },
+            ImportDeclaration: (path) => {
+                structure.imports.push(this._extractImportInfo(path.node));
+            },
+            ExportDefaultDeclaration: (path) => {
+                structure.exports.push(this._extractExportInfo(path.node, true));
+            },
+            ExportNamedDeclaration: (path) => {
+                const exportInfo = this._extractExportInfo(path.node, false);
+                if (Array.isArray(exportInfo)) {
+                    structure.exports.push(...exportInfo);
+                } else if (exportInfo) {
+                    structure.exports.push(exportInfo);
+                }
+            },
+            JSXElement: (path) => {
+                if (this._isReactComponent(path)) {
+                    structure.react_components.push(this._extractReactComponentInfo(path));
+                }
+            },
+            TSInterfaceDeclaration: isTypeScript ? (path) => {
+                structure.interfaces.push(this._extractInterfaceInfo(path.node));
+            } : null,
+            TSTypeAliasDeclaration: isTypeScript ? (path) => {
+                structure.types.push(this._extractTypeAliasInfo(path.node));
+            } : null,
+            ArrowFunctionExpression: (path) => {
+                structure.functions.push(this._extractFunctionInfo(path.node, path, isTypeScript));
+            },
+            ...this._getAdditionalVisitors(isTypeScript)
+        });
+    }
+
+    _extractClassInfo(node, path, isTypeScript) {
+        return {
+            name: node.id.name,
+            methods: node.body.body
+                .filter(member => t.isClassMethod(member) || t.isClassPrivateMethod(member))
+                .map(method => this._extractMethodInfo(method, isTypeScript)),
+            properties: node.body.body
+                .filter(member => t.isClassProperty(member) || t.isClassPrivateProperty(member))
+                .map(prop => this._extractPropertyInfo(prop, isTypeScript)),
+
+            superClass: node.superClass?.name,
+            decorators: this._extractDecorators(node),
+            docstring: this._extractDocstring(node),
+            isAbstract: node.abstract || false,
+            isExported: this._isExported(path),
+            implements: isTypeScript ? this._extractImplementedInterfaces(node) : []
+        };
+    }
+
+    _extractFunctionInfo(node, path, isTypeScript) {
+        const functionName = node.id ? node.id.name : (node.key && node.key.name) || 'anonymous';
+        const params = this._extractParameters(node.params, isTypeScript);
+        const returnType = isTypeScript ? this._getTypeString(node.returnType) : null;
+        const async = node.async || false;
+        const generator = node.generator || false;
+
+        return {
+            name: functionName,
+            params,
+            returnType,
+            docstring: this._extractDocstring(node),
+            isExported: this._isExported(path),
+            async: async,
+            generator: generator,
+            complexity: this.options.function_metrics && this.options.function_metrics[functionName] ? this.options.function_metrics[functionName].complexity : null
+        };
+    }
+
+    _extractVariableInfo(node, path, isTypeScript) {
+        return node.declarations.map(declarator => {
+            const varName = declarator.id.name;
+            const varType = isTypeScript ? this._getTypeString(declarator.id.typeAnnotation) : null;
+            const defaultValue = this._getDefaultValue(declarator.init);
+
+            return {
+                name: varName,
+                type: varType,
+                defaultValue: defaultValue,
+                docstring: this._extractDocstring(declarator),
+                isExported: this._isExported(path)
+            };
+        });
+    }
+
+    _extractImportInfo(node) {
+        const source = node.source.value;
+        const specifiers = node.specifiers.map(specifier => {
+            if (t.isImportSpecifier(specifier)) {
+                return {
+                    type: 'named',
+                    imported: specifier.imported.name,
+                    local: specifier.local.name,
+                };
+            } else if (t.isImportDefaultSpecifier(specifier)) {
+                return {
+                    type: 'default',
+                    local: specifier.local.name
+                };
+            } else if (t.isImportNamespaceSpecifier(specifier)) {
+                return {
+                    type: 'namespace',
+                    local: specifier.local.name
+                };
+            }
+        });
+        return { source, specifiers };
+    }
+
+    _extractExportInfo(node, isDefault) {
+        if (isDefault) {
+            const declaration = node.declaration;
+            return {
+                type: 'default',
+                name: this._getDeclarationName(declaration),
+                declaration: generate(declaration).code
+            };
+        } else if (node.declaration) {
+            const declaration = node.declaration;
+            const declarations = t.isVariableDeclaration(declaration) ? declaration.declarations : [declaration];
+            return declarations.map(decl => ({
+                type: 'named',
+                name: this._getDeclarationName(decl),
+                declaration: generate(decl).code
+            }));
+        } else if (node.specifiers && node.specifiers.length > 0) {
+            return node.specifiers.map(specifier => ({
+                type: 'named',
+                exported: specifier.exported.name,
+                local: specifier.local.name
+            }));
+        }
+        return null;
+    }
+
+    _getDeclarationName(declaration) {
+        if (t.isIdentifier(declaration)) {
+            return declaration.name;
+        } else if (t.isFunctionDeclaration(declaration) || t.isClassDeclaration(declaration)) {
+            return declaration.id?.name || null;
+        } else if (t.isVariableDeclarator(declaration)) {
+            return declaration.id.name;
+        }
+        return null;
+    }
+
+    _extractInterfaceInfo(node) {
+        const interfaceName = node.id.name;
+        const properties = node.body.body.map(property => {
+            return {
+                name: property.key.name,
+                type: this._getTypeString(property.typeAnnotation),
+                docstring: this._extractDocstring(property)
+            };
+        });
+        return { name: interfaceName, properties };
+    }
+
+    _extractTypeAliasInfo(node) {
+        return {
+            name: node.id.name,
+            type: this._getTypeString(node.typeAnnotation)
+        };
+    }
+
+    _extractReactComponentInfo(path) {
+        const component = path.findParent(p =>
+            t.isFunctionDeclaration(p) ||
+            t.isArrowFunctionExpression(p) ||
+            t.isClassDeclaration(p) ||
+            t.isVariableDeclarator(p)
+        );
+
+        if (!component) return null;
+
+        const componentName = this._getComponentName(component.node);
+        const props = this._extractReactProps(component);
+        const hooks = this._extractReactHooks(component);
+        const state = this._extractReactState(component);
+        const effects = this._extractReactEffects(component);
+        const isExportedComponent = this._isExported(component);
+
+        return {
+            name: componentName,
+            props,
+            hooks,
+            state,
+            effects,
+            docstring: this._extractDocstring(component.node),
+            isExported: isExportedComponent,
+            type: this._getReactComponentType(component.node)
+        };
+    }
+
+    _getComponentName(node) {
+        if (t.isVariableDeclarator(node)) {
+            return node.id.name;
+        } else if (t.isFunctionDeclaration(node) || t.isClassDeclaration(node)) {
+            return node.id?.name || null;
+        }
+        return 'anonymous';
+    }
+
+    _getReactComponentType(node) {
+        if (t.isClassDeclaration(node)) {
+            return 'class';
+        } else if (t.isFunctionDeclaration(node) || t.isArrowFunctionExpression(node)) {
+            return 'function';
+        } else if (t.isVariableDeclarator(node)) {
+            return 'variable';
+        }
+        return null;
+    }
+
+    _extractReactProps(componentPath) {
+        const component = componentPath.node;
+        let props = [];
+
+        if (t.isClassDeclaration(component)) {
+            const constructor = component.body.body.find(member => t.isClassMethod(member) && member.kind === 'constructor');
+            if (constructor && constructor.params.length > 0) {
+                props = this._extractPropsFromParam(constructor.params[0]);
+            }
+        } else if (t.isFunctionDeclaration(component) || t.isArrowFunctionExpression(component)) {
+            if (component.params.length > 0) {
+                props = this._extractPropsFromParam(component.params[0]);
+            }
+        } else if (t.isVariableDeclarator(component)) {
+            if (component.init && (t.isArrowFunctionExpression(component.init) || t.isFunctionExpression(component.init))) {
+                if (component.init.params.length > 0) {
+                    props = this._extractPropsFromParam(component.init.params[0]);
+                }
+            }
+        }
+
+        return props;
+    }
+
+    _extractPropsFromParam(param) {
+        if (param.typeAnnotation) {
+            const typeAnnotation = param.typeAnnotation.typeAnnotation;
+            if (t.isTSTypeLiteral(typeAnnotation)) {
+                return typeAnnotation.members.map(member => ({
+                    name: member.key.name,
+                    type: this._getTypeString(member.typeAnnotation),
+                    required: !member.optional,
+                    defaultValue: this._getDefaultValue(member)
+                }));
+            } else if (t.isTSTypeReference(typeAnnotation) && t.isIdentifier(typeAnnotation.typeName)) {
+                return [{ name: param.name, type: typeAnnotation.typeName.name, required: !param.optional }];
+            }
+        } else if (t.isObjectPattern(param)) {
+            return param.properties.map(prop => ({
+                name: prop.key.name,
+                type: this._getTypeString(prop.value?.typeAnnotation),
+                required: true
+            }));
+        }
+        return [];
+    }
+
+    _extractReactHooks(componentPath) {
+        const hooks = [];
+        componentPath.traverse({
+            CallExpression(path) {
+                if (t.isIdentifier(path.node.callee) && path.node.callee.name.startsWith('use')) {
+                    const hookName = path.node.callee.name;
+                    const dependencies = this._extractHookDependencies(path.node);
+                    hooks.push({ name: hookName, dependencies });
+                }
+            }
+        });
+        return hooks;
+    }
+
+    _extractHookDependencies(node) {
+        if (node.arguments && node.arguments.length > 1 && t.isArrayExpression(node.arguments[1])) {
+            return node.arguments[1].elements.map(element => generate(element).code);
+        }
+        return [];
+    }
+
+    _extractReactEffects(componentPath) {
+        const effects = [];
+        componentPath.traverse({
+            CallExpression(path) {
+                if (t.isIdentifier(path.node.callee) && path.node.callee.name === 'useEffect') {
+                    const dependencies = this._extractHookDependencies(path.node);
+                    const cleanup = this._hasEffectCleanup(path.node);
+                    effects.push({ dependencies, cleanup });
+                }
+            }
+        });
+        return effects;
+    }
+
+    _hasEffectCleanup(node) {
+        if (node.arguments && node.arguments.length > 0 && t.isArrowFunctionExpression(node.arguments[0]) && node.arguments[0].body) {
+            const body = node.arguments[0].body;
+            return t.isBlockStatement(body) && body.body.some(statement => t.isReturnStatement(statement) && statement.argument !== null);
+        }
+        return false;
+    }
+
+    _extractReactState(componentPath) {
+        const state = [];
+        componentPath.traverse({
+            CallExpression(path) {
+                if (t.isMemberExpression(path.node.callee) &&
+                    t.isIdentifier(path.node.callee.object, { name: 'React' }) &&
+                    t.isIdentifier(path.node.callee.property, { name: 'useState' })) {
+
+                    const initialValue = path.node.arguments[0];
+                    state.push({
+                        initialValue: generate(initialValue).code
+                    });
+                } else if (t.isIdentifier(path.node.callee, { name: 'useState' })) {
+                    const initialValue = path.node.arguments[0];
+                    state.push({
+                        initialValue: generate(initialValue).code
+                    });
+                }
+            }
+        });
+        return state;
+    }
+
+    _getDefaultValue(node) {
+        if (!node) return null;
+        return generate(node).code;
+    }
+
+    _getTypeString(typeAnnotation) {
+        if (!typeAnnotation) return null;
+        if (t.isTSTypeReference(typeAnnotation)) {
+            return generate(typeAnnotation.typeName).code;
+        } else if (t.isTSLiteralType(typeAnnotation)) {
+            return generate(typeAnnotation.literal).code;
+        } else if (t.isTSTypeAnnotation(typeAnnotation)) {
+            return this._getTypeString(typeAnnotation.typeAnnotation);
+        }
+        return null;
+    }
+
+    _extractParameters(params, isTypeScript) {
+        return params.map(param => {
+            return {
+                name: param.name,
+                type: isTypeScript ? this._getTypeString(param.typeAnnotation) : null,
+                defaultValue: this._getDefaultValue(param.defaultValue)
+            };
+        });
+    }
+
+    _extractReturnType(node) {
+        return this._getTypeString(node.returnType);
+    }
+
+    _extractDecorators(node) {
+        return (node.decorators || []).map(decorator => generate(decorator.expression).code);
+    }
+
+    _getAccessibility(node) {
+        return node.accessibility || 'public';
+    }
+
+    _getMethodName(node) {
+        if (node.key && t.isIdentifier(node.key)) {
+            return node.key.name;
+        } else if (node.key && t.isPrivateName(node.key)) {
+            return `#${node.key.id.name}`;
+        }
+        return null;
+    }
+
+    _calculateMethodComplexity(node) {
+        return null;
+    }
+
+    _isExported(path) {
+        let parent = path.parentPath;
+        while (parent) {
+            if (parent.isExportNamedDeclaration() || parent.isExportDefaultDeclaration()) {
+                return true;
+            }
+            parent = parent.parentPath;
+        }
+        return false;
+    }
+
+    _isReactComponent(path) {
+        return t.isJSXIdentifier(path.node.openingElement.name);
+    }
+
+    _getBabelPlugins(isTypeScript) {
+        const plugins = [
+            'jsx',
+            'decorators-legacy',
+            ['decorators', { decoratorsBeforeExport: true }],
+            'classProperties', 'classPrivateProperties', 'classPrivateMethods',
+            'exportDefaultFrom', 'exportNamespaceFrom', 'dynamicImport',
+            'nullishCoalescing', 'optionalChaining', 'asyncGenerators', 'bigInt',
+            'classProperties', 'doExpressions', 'dynamicImport', 'exportDefaultFrom',
+            'exportNamespaceFrom', 'functionBind', 'functionSent', 'importMeta',
+            'logicalAssignment', 'numericSeparator', 'nullishCoalescingOperator',
+            'optionalCatchBinding', 'optionalChaining', 'partialApplication',
+            'throwExpressions', "pipelineOperator", "recordAndTuple"
+        ];
+
+        if (isTypeScript) {
+            plugins.push('typescript');
+        }
+        return plugins;
+    }
+
+    _getAdditionalVisitors(isTypeScript) {
+        if (isTypeScript) {
+            return {
+                TSEnumDeclaration(path) {
+                    this.node.enums.push({
+                        name: path.node.id.name,
+                        members: path.node.members.map(member => ({
+                            name: member.id.name,
+                            initializer: member.initializer ? generate(member.initializer).code : null
+                        }))
+                    });
+                },
+                TSTypeAliasDeclaration(path) {
+                    this.node.types.push({
+                        name: path.node.id.name,
+                        type: generate(path.node.typeAnnotation).code
+                    });
+                },
+                TSInterfaceDeclaration(path) {
+                    this.node.interfaces.push({
+                        name: path.node.id.name,
+                    });
+                },
+            };
+        }
+        return {};
+    }
+
+    _initializeStructure() {
+        return {
+            classes: [],
+            functions: [],
+            variables: [],
+            constants: [],
+            imports: [],
+            exports: [],
+            interfaces: [],
+            types: [],
+            enums: [],
+            react_components: [],
+            complexity: 0,
+            maintainability_index: 0,
+            halstead: { volume: 0, difficulty: 0, effort: 0 },
+            summary: "",
+            function_metrics: {}
+        };
+    }
+
+    _getEmptyStructure(reason = '') {
+        return {
+            ...this._initializeStructure(),
+            summary: `Empty structure: ${reason}`
+        };
+    }
+
+    _extractDocstring(node) {
+        const leadingComments = node.leadingComments || [];
+        const docstringComment = leadingComments.find(comment => comment.type === 'CommentBlock' && comment.value.trim().startsWith('*'));
+        return docstringComment ? docstringComment.value.replace(/^\*\s?/gm, '').trim() : '';
+    }
+
+    _extractPropertyInfo(node, isTypeScript) {
+        const propertyName = node.key.name;
+        const propertyType = isTypeScript ? this._getTypeString(node.typeAnnotation) : null;
+        const defaultValue = this._getDefaultValue(node.value);
+        const accessibility = this._getAccessibility(node);
+        const isStatic = node.static || false;
+        const decorators = this._extractDecorators(node);
+        const docstring = this._extractDocstring(node);
+
+        return {
+            name: propertyName,
+            type: propertyType,
+            defaultValue: defaultValue,
+            accessibility,
+            isStatic,
+            decorators,
+            docstring
+        };
+    }
+
+    _extractImplementedInterfaces(node) {
+        return (node.implements || []).map(i => i.id.name);
+    }
+}
+
+module.exports = JSTSParser;
+```
+
+## scripts/go_parser.go
+
+```go
+// scripts/go_parser.go
+
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"strings"
+)
+
+// InputData represents the structure of input JSON
+type InputData struct {
+	Code     string `json:"code"`
+	Language string `json:"language"`
+}
+
+// Function represents a function/method in the code
+type Function struct {
+	Name       string   `json:"name"`
+	Docstring  string   `json:"docstring"`
+	Args       []string `json:"args"`
+	Async      bool     `json:"async"`
+	Complexity int      `json:"complexity"` // Placeholder for cyclomatic complexity
+}
+
+// Class represents a class/type in the code
+type Class struct {
+	Name       string    `json:"name"`
+	Docstring  string    `json:"docstring"`
+	Methods    []Function `json:"methods"`
+}
+
+// Variable represents a variable in the code
+type Variable struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Description string `json:"description"`
+	File       string `json:"file"`
+	Line       int    `json:"line"`
+	Link       string `json:"link"`
+	Example    string `json:"example"`
+	References string `json:"references"`
+}
+
+// Structure represents the overall code structure
+type Structure struct {
+	Summary              string      `json:"summary"`
+	ChangesMade          []string    `json:"changes_made"`
+	Functions            []Function  `json:"functions"`
+	Classes              []Class     `json:"classes"`
+	Halstead             map[string]float64 `json:"halstead"`
+	MaintainabilityIndex float64     `json:"maintainability_index"`
+	Variables            []Variable  `json:"variables"`
+	Constants            []Variable  `json:"constants"` // Reusing Variable struct for constants
+}
+
+func main() {
+	reader := bufio.NewReader(os.Stdin)
+	inputBytes, err := reader.ReadBytes(0)
+	if err != nil && err != os.EOF {
+		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+		os.Exit(1)
+	}
+
+	var input InputData
+	if err := json.Unmarshal(inputBytes, &input); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing input JSON: %v\n", err)
+		os.Exit(1)
+	}
+
+	if strings.ToLower(input.Language) != "go" {
+		fmt.Fprintf(os.Stderr, "Unsupported language: %s\n", input.Language)
+		os.Exit(1)
+	}
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "src.go", input.Code, parser.ParseComments)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing Go code: %v\n", err)
+		os.Exit(1)
+	}
+
+	structure := Structure{
+		Summary:              "", // To be filled externally or manually
+		ChangesMade:          [], // To be filled externally or manually
+		Functions:            []Function{},
+		Classes:              []Class{},
+		Halstead:             make(map[string]float64),
+		MaintainabilityIndex: 0.0, // Placeholder
+		Variables:            []Variable{},
+		Constants:            []Variable{},
+	}
+
+	// Traverse the AST
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			funcInfo := Function{
+				Name:      node.Name.Name,
+				Docstring: getDocstring(node.Doc),
+				Args:      getFuncArgs(node.Type.Params),
+				Async:     false, // Go does not have async functions
+				Complexity: 1,    // Placeholder for cyclomatic complexity
+			}
+			structure.Functions = append(structure.Functions, funcInfo)
+		case *ast.TypeSpec:
+			// Assuming structs as classes
+			if structType, ok := node.Type.(*ast.StructType); ok {
+				classInfo := Class{
+					Name:      node.Name.Name,
+					Docstring: getDocstring(node.Doc),
+					Methods:   []Function{},
+				}
+				// Traverse methods
+				ast.Inspect(file, func(n ast.Node) bool {
+					if fn, ok := n.(*ast.FuncDecl); ok {
+						if fn.Recv != nil && len(fn.Recv.List) > 0 {
+							receiver := exprToString(fn.Recv.List[0].Type)
+							if strings.Contains(receiver, classInfo.Name) {
+								methodInfo := Function{
+									Name:      fn.Name.Name,
+									Docstring: getDocstring(fn.Doc),
+									Args:      getFuncArgs(fn.Type.Params),
+									Async:     false,
+									Complexity: 1,
+								}
+								classInfo.Methods = append(classInfo.Methods, methodInfo)
+							}
+						}
+					}
+					return true
+				})
+				structure.Classes = append(structure.Classes, classInfo)
+			}
+		case *ast.ValueSpec:
+			for i, name := range node.Names {
+				varType := exprToString(node.Type)
+				varDesc := ""
+				if node.Comment != nil && len(node.Comment.List) > i {
+					varDesc = strings.TrimPrefix(node.Comment.List[i].Text, "//")
+				}
+				variable := Variable{
+					Name:        name.Name,
+					Type:        varType,
+					Description: varDesc,
+					File:        "Unknown", // Can be set if file info is available
+					Line:        fset.Position(name.Pos()).Line,
+					Link:        "Unknown", // Can be constructed based on repository
+					Example:     "No example provided.",
+					References:  "No references.",
+				}
+				if strings.ToUpper(name.Name) == name.Name {
+					structure.Constants = append(structure.Constants, variable)
+				} else {
+					structure.Variables = append(structure.Variables, variable)
+				}
+			}
+		}
+		return true
+	})
+
+	// Placeholder for Halstead metrics and Maintainability Index
+	// These require detailed analysis and are not implemented here
+
+	// Validate the structure against the schema
+	validateStruct, err := json.Marshal(structure)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling structure: %v\n", err)
+		os.Exit(1)
+	}
+
+	var schema ValidationSchema
+	schema = loadSchema()
+
+	var data interface{}
+	if err := json.Unmarshal(validateStruct, &data); err != nil {
+		fmt.Fprintf(os.Stderr, "Error unmarshaling structure: %v\n", err)
+		os.Exit(1)
+	}
+
+	valid := validate(data)
+	if !valid {
+		fmt.Fprintf(os.Stderr, "Validation errors: %v\n", validate.errors)
+		os.Exit(1)
+	}
+
+	// Output the structure as JSON
+	fmt.Println(string(validateStruct))
+}
+
+// Helper functions
+
+func getDocstring(doc *ast.CommentGroup) string {
+	if doc == nil {
+		return ""
+	}
+	return strings.TrimSpace(doc.Text())
+}
+
+func getFuncArgs(params *ast.FieldList) []string {
+	if params == nil {
+		return []string{}
+	}
+	args := []string{}
+	for _, field := range params.List {
+		for _, name := range field.Names {
+			args = append(args, name.Name)
+		}
+	}
+	return args
+}
+
+func exprToString(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		return "*" + exprToString(t.X)
+	case *ast.SelectorExpr:
+		return exprToString(t.X) + "." + t.Sel.Name
+	case *ast.ArrayType:
+		return "[]" + exprToString(t.Elt)
+	default:
+		return "unknown"
+	}
+}
+
+// Placeholder for schema loading and validation
+// Implement schema loading and validation as needed
+type ValidationSchema struct{}
+
+func loadSchema() ValidationSchema {
+	// Implement schema loading if necessary
+	return ValidationSchema{}
+}
+
+```
+
+## scripts/cpp_parser.cpp
+
+```cpp
+// scripts/cpp_parser.cpp
+
+#include <clang/AST/AST.h>
+#include <clang/AST/RecursiveASTVisitor.h>
+#include <clang/Frontend/CompilerInstance.h>
+#include <clang/Frontend/FrontendAction.h>
+#include <clang/Tooling/CommonOptionsParser.h>
+#include <clang/Tooling/Tooling.h>
+#include <nlohmann/json.hpp>
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+using namespace clang;
+using namespace clang::tooling;
+using json = nlohmann::json;
+
+// Structure Definitions
+struct Function {
+    std::string name;
+    std::string docstring;
+    std::vector<std::string> args;
+    bool async;
+    int complexity; // Placeholder
+};
+
+struct Class {
+    std::string name;
+    std::string docstring;
+    std::vector<Function> methods;
+};
+
+struct Variable {
+    std::string name;
+    std::string type;
+    std::string description;
+    std::string file;
+    int line;
+    std::string link;
+    std::string example;
+    std::string references;
+};
+
+// Visitor Class
+class CppASTVisitor : public RecursiveASTVisitor<CppASTVisitor> {
+public:
+    explicit CppASTVisitor(ASTContext *Context) : Context(Context) {}
+
+    bool VisitCXXRecordDecl(CXXRecordDecl *Declaration) {
+        if (Declaration->isThisDeclarationADefinition()) {
+            Class cls;
+            cls.name = Declaration->getNameAsString();
+            cls.docstring = getDocstring(Declaration->getASTContext(), Declaration);
+
+            for (auto method : Declaration->methods()) {
+                Function func;
+                func.name = method->getNameAsString();
+                func.docstring = getDocstring(method->getASTContext(), method);
+                func.async = false; // C++ does not have async functions
+                func.complexity = 1; // Placeholder
+
+                // Get function arguments
+                for (auto param : method->parameters()) {
+                    func.args.push_back(param->getNameAsString());
+                }
+
+                cls.methods.push_back(func);
+            }
+
+            classes.push_back(cls);
+        }
+        return true;
+    }
+
+    bool VisitVarDecl(VarDecl *Declaration) {
+        if (Declaration->hasGlobalStorage()) {
+            Variable var;
+            var.name = Declaration->getNameAsString();
+            var.type = Declaration->getType().getAsString();
+            var.description = getDocstring(Declaration->getASTContext(), Declaration);
+            var.file = Context->getSourceManager().getFilename(Declaration->getLocation()).str();
+            var.line = Context->getSourceManager().getSpellingLineNumber(Declaration->getLocation());
+            var.link = "Unknown"; // Construct based on repository URL
+            var.example = "No example provided.";
+            var.references = "No references.";
+
+            // Determine if the variable is a constant (e.g., const or constexpr)
+            QualType qt = Declaration->getType();
+            if (qt.isConstQualified() || Declaration->isConstexpr()) {
+                structure.constants.push_back(var);
+            } else {
+                structure.variables.push_back(var);
+            }
+        }
+        return true;
+    }
+
+    json getJSON() {
+        json j;
+        j["summary"] = ""; // To be filled externally or manually
+        j["changes_made"] = json::array(); // To be filled externally or manually
+        j["functions"] = json::array(); // For standalone functions
+        j["classes"] = json::array();
+        j["halstead"] = {
+            {"volume", 0.0},
+            {"difficulty", 0.0},
+            {"effort", 0.0}
+        };
+        j["maintainability_index"] = 0.0; // Placeholder
+        j["variables"] = structure.variables;
+        j["constants"] = structure.constants;
+
+        for (const auto &cls : classes) {
+            json jcls;
+            jcls["name"] = cls.name;
+            jcls["docstring"] = cls.docstring;
+            jcls["methods"] = json::array();
+            for (const auto &method : cls.methods) {
+                json jmethod;
+                jmethod["name"] = method.name;
+                jmethod["docstring"] = method.docstring;
+                jmethod["args"] = method.args;
+                jmethod["async"] = method.async;
+                jmethod["type"] = "instance"; // C++ does not have explicit method types
+                jmethod["complexity"] = method.complexity;
+                jcls["methods"].push_back(jmethod);
+            }
+            j["classes"].push_back(jcls);
+        }
+
+        // Add standalone functions
+        // Placeholder: Implement extraction of standalone functions if necessary
+
+        return j;
+    }
+
+private:
+    ASTContext *Context;
+    std::vector<Class> classes;
+
+    struct InternalStructure {
+        std::vector<Variable> variables;
+        std::vector<Variable> constants;
+    } structure;
+
+    std::string getDocstring(ASTContext &Context, const Decl *Declaration) {
+        std::string doc = "";
+        RawComment *RC = Context.getRawCommentForAnyRedecl(Declaration);
+        if (RC) {
+            doc = RC->getRawText(Context.getSourceManager());
+            // Clean up comment markers
+            doc = std::regex_replace(doc, std::regex("^\\/\\/\\/\\s*"), "");
+            doc = std::regex_replace(doc, std::regex("^\\/\\/\\s*"), "");
+        }
+        return doc;
+    }
+};
+
+// AST Consumer
+class CppASTConsumer : public ASTConsumer {
+public:
+    explicit CppASTConsumer(ASTContext *Context) : Visitor(Context) {}
+
+    virtual void HandleTranslationUnit(ASTContext &Context) {
+        Visitor.TraverseDecl(Context.getTranslationUnitDecl());
+        json j = Visitor.getJSON();
+        std::cout << j.dump(4) << std::endl;
+    }
+
+private:
+    CppASTVisitor Visitor;
+};
+
+// Frontend Action
+class CppFrontendAction : public ASTFrontendAction {
+public:
+    virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) {
+        return std::make_unique<CppASTConsumer>(&CI.getASTContext());
+    }
+};
+
+// Main Function
+int main(int argc, const char **argv) {
+    // Parse command-line options
+    CommonOptionsParser OptionsParser(argc, argv, llvm::cl::GeneralCategory);
+    ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
+
+    // Run the Clang Tool
+    int result = Tool.run(newFrontendActionFactory<CppFrontendAction>().get());
+
+    return result;
+}
+
+```
+
+## scripts/css_inserter.js
+
+```javascript
+// scripts/css_inserter.js
+
+const fs = require('fs');
+const css = require('css');
+const path = require('path');
+
+// Read input from stdin
+let inputChunks = [];
+process.stdin.on('data', (chunk) => {
+  inputChunks.push(chunk);
+});
+
+process.stdin.on('end', () => {
+  const inputData = inputChunks.join('');
+
+  let parsedInput;
+  try {
+    parsedInput = JSON.parse(inputData);
+  } catch (e) {
+    console.error('Error parsing input JSON:', e.message);
+    process.exit(1);
+  }
+
+  const { code, documentation, language } = parsedInput;
+
+  if (language.toLowerCase() !== 'css') {
+    console.error('Unsupported language:', language);
+    process.exit(1);
+  }
+
+  let ast;
+  try {
+    ast = css.parse(code, { source: 'input.css' });
+  } catch (e) {
+    console.error('Parsing error:', e.message);
+    process.exit(1);
+  }
+
+  // Insert comments based on documentation
+  if (documentation.rules) {
+    documentation.rules.forEach(docRule => {
+      const selectors = docRule.selectors;
+      const docstring = docRule.docstring;
+
+      ast.stylesheet.rules.forEach(rule => {
+        if (rule.type === 'rule') {
+          const ruleSelectors = rule.selectors;
+          const isMatch = selectors.some(sel => ruleSelectors.includes(sel));
+          if (isMatch && docstring) {
+            // Insert comment before the rule
+            if (!rule.comments) {
+              rule.comments = [];
+            }
+            rule.comments.unshift(docstring);
+          }
+        }
+      });
+    });
+  }
+
+  // Stringify the modified AST
+  const modifiedCSS = css.stringify(ast);
+  console.log(modifiedCSS);
+});
+
+```
+
+## scripts/css_parser.js
+
+```javascript
+// scripts/css_parser.js
+
+const fs = require('fs');
+const css = require('css');
+const Ajv = require('ajv');
+const path = require('path');
+
+// Initialize AJV for JSON schema validation
+const ajv = new Ajv({ allErrors: true, strict: false });
+
+// Load the unified function_schema.json
+const schemaPath = path.join(__dirname, '../schemas/function_schema.json');
+const functionSchema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
+const validate = ajv.compile(functionSchema);
+
+// Read input from stdin
+let inputChunks = [];
+process.stdin.on('data', (chunk) => {
+  inputChunks.push(chunk);
+});
+
+process.stdin.on('end', () => {
+  const inputData = inputChunks.join('');
+
+  let parsedInput;
+  try {
+    parsedInput = JSON.parse(inputData);
+  } catch (e) {
+    console.error('Error parsing input JSON:', e.message);
+    process.exit(1);
+  }
+
+  const { code, documentation, language } = parsedInput;
+
+  if (language.toLowerCase() !== 'css') {
+    console.error('Unsupported language:', language);
+    process.exit(1);
+  }
+
+  let ast;
+  try {
+    ast = css.parse(code, { source: 'input.css' });
+  } catch (e) {
+    console.error('Parsing error:', e.message);
+    process.exit(1);
+  }
+
+  // Initialize the structure object
+  const structure = {
+    summary: "", // To be filled externally or manually
+    changes_made: [], // To be filled externally or manually
+    functions: [], // Not typically applicable for CSS
+    classes: [], // Not typically applicable for CSS
+    halstead: {
+      volume: 0,
+      difficulty: 0,
+      effort: 0
+    },
+    maintainability_index: 0,
+    variables: [], // CSS Variables (Custom Properties) can be mapped here
+    constants: []  // Not typically applicable for CSS
+  };
+
+  ast.stylesheet.rules.forEach(rule => {
+    if (rule.type === 'rule') {
+      const selectors = rule.selectors;
+      const declarations = rule.declarations.map(decl => ({
+        property: decl.property,
+        value: decl.value
+      }));
+
+      // Find documentation for this rule
+      const doc = documentation.rules.find(r => {
+        // Simple matching; can be enhanced
+        return r.selectors.some(sel => selectors.includes(sel));
+      });
+
+      if (doc && doc.docstring) {
+        // Insert comment before the rule
+        rule.comments = [`${doc.docstring}`];
+      }
+
+      // Variables (Custom Properties) handling
+      selectors.forEach(sel => {
+        if (sel.startsWith('--')) { // CSS Variable
+          const varName = sel;
+          rule.declarations.forEach(decl => {
+            if (decl.property === varName) {
+              const variableInfo = {
+                name: varName,
+                type: "CSS Variable",
+                description: "No description provided.",
+                file: "Unknown", // Can be set if file info is available
+                line: decl.position ? decl.position.start.line : 0,
+                link: "Unknown", // Can be constructed based on repository
+                example: decl.value,
+                references: "No references."
+              };
+              structure.variables.push(variableInfo);
+            }
+          });
+        }
+      });
+    }
+  });
+
+  // Validate the structure against the schema
+  const valid = validate(structure);
+  if (!valid) {
+    console.error('Validation errors:', validate.errors);
+    process.exit(1);
+  }
+
+  // Output the structure as JSON
+  console.log(JSON.stringify(structure, null, 2));
+});
+
+```
+
+## scripts/java_parser.js
+
+```javascript
+// scripts/java_parser.js
+
+const fs = require('fs');
+const javaParser = require('java-parser');
+const Ajv = require('ajv');
+const path = require('path');
+
+// Initialize AJV for JSON schema validation
+const ajv = new Ajv({ allErrors: true, strict: false });
+
+// Load the unified function_schema.json
+const schemaPath = path.join(__dirname, '../schemas/function_schema.json');
+const functionSchema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
+const validate = ajv.compile(functionSchema);
+
+// Read input from stdin
+let inputChunks = [];
+process.stdin.on('data', (chunk) => {
+  inputChunks.push(chunk);
+});
+
+process.stdin.on('end', () => {
+  const inputData = inputChunks.join('');
+
+  let parsedInput;
+  try {
+    parsedInput = JSON.parse(inputData);
+  } catch (e) {
+    console.error('Error parsing input JSON:', e.message);
+    process.exit(1);
+  }
+
+  const { code, language } = parsedInput;
+
+  if (language.toLowerCase() !== 'java') {
+    console.error('Unsupported language:', language);
+    process.exit(1);
+  }
+
+  let ast;
+  try {
+    ast = javaParser.parse(code);
+  } catch (e) {
+    console.error('Parsing error:', e.message);
+    process.exit(1);
+  }
+
+  // Initialize the structure object
+  const structure = {
+    summary: "", // To be filled externally or manually
+    changes_made: [], // To be filled externally or manually
+    functions: [],
+    classes: [],
+    halstead: {
+      volume: 0,
+      difficulty: 0,
+      effort: 0
+    },
+    maintainability_index: 0,
+    variables: [],
+    constants: []
+  };
+
+  // Helper function to extract docstrings (comments)
+  function getDocstring(node) {
+    if (node.documentation) {
+      return node.documentation.trim();
+    }
+    return "";
+  }
+
+  // Traverse the AST to extract classes and functions
+  const classes = ast.children.filter(child => child.node === 'ClassDeclaration');
+
+  classes.forEach(cls => {
+    const classInfo = {
+      name: cls.name.identifier,
+      docstring: getDocstring(cls),
+      methods: []
+    };
+
+    cls.body.body.forEach(member => {
+      if (member.node === 'MethodDeclaration') {
+        const methodInfo = {
+          name: member.name.identifier,
+          docstring: getDocstring(member),
+          args: member.parameters.map(param => param.name.identifier),
+          async: false, // Java does not have async methods; can be extended if using CompletableFuture or similar
+          type: 'instance', // Default to instance method; can be extended based on modifiers
+          complexity: 1 // Placeholder: Cyclomatic complexity calculation requires further implementation
+        };
+
+        // Determine if the method is static
+        if (member.modifiers && member.modifiers.includes('static')) {
+          methodInfo.type = 'static';
+        }
+
+        classInfo.methods.push(methodInfo);
+      } else if (member.node === 'FieldDeclaration') {
+        member.declarators.forEach(decl => {
+          const variableInfo = {
+            name: decl.id.identifier,
+            type: member.type.name.identifier,
+            description: getDocstring(member),
+            file: "Unknown", // File information can be added if available
+            line: decl.position.start.line,
+            link: "Unknown", // Link can be constructed based on repository URL
+            example: "No example provided.",
+            references: "No references."
+          };
+
+          // Determine if the field is a constant (e.g., final)
+          if (member.modifiers && member.modifiers.includes('final')) {
+            structure.constants.push(variableInfo);
+          } else {
+            structure.variables.push(variableInfo);
+          }
+        });
+      }
+    });
+
+    structure.classes.push(classInfo);
+  });
+
+  // Traverse the AST to extract standalone functions (if any)
+  // Note: Java primarily uses classes, but static methods can be considered standalone
+  classes.forEach(cls => {
+    cls.body.body.forEach(member => {
+      if (member.node === 'MethodDeclaration' && member.modifiers && member.modifiers.includes('static')) {
+        const functionInfo = {
+          name: member.name.identifier,
+          docstring: getDocstring(member),
+          args: member.parameters.map(param => param.name.identifier),
+          async: false, // Java does not support async directly
+          complexity: 1 // Placeholder for cyclomatic complexity
+        };
+        structure.functions.push(functionInfo);
+      }
+    });
+  });
+
+  // Placeholder for Halstead metrics and Maintainability Index
+  // These require detailed analysis and are not implemented here
+  // They can be integrated using additional tools or libraries
+
+  // Validate the structure against the schema
+  const valid = validate(structure);
+  if (!valid) {
+    console.error('Validation errors:', validate.errors);
+    process.exit(1);
+  }
+
+  // Output the structure as JSON
+  console.log(JSON.stringify(structure, null, 2));
+});
+
 ```
 
 ## documentation-viewer/postcss.config.js
@@ -4665,35 +6652,6 @@ module.exports = {
     require('@tailwindcss/typography'),
   ],
 }
-
-```
-
-## documentation-viewer/.gitignore
-
-```
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# production
-/build
-
-# misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 ```
 
@@ -4774,8 +6732,6 @@ code {
 }
 
 ```
-
-
 
 ## documentation-viewer/src/index.js
 
@@ -5091,24 +7047,6 @@ export default DocumentationViewer;
   </body>
 </html>
 
-```
-
-## documentation-viewer/public/logo512.png
-
-```
-[Binary file content not displayed or file not found]
-```
-
-## documentation-viewer/public/favicon.ico
-
-```
-[Binary file content not displayed or file not found]
-```
-
-## documentation-viewer/public/logo192.png
-
-```
-[Binary file content not displayed or file not found]
 ```
 
 ## documentation-viewer/server/index.js
@@ -5494,426 +7432,3 @@ class CodeMetricsAnalyzer:
 
 ```
 
-## scripts/js_ts_parser.js
-
-```javascript
-// Enhanced JavaScript/TypeScript parser with comprehensive analysis capabilities
-
-const babelParser = require('@babel/parser');
-const traverse = require('@babel/traverse').default;
-const t = require('@babel/types');
-const tsEstree = require('@typescript-eslint/typescript-estree');
-const escomplex = require('typhonjs-escomplex');
-
-class JSTSParser {
-    constructor(options = {}) {
-        this.options = {
-            sourceType: 'module',
-            errorRecovery: true,
-            ...options
-        };
-    }
-
-    parse(code, language = 'javascript') {
-        try {
-            const isTypeScript = language === 'typescript';
-            const ast = this._parseCode(code, isTypeScript);
-            const structure = this._initializeStructure();
-            
-            // Calculate metrics first
-            const metrics = this._calculateMetrics(code, isTypeScript);
-            Object.assign(structure, metrics);
-            
-            this._traverseAST(ast, structure, isTypeScript);
-            
-            return structure;
-        } catch (error) {
-            console.error(`Parse error: ${error.message}`);
-            return this._getEmptyStructure(error.message);
-        }
-    }
-
-    _parseCode(code, isTypeScript) {
-        if (isTypeScript) {
-            return tsEstree.parse(code, {
-                jsx: true,
-                tokens: true,
-                loc: true,
-                range: true,
-                comment: true,
-            });
-        }
-
-        return babelParser.parse(code, {
-            sourceType: this.options.sourceType,
-            plugins: this._getBabelPlugins(isTypeScript),
-            errorRecovery: this.options.errorRecovery,
-            tokens: true,
-        });
-    }
-
-    _calculateMetrics(code, isTypeScript) {
-        try {
-            const analysis = escomplex.analyzeModule(code, {
-                sourceType: 'module',
-                useTypeScriptEstree: isTypeScript,
-                loc: true,
-                newmi: true,
-                skipCalculation: false
-            });
-
-            return {
-                complexity: analysis.aggregate.cyclomatic,
-                maintainability_index: analysis.maintainability,
-                halstead: {
-                    volume: analysis.aggregate.halstead.volume,
-                    difficulty: analysis.aggregate.halstead.difficulty,
-                    effort: analysis.aggregate.halstead.effort
-                },
-                function_metrics: analysis.methods.reduce((acc, method) => {
-                    acc[method.name] = {
-                        complexity: method.cyclomatic,
-                        sloc: method.sloc,
-                        params: method.params
-                    };
-                    return acc;
-                }, {})
-            };
-        } catch (error) {
-            console.error(`Metrics calculation error: ${error.message}`);
-            return {
-                complexity: 0,
-                maintainability_index: 0,
-                halstead: { volume: 0, difficulty: 0, effort: 0 },
-                function_metrics: {}
-            };
-        }
-    }
-
-    _traverseAST(ast, structure, isTypeScript) {
-        const visitors = {
-            // Class handling
-            ClassDeclaration: (path) => {
-                const classInfo = this._extractClassInfo(path, isTypeScript);
-                structure.classes.push(classInfo);
-            },
-
-            // Function handling
-            FunctionDeclaration: (path) => {
-                const functionInfo = this._extractFunctionInfo(path, isTypeScript);
-                structure.functions.push(functionInfo);
-            },
-
-            // Variable declarations
-            VariableDeclaration: (path) => {
-                const declarations = this._extractVariableInfo(path, isTypeScript);
-                const collection = path.node.kind === 'const' ? 
-                    structure.constants : structure.variables;
-                collection.push(...declarations);
-            },
-
-            // Import/Export handling
-            ImportDeclaration: (path) => {
-                const importInfo = this._extractImportInfo(path);
-                structure.imports.push(importInfo);
-            },
-
-            ExportDefaultDeclaration: (path) => {
-                const exportInfo = this._extractExportInfo(path, true);
-                structure.exports.push(exportInfo);
-            },
-
-            ExportNamedDeclaration: (path) => {
-                const exportInfo = this._extractExportInfo(path, false);
-                structure.exports.push(exportInfo);
-            },
-
-            // React component handling
-            JSXElement: (path) => {
-                if (this._isReactComponent(path)) {
-                    const componentInfo = this._extractReactComponentInfo(path);
-                    structure.react_components.push(componentInfo);
-                }
-            },
-
-            // TypeScript specific handlers
-            TSInterfaceDeclaration: (path) => {
-                if (isTypeScript) {
-                    const interfaceInfo = this._extractInterfaceInfo(path);
-                    structure.interfaces.push(interfaceInfo);
-                }
-            },
-
-            TSTypeAliasDeclaration: (path) => {
-                if (isTypeScript) {
-                    const typeInfo = this._extractTypeInfo(path);
-                    structure.types.push(typeInfo);
-                }
-            }
-        };
-
-        traverse(ast, visitors);
-    }
-
-    _extractClassInfo(path, isTypeScript) {
-        const node = path.node;
-        const className = node.id?.name || 'Anonymous';
-        const decorators = this._extractDecorators(node);
-        const superClass = node.superClass?.name;
-        const implementedInterfaces = isTypeScript ? 
-            this._extractImplementedInterfaces(node) : [];
-
-        const methods = node.body.body
-            .filter(member => t.isClassMethod(member) || t.isClassPrivateMethod(member))
-            .map(method => this._extractMethodInfo(method, isTypeScript));
-
-        const properties = node.body.body
-            .filter(member => t.isClassProperty(member) || t.isClassPrivateProperty(member))
-            .map(prop => this._extractPropertyInfo(prop, isTypeScript));
-
-        return {
-            name: className,
-            superClass,
-            interfaces: implementedInterfaces,
-            decorators,
-            methods,
-            properties,
-            docstring: this._extractDocstring(node),
-            isAbstract: node.abstract || false,
-            isExported: this._isExported(path)
-        };
-    }
-
-    _extractMethodInfo(node, isTypeScript) {
-        const methodName = this._getMethodName(node);
-        const params = this._extractParameters(node.params, isTypeScript);
-        const returnType = isTypeScript ? this._extractReturnType(node) : null;
-        const decorators = this._extractDecorators(node);
-        const accessibility = this._getAccessibility(node);
-        const isAsync = node.async || false;
-        const isStatic = node.static || false;
-        const isAbstract = node.abstract || false;
-
-        return {
-            name: methodName,
-            params,
-            returnType,
-            decorators,
-            accessibility,
-            isAsync,
-            isStatic,
-            isAbstract,
-            docstring: this._extractDocstring(node),
-            complexity: this._calculateMethodComplexity(node)
-        };
-    }
-
-    _extractReactComponentInfo(path) {
-        const component = path.findParent(p => 
-            t.isFunctionDeclaration(p) || 
-            t.isArrowFunctionExpression(p) || 
-            t.isClassDeclaration(p)
-        );
-
-        if (!component) return null;
-
-        const props = this._extractReactProps(component);
-        const hooks = this._extractReactHooks(component);
-        const state = this._extractReactState(component);
-        const effects = this._extractReactEffects(component);
-
-        return {
-            name: component.node.id?.name || 'Anonymous',
-            type: t.isClassDeclaration(component) ? 'class' : 'function',
-            props,
-            hooks,
-            state,
-            effects,
-            docstring: this._extractDocstring(component.node),
-            isExported: this._isExported(component)
-        };
-    }
-
-    _extractReactProps(component) {
-        const props = [];
-
-        if (t.isClassDeclaration(component)) {
-            // Handle class component props
-            const constructor = component.node.body.body
-                .find(node => t.isClassMethod(node) && node.kind === 'constructor');
-            
-            if (constructor && constructor.params[0]) {
-                const propsParam = constructor.params[0];
-                props.push(...this._extractPropsFromTypeAnnotation(propsParam));
-            }
-        } else {
-            // Handle functional component props
-            const param = component.node.params[0];
-            if (param) {
-                props.push(...this._extractPropsFromTypeAnnotation(param));
-            }
-        }
-
-        return props;
-    }
-
-    _extractPropsFromTypeAnnotation(param) {
-        if (!param.typeAnnotation) return [];
-
-        const propsType = param.typeAnnotation.typeAnnotation;
-        if (!t.isTSTypeLiteral(propsType)) return [];
-
-        return propsType.members.map(member => ({
-            name: member.key.name,
-            type: this._getTypeString(member.typeAnnotation.typeAnnotation),
-            required: !member.optional,
-            defaultValue: this._getDefaultValue(member)
-        }));
-    }
-
-    _extractReactHooks(component) {
-        const hooks = [];
-        traverse(component.node, {
-            CallExpression(path) {
-                if (t.isIdentifier(path.node.callee) && 
-                    path.node.callee.name.startsWith('use')) {
-                    hooks.push({
-                        name: path.node.callee.name,
-                        dependencies: this._extractHookDependencies(path.node)
-                    });
-                }
-            }
-        });
-        return hooks;
-    }
-
-    _extractReactEffects(component) {
-        const effects = [];
-        traverse(component.node, {
-            CallExpression(path) {
-                if (t.isIdentifier(path.node.callee) && 
-                    path.node.callee.name === 'useEffect') {
-                    effects.push({
-                        dependencies: this._extractHookDependencies(path.node),
-                        cleanup: this._hasEffectCleanup(path.node)
-                    });
-                }
-            }
-        });
-        return effects;
-    }
-
-    _getBabelPlugins(isTypeScript) {
-        const plugins = [
-            'jsx',
-            'decorators-legacy',
-            ['decorators', { decoratorsBeforeExport: true }],
-            'classProperties',
-            'classPrivateProperties',
-            'classPrivateMethods',
-            'exportDefaultFrom',
-            'exportNamespaceFrom',
-            'dynamicImport',
-            'nullishCoalescing',
-            'optionalChaining',
-        ];
-
-        if (isTypeScript) {
-            plugins.push('typescript');
-        }
-
-        return plugins;
-    }
-
-    _initializeStructure() {
-        return {
-            classes: [],
-            functions: [],
-            variables: [],
-            constants: [],
-            imports: [],
-            exports: [],
-            interfaces: [],
-            types: [],
-            react_components: [],
-            complexity: 0,
-            maintainability_index: 0,
-            halstead: {
-                volume: 0,
-                difficulty: 0,
-                effort: 0
-            },
-            summary: "",
-            function_metrics: {}
-        };
-    }
-
-    _getEmptyStructure(reason = '') {
-        return {
-            ...this._initializeStructure(),
-            summary: `Empty structure: ${reason}`
-        };
-    }
-
-    _extractDocstring(node) {
-        const comments = node.leadingComments || [];
-        for (const comment of comments) {
-            if (comment.type === 'CommentBlock' && 
-                (comment.value.startsWith('*') || comment.value.startsWith('/'))) {
-                return comment.value.replace(/^\*+/, '').trim();
-            }
-        }
-        return '';
-    }
-}
-
-module.exports = JSTSParser;
-```
-
-
-## scripts/package.json
-```json
-{
-  "name": "scripts",
-  "version": "1.0.0",
-  "main": "extract_structure.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "acorn-parser": "node acorn_parser.js",
-    "acorn-inserter": "node acorn_inserter.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@babel/generator": "^7.25.7",
-    "@babel/parser": "^7.25.9",
-    "@babel/traverse": "^7.25.9",
-    "@babel/types": "^7.25.9",
-    "@typescript-eslint/typescript-estree": "^8.8.1",
-    "acorn": "^8.12.1",
-    "acorn-typescript": "^1.0.0",
-    "acorn-walk": "^8.3.4",
-    "ajv": "^8.17.1",
-    "astring": "^1.9.0",
-    "babel": "^6.23.0",
-    "cheerio": "^1.0.0",
-    "css": "^3.0.0",
-    "escodegen": "^2.1.0",
-    "java-parser": "^2.3.2",
-    "prettier": "^3.3.3",
-    "recast": "^0.23.9",
-    "stringify": "^5.2.0",
-    "stylelint": "^16.10.0",
-    "tslint": "^5.20.1",
-    "typescript": "^5.6.3",
-    "typhonjs-escomplex": "^0.1.0"
-  },
-  "description": "",
-  "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.8.1",
-    "@typescript-eslint/parser": "^8.8.1",
-    "eslint": "^9.12.0"
-  }
-}
-```

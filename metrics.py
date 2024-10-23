@@ -1,78 +1,43 @@
 """
 metrics.py
 
-This module provides functions for calculating various code metrics including:
+This module provides functions for calculating various code metrics, including:
 - Halstead complexity metrics
 - Cyclomatic complexity
 - Maintainability index
-- Other code quality metrics
-
-It serves as a centralized location for all metric calculations used throughout the project.
+- Raw metrics (lines of code, blank lines, comment lines, etc.)
+- Other code quality metrics (method length, argument count, etc.)
 """
 
 import logging
 import math
 from typing import Dict, Any, Tuple, Optional
+import ast
 
-from radon.complexity import cc_visit
+from radon.complexity import cc_visit, SCORE
 from radon.metrics import h_visit, mi_visit
+from radon.raw import analyze
 
 logger = logging.getLogger(__name__)
 
+
 def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
-    """
-    Calculates Halstead complexity metrics for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Dict[str, Any]: Dictionary containing Halstead metrics:
-            - volume: Program volume
-            - difficulty: Program difficulty
-            - effort: Programming effort
-            - vocabulary: Program vocabulary
-            - length: Program length
-            - distinct_operators: Number of distinct operators
-            - distinct_operands: Number of distinct operands
-            - total_operators: Total number of operators
-            - total_operands: Total number of operands
-    """
+    """Calculates Halstead complexity metrics."""
     try:
-        # Get the metrics from radon
-        halstead_visit = h_visit(code)
-        
-        # The h_visit() function returns a list of HalsteadVisitor objects
-        # We'll take the first one (module level) if available
-        if not halstead_visit:
-            raise ValueError("No Halstead metrics available")
-            
-        # Get the first visitor
-        visitor = halstead_visit[0]
-        
-        # Access the h1, h2, N1, N2 properties directly
-        h1 = visitor.h1  # distinct operators
-        h2 = visitor.h2  # distinct operands
-        N1 = visitor.N1  # total operators
-        N2 = visitor.N2  # total operands
-        
-        # Calculate derived metrics
+        halstead_visitor = h_visit(code)
+        total_metrics = halstead_visitor.total
+
+        h1 = len(total_metrics.operators)
+        h2 = len(total_metrics.operands)
+        N1 = sum(total_metrics.operators.values())
+        N2 = sum(total_metrics.operands.values())
+
         vocabulary = h1 + h2
         length = N1 + N2
-        
-        # Handle edge cases to avoid math errors
-        if vocabulary > 0:
-            volume = length * math.log2(vocabulary)
-        else:
-            volume = 0
-            
-        if h2 > 0:
-            difficulty = (h1 * N2) / (2 * h2)
-        else:
-            difficulty = 0
-            
+        volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
+        difficulty = (h1 * N2) / (2 * h2) if h2 > 0 else 0
         effort = difficulty * volume
-        
+
         return {
             "volume": round(volume, 2),
             "difficulty": round(difficulty, 2),
@@ -82,11 +47,14 @@ def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
             "distinct_operators": h1,
             "distinct_operands": h2,
             "total_operators": N1,
-            "total_operands": N2
+            "total_operands": N2,
+            "operator_counts": dict(total_metrics.operators),
+            "operand_counts": dict(total_metrics.operands),
         }
+
     except Exception as e:
         logger.error(f"Error calculating Halstead metrics: {e}")
-        return {
+        return {  # Return a dictionary of zeros on error
             "volume": 0,
             "difficulty": 0,
             "effort": 0,
@@ -95,72 +63,128 @@ def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
             "distinct_operators": 0,
             "distinct_operands": 0,
             "total_operators": 0,
-            "total_operands": 0
+            "total_operands": 0,
+            "operator_counts": {},
+            "operand_counts": {},
         }
 
 
-def calculate_complexity_metrics(code: str) -> Tuple[Dict[str, int], int]:
-    """
-    Calculates cyclomatic complexity metrics for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Tuple[Dict[str, int], int]: A tuple containing:
-            - Dictionary mapping function names to their complexity scores
-            - Total complexity score for the entire code
-    """
+def calculate_cyclomatic_complexity(code: str) -> Tuple[Dict[str, int], int]:
+    """Calculates cyclomatic complexity."""
     try:
         complexity_scores = cc_visit(code)
         function_complexity = {score.fullname: score.complexity for score in complexity_scores}
         total_complexity = sum(score.complexity for score in complexity_scores)
         return function_complexity, total_complexity
     except Exception as e:
-        logger.error(f"Error calculating complexity metrics: {e}")
+        logger.error(f"Error calculating cyclomatic complexity: {e}")
         return {}, 0
 
+
 def calculate_maintainability_index(code: str) -> Optional[float]:
-    """
-    Calculates the maintainability index for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Optional[float]: The maintainability index score or None if calculation fails.
-    """
+    """Calculates maintainability index."""
     try:
         return mi_visit(code, True)
     except Exception as e:
         logger.error(f"Error calculating maintainability index: {e}")
         return None
 
+
+def calculate_raw_metrics(code: str) -> Dict[str, int]:
+    """Calculates raw metrics (LOC, comments, blank lines, etc.)."""
+    try:
+        raw_metrics = analyze(code)
+        return {
+            "loc": raw_metrics.loc,
+            "lloc": raw_metrics.lloc,
+            "sloc": raw_metrics.sloc,
+            "comments": raw_metrics.comments,
+            "multi": raw_metrics.multi,
+            "blank": raw_metrics.blank,
+        }
+    except Exception as e:
+        logger.error(f"Error calculating raw metrics: {e}")
+        return {
+            "loc": 0,
+            "lloc": 0,
+            "sloc": 0,
+            "comments": 0,
+            "multi": 0,
+            "blank": 0,
+        }
+
+def calculate_code_quality_metrics(code: str) -> Dict[str, Any]:
+    """Calculates code quality metrics."""
+    try:
+        tree = ast.parse(code)
+        metrics = {
+            "method_length": [],
+            "argument_count": [],
+            "nesting_level": [], # Now a list to store per-function nesting levels
+            "max_nesting_level": 0 # Track the overall maximum nesting
+        }
+
+        class QualityVisitor(ast.NodeVisitor):
+            def __init__(self):
+                self.current_nesting = 0
+                self.max_nesting = 0
+
+            def visit_FunctionDef(self, node):
+                self.current_nesting = 0 # Reset for each function
+                self.max_nesting = 0 # Reset for each function
+                self.generic_visit(node)
+                metrics["nesting_level"].append(self.max_nesting)
+                metrics["method_length"].append(node.end_lineno - node.lineno + 1)
+                metrics["argument_count"].append(len(node.args.args))
+            
+            def visit_AsyncFunctionDef(self, node):
+                self.visit_FunctionDef(node) # Treat async functions the same
+
+            def visit_If(self, node):
+                self.current_nesting += 1
+                self.max_nesting = max(self.max_nesting, self.current_nesting)
+                self.generic_visit(node)
+                self.current_nesting -= 1
+
+            def visit_While(self, node):
+                self.current_nesting += 1
+                self.max_nesting = max(self.max_nesting, self.current_nesting)
+                self.generic_visit(node)
+                self.current_nesting -= 1
+
+            def visit_For(self, node):
+                self.current_nesting += 1
+                self.max_nesting = max(self.max_nesting, self.current_nesting)
+                self.generic_visit(node)
+                self.current_nesting -= 1
+
+            # Similar logic for other nesting structures (try, except, etc.)
+
+        QualityVisitor().visit(tree)
+
+        metrics["max_nesting_level"] = max(metrics["nesting_level"]) if metrics["nesting_level"] else 0
+        metrics["avg_nesting_level"] = sum(metrics["nesting_level"]) / len(metrics["nesting_level"]) if metrics["nesting_level"] else 0
+        # ... (Calculate averages for method_length and argument_count as before)
+
+        return metrics
+
+    except Exception as e:
+        logger.error(f"Error calculating code quality metrics: {e}")
+        return {
+            "method_length": [],
+            "argument_count": [],
+            "nesting_level": 0,
+            "avg_method_length": 0,
+            "avg_argument_count": 0,
+        }
+
+
 def calculate_all_metrics(code: str) -> Dict[str, Any]:
-    """
-    Calculates all available metrics for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Dict[str, Any]: Dictionary containing all calculated metrics:
-            - halstead: Halstead complexity metrics
-            - complexity: Cyclomatic complexity metrics
-            - maintainability_index: Maintainability index score
-            - function_complexity: Individual function complexity scores
-    """
+    """Calculates all available metrics."""
     metrics = {}
-    
-    # Calculate Halstead metrics
     metrics["halstead"] = calculate_halstead_metrics(code)
-    
-    # Calculate complexity metrics
-    function_complexity, total_complexity = calculate_complexity_metrics(code)
-    metrics["complexity"] = total_complexity
-    metrics["function_complexity"] = function_complexity
-    
-    # Calculate maintainability index
+    metrics["cyclomatic"] = calculate_cyclomatic_complexity(code) # Changed name for clarity
     metrics["maintainability_index"] = calculate_maintainability_index(code)
-    
+    metrics["raw"] = calculate_raw_metrics(code)
+    metrics["quality"] = calculate_code_quality_metrics(code)  # New metrics
     return metrics

@@ -4,6 +4,8 @@
 .pnp.js
 scripts/node_modules
 pip
+server/node_modules
+server/data/node_modules
 
 # Testing
 /coverage
@@ -92,7 +94,6 @@ Thumbs.db
 # Documentation generation
 /docs/_build/
 /documentation/generated/
-/server/data/*.json
 simple
 documentation
 

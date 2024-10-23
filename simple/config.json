@@ -5,8 +5,7 @@
         "*.json",
         "*.toml",
         "node_modules",
-        "schemas",
-        "scripts",
+        "scripts/node_modules",
         "pip",
         "*.log",
         "*.txt",
@@ -18,6 +17,13 @@
         "*node_modules*",
         "package-lock.json",
         "SECURITY.md",
-        ".git"
+        ".git",
+        ".github",
+        "documentation-viewer/.gitignore",
+        "documentation-viewer/src/logo.svg",
+        "documentation-viewer/public/logo512.png",
+        "documentation-viewer/public/favicon.ico",
+        "documentation-viewer/public/logo192.png",
+        "simple"
     ]
 }
