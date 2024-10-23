@@ -80,7 +80,6 @@ def calculate_cyclomatic_complexity(code: str) -> Tuple[Dict[str, int], int]:
         logger.error(f"Error calculating cyclomatic complexity: {e}")
         return {}, 0
 
-
 def calculate_maintainability_index(code: str) -> Optional[float]:
     """Calculates maintainability index."""
     try:
@@ -120,25 +119,29 @@ def calculate_code_quality_metrics(code: str) -> Dict[str, Any]:
         metrics = {
             "method_length": [],
             "argument_count": [],
-            "nesting_level": [], # Now a list to store per-function nesting levels
-            "max_nesting_level": 0 # Track the overall maximum nesting
+            "nesting_level": [],
+            "function_complexity": {},  # Initialize here
         }
 
         class QualityVisitor(ast.NodeVisitor):
+
             def __init__(self):
                 self.current_nesting = 0
                 self.max_nesting = 0
+                self.function_name = "" # Track current function name
 
             def visit_FunctionDef(self, node):
-                self.current_nesting = 0 # Reset for each function
-                self.max_nesting = 0 # Reset for each function
+                self.current_nesting = 0
+                self.max_nesting = 0
+                self.function_name = node.name # Set current function name
                 self.generic_visit(node)
                 metrics["nesting_level"].append(self.max_nesting)
                 metrics["method_length"].append(node.end_lineno - node.lineno + 1)
                 metrics["argument_count"].append(len(node.args.args))
-            
+                metrics["function_complexity"][self.function_name] = self.max_nesting # Assign complexity
+
             def visit_AsyncFunctionDef(self, node):
-                self.visit_FunctionDef(node) # Treat async functions the same
+                self.visit_FunctionDef(node)  # Treat async functions the same
 
             def visit_If(self, node):
                 self.current_nesting += 1
@@ -158,13 +161,15 @@ def calculate_code_quality_metrics(code: str) -> Dict[str, Any]:
                 self.generic_visit(node)
                 self.current_nesting -= 1
 
-            # Similar logic for other nesting structures (try, except, etc.)
+            # ... (Add similar logic for other nesting structures: try, except, etc.)
 
         QualityVisitor().visit(tree)
 
         metrics["max_nesting_level"] = max(metrics["nesting_level"]) if metrics["nesting_level"] else 0
         metrics["avg_nesting_level"] = sum(metrics["nesting_level"]) / len(metrics["nesting_level"]) if metrics["nesting_level"] else 0
-        # ... (Calculate averages for method_length and argument_count as before)
+        metrics["avg_method_length"] = sum(metrics["method_length"]) / len(metrics["method_length"]) if metrics["method_length"] else 0
+        metrics["avg_argument_count"] = sum(metrics["argument_count"]) / len(metrics["argument_count"]) if metrics["argument_count"] else 0
+
 
         return metrics
 
@@ -173,18 +178,78 @@ def calculate_code_quality_metrics(code: str) -> Dict[str, Any]:
         return {
             "method_length": [],
             "argument_count": [],
-            "nesting_level": 0,
+            "nesting_level": [],
             "avg_method_length": 0,
             "avg_argument_count": 0,
+            "max_nesting_level": 0,
+            "avg_nesting_level": 0,
+            "function_complexity": {}, # Return empty dictionary on error
         }
 
 
 def calculate_all_metrics(code: str) -> Dict[str, Any]:
     """Calculates all available metrics."""
     metrics = {}
-    metrics["halstead"] = calculate_halstead_metrics(code)
-    metrics["cyclomatic"] = calculate_cyclomatic_complexity(code) # Changed name for clarity
-    metrics["maintainability_index"] = calculate_maintainability_index(code)
-    metrics["raw"] = calculate_raw_metrics(code)
-    metrics["quality"] = calculate_code_quality_metrics(code)  # New metrics
+    try:
+        metrics["halstead"] = calculate_halstead_metrics(code)
+    except Exception as e:
+        logger.error(f"Error calculating Halstead metrics: {e}")
+        metrics["halstead"] = {  # Provide default values on error
+            "volume": 0,
+            "difficulty": 0,
+            "effort": 0,
+            "vocabulary": 0,
+            "length": 0,
+            "distinct_operators": 0,
+            "distinct_operands": 0,
+            "total_operators": 0,
+            "total_operands": 0,
+            "operator_counts": {},
+            "operand_counts": {},
+        }
+
+    try:
+        function_complexity, total_complexity = calculate_cyclomatic_complexity(code)
+        metrics["function_complexity"] = function_complexity  # Store function-specific complexity
+        metrics["cyclomatic"] = total_complexity  # Store total complexity
+    except Exception as e:
+        logger.error(f"Error calculating cyclomatic complexity: {e}")
+        metrics["function_complexity"] = {} # Default on error
+        metrics["cyclomatic"] = 0 # Default on error
+
+
+    try:
+        metrics["maintainability_index"] = calculate_maintainability_index(code)
+    except Exception as e:
+        logger.error(f"Error calculating maintainability index: {e}")
+        metrics["maintainability_index"] = 0 # Default on error
+
+    try:
+        metrics["raw"] = calculate_raw_metrics(code)
+    except Exception as e:
+        logger.error(f"Error calculating raw metrics: {e}")
+        metrics["raw"] = { # Default on error
+            "loc": 0,
+            "lloc": 0,
+            "sloc": 0,
+            "comments": 0,
+            "multi": 0,
+            "blank": 0,
+        }
+
+    try:
+        metrics["quality"] = calculate_code_quality_metrics(code)
+    except Exception as e:
+        logger.error(f"Error calculating code quality metrics: {e}")
+        metrics["quality"] = { # Default on error
+            "method_length": [],
+            "argument_count": [],
+            "nesting_level": [],
+            "avg_method_length": 0,
+            "avg_argument_count": 0,
+            "max_nesting_level": 0,
+            "avg_nesting_level": 0,
+            "function_complexity": {},
+        }
+
     return metrics

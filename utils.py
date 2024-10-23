@@ -8,12 +8,12 @@ import os
 import sys
 import json
 import logging
-import aiohttp
 import asyncio
 import subprocess
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
 from jsonschema import Draft7Validator, ValidationError, SchemaError
+import aiohttp # Import aiohttp
 
 # Load environment variables
 load_dotenv()
@@ -134,9 +134,26 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking if file is binary '{file_path}': {e}")
         return True
 
-import os
-import pathspec  # You'll need to add this to requirements.txt
-from typing import List, Set
+def should_process_file(file_path: str, skip_types: Set[str]) -> bool:  # Add skip_types argument
+    """Determines if a file should be processed."""
+
+    if not os.path.exists(file_path):
+        return False  # Don't process non-existent files
+
+    _, ext = os.path.splitext(file_path)
+
+    # Combine all skip conditions
+    if (
+        os.path.islink(file_path) or
+        any(part in file_path for part in ['node_modules', '.bin', '.git',  '__pycache__', 'build', 'dist']) or # Add .git and other common directories
+        file_path.endswith('.d.ts') or
+        ext in {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'} or
+        ext in skip_types or not ext or is_binary(file_path)
+    ):
+        logger.debug(f"Skipping file '{file_path}'")
+        return False
+
+    return True
 
 def load_gitignore(repo_path: str) -> pathspec.PathSpec:
     """
@@ -221,30 +238,6 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
     logger.debug(f"Collected {len(file_paths)} files from '{repo_path}'.")
     return file_paths
 
-def should_process_file(file_path: str) -> bool:
-    """
-    Determines if a file should be processed based on various criteria.
-
-    Args:
-        file_path (str): Path to the file.
-
-    Returns:
-        bool: True if the file should be processed, False otherwise.
-    """
-    # Skip symlinks
-    if os.path.islink(file_path):
-        return False
-
-    # Skip node_modules related paths
-    if any(part in file_path for part in ['node_modules', '.bin']):
-        return False
-
-    # Skip if file doesn't exist
-    if not os.path.exists(file_path):
-        return False
-
-    return True
-
 # ----------------------------
 # Configuration Management
 # ----------------------------
@@ -275,23 +268,14 @@ def load_json_schema(schema_path: str) -> Optional[dict]:
         return None
 
 def load_function_schema(schema_path: str) -> Dict[str, Any]:
-    """
-    Loads a function schema and validates it.
-
-    Args:
-        schema_path (str): Path to the schema file.
-
-    Returns:
-        Dict[str, Any]: The loaded and validated function schema.
-
-    Raises:
-        ValueError: If the schema is invalid or missing required keys.
-    """
-    schema = validate_schema(schema_path)
-    if not schema:
-        raise ValueError("Invalid or missing schema file.")  # Raise ValueError
-    if 'functions' not in schema:
-        raise ValueError("Schema missing 'functions' key.")  # Raise ValueError
+    """Loads and validates the function schema."""
+    # Removed redundant call to validate_schema
+    schema = load_json_schema(schema_path) # Load the schema
+    if schema is None:
+        raise ValueError("Invalid or missing schema file.")
+    if "functions" not in schema:
+        raise ValueError("Schema missing 'functions' key.")
+    Draft7Validator.check_schema(schema) # Validate the schema
     return schema
 
 def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
@@ -445,40 +429,37 @@ async def run_node_script_async(script_path: str, input_json: str) -> Optional[s
         logger.error(f"An unexpected error occurred while running Node.js script '{script_path}': {e}")
         return None
         
-def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[str]:
-    """
-    Runs a Node.js script to insert docstrings and returns the modified code.
-
-    Args:
-        script_name (str): Name of the script to run.
-        input_data (dict): Input data to pass to the script.
-
-    Returns:
-        Optional[str]: The modified code if successful, None otherwise.
-    """
+async def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[str]:
+    """Runs a Node.js script to insert docstrings asynchronously."""
     try:
         script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
         logger.debug(f"Running Node.js script: {script_path}")
 
         input_json = json.dumps(input_data)
-        result = subprocess.run(
-            ["node", script_path],
-            input=input_json,
-            capture_output=True,
-            text=True,
-            check=True
+
+        proc = await asyncio.create_subprocess_exec(
+            'node', script_path,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
+
+        stdout, stderr = await proc.communicate(input=input_json.encode())
+
+        if proc.returncode != 0:
+            logger.error(f"Error running {script_name}: {stderr.decode()}")
+            return None
+
         logger.debug(f"Successfully ran {script_path}")
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error running {script_name}: {e.stderr}")
-        return None
+        return stdout.decode()
+
     except FileNotFoundError:
         logger.error(f"Node.js script {script_name} not found.")
         return None
     except Exception as e:
         logger.error(f"Unexpected error running {script_name}: {e}")
         return None
+
 
 # ----------------------------
 # Documentation Generation
@@ -507,31 +488,7 @@ def validate_schema(schema_path: str) -> Optional[Dict[str, Any]]:
     except (FileNotFoundError, json.JSONDecodeError) as e:
         logger.error(f"Error loading schema file: {e}")
         return None
-
-def load_function_schema(schema_path: str) -> Dict[str, Any]:
-    """
-    Loads and validates the function schema.
-
-    Args:
-        schema_path (str): Path to the function schema file.
-
-    Returns:
-        Dict[str, Any]: The loaded and validated function schema.
-
-    Raises:
-        ValueError: If the schema is invalid or missing required keys.
-    """
-    try:
-        schema = validate_schema(schema_path)
-        if schema is None:
-            raise ValueError("Schema validation failed. Check the schema file.")
-        if "functions" not in schema:
-            raise ValueError("Schema missing 'functions' key.")
-        return schema
-    except ValueError as e:
-        logger.critical(f"Error loading schema: {e}")
-        sys.exit(1)
-
+    
 # ----------------------------
 # EOF
 # ----------------------------
