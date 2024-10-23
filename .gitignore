@@ -93,7 +93,6 @@ Thumbs.db
 
 # Documentation generation
 /docs/_build/
-/documentation/generated/
 simple
 # Ignore documentation directory but track documentation-system
 documentation/
