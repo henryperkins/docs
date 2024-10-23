@@ -30,7 +30,106 @@ if not logger.hasHandlers():
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
+async def save_documentation_to_db(
+    documentation: Dict[str, Any],
+    project_id: str,
+    file_path: str,
+    api_url: str
+) -> Optional[str]:
+    """
+    Saves the generated documentation to the MongoDB database through the API.
 
+    Args:
+        documentation (Dict[str, Any]): The documentation to save
+        project_id (str): The project identifier
+        file_path (str): Path to the source file
+        api_url (str): The API endpoint URL
+
+    Returns:
+        Optional[str]: The ID of the created document, or None if the operation failed
+    """
+    try:
+        # Prepare the documentation data
+        doc_data = {
+            "project_id": project_id,
+            "file_path": file_path,
+            "version": os.getenv("PROJECT_VERSION", "1.0.0"),
+            "language": documentation.get("language", "unknown"),
+            "summary": documentation.get("summary", ""),
+            "classes": documentation.get("classes", []),
+            "functions": documentation.get("functions", []),
+            "metrics": documentation.get("metrics", {}),
+            "generated_by": "documentation-generator"
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{api_url}/documentation",
+                json=doc_data,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status == 201:
+                    result = await response.json()
+                    logger.info(f"Documentation saved to database for {file_path}")
+                    return result.get("_id")
+                else:
+                    error_data = await response.json()
+                    logger.error(f"Failed to save documentation: {error_data}")
+                    return None
+
+    except Exception as e:
+        logger.error(f"Error saving documentation to database: {e}", exc_info=True)
+        return None
+
+async def update_documentation_in_db(
+    documentation: Dict[str, Any],
+    project_id: str,
+    file_path: str,
+    api_url: str
+) -> bool:
+    """
+    Updates existing documentation in the MongoDB database.
+
+    Args:
+        documentation (Dict[str, Any]): The updated documentation
+        project_id (str): The project identifier
+        file_path (str): Path to the source file
+        api_url (str): The API endpoint URL
+
+    Returns:
+        bool: True if the update was successful, False otherwise
+    """
+    try:
+        doc_data = {
+            "project_id": project_id,
+            "file_path": file_path,
+            "version": os.getenv("PROJECT_VERSION", "1.0.0"),
+            "language": documentation.get("language", "unknown"),
+            "summary": documentation.get("summary", ""),
+            "classes": documentation.get("classes", []),
+            "functions": documentation.get("functions", []),
+            "metrics": documentation.get("metrics", {}),
+            "generated_by": "documentation-generator"
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                f"{api_url}/documentation/{project_id}/{file_path}",
+                json=doc_data,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status == 200:
+                    logger.info(f"Documentation updated in database for {file_path}")
+                    return True
+                else:
+                    error_data = await response.json()
+                    logger.error(f"Failed to update documentation: {error_data}")
+                    return False
+
+    except Exception as e:
+        logger.error(f"Error updating documentation in database: {e}", exc_info=True)
+        return False
+    
 def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], logo: str = None) -> str:
     """
     Generates a dynamic badge for a given metric.
@@ -133,7 +232,6 @@ def format_table(headers: List[str], rows: List[List[str]]) -> str:
         sanitized_row = [sanitize_text(cell) for cell in row]
         table += "| " + " | ".join(sanitized_row) + " |\n"
     return table
-
 
 def truncate_description(description: str, max_length: int = 100) -> str:
     """
