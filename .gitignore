@@ -6,6 +6,9 @@ scripts/node_modules
 pip
 server/node_modules
 server/data/node_modules
+documentation-system/node_modules
+documentation-system/client/node_modules
+documentation-system/server/node_modules
 
 # Testing
 /coverage
@@ -25,6 +28,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+documentation-system/server/logs/
 
 # Runtime data
 pids
@@ -94,9 +98,14 @@ Thumbs.db
 # Documentation generation
 /docs/_build/
 simple
-# Ignore documentation directory but track documentation-system
+
+# Ignore the documentation directory but track documentation-system
 documentation/
 !documentation-system/
+
+# Ignore Tailwind and PostCSS config files if unnecessary
+documentation-system/client/tailwind.config.js
+documentation-system/client/postcss.config.js
 
 # Temporary files
 *.swp
