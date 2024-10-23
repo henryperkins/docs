@@ -9,6 +9,7 @@ server/data/node_modules
 documentation-system/node_modules
 documentation-system/client/node_modules
 documentation-system/server/node_modules
+package-lock.json
 
 # Testing
 /coverage
