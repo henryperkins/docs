@@ -8,8 +8,8 @@
         "properties": {
           "docstring_format": {
             "type": "string",
-            "description": "Format of the docstring (e.g., Google, NumPy, Sphinx).",
-            "enum": ["Google"]
+            "description": "Format of the docstring (e.g., Google, JSDoc, TSDoc).",
+            "enum": ["JSDoc", "TSDoc"]
           },
           "summary": {
             "type": "string",
@@ -27,37 +27,25 @@
             "items": {
               "type": "object",
               "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Function name."
-                },
-                "docstring": {
-                  "type": "string",
-                  "description": "Detailed description of the function in Google Style."
-                },
+                "name": { "type": "string" },
+                "docstring": { "type": "string" },
                 "args": {
                   "type": "array",
-                  "items": {
-                    "type": "string"
+                  "items": { "type": "string" }
+                },
+                "async": { "type": "boolean" },
+                "complexity": { "type": "integer" },
+                "halstead": {
+                  "type": "object",
+                  "properties": {
+                    "volume": { "type": "number" },
+                    "difficulty": { "type": "number" },
+                    "effort": { "type": "number" }
                   },
-                  "description": "List of argument names."
-                },
-                "async": {
-                  "type": "boolean",
-                  "description": "Whether the function is asynchronous."
-                },
-                "complexity": {
-                  "type": "integer",
-                  "description": "Cyclomatic complexity of the function."
+                  "required": []
                 }
               },
-              "required": [
-                "name",
-                "docstring",
-                "args",
-                "async",
-                "complexity"
-              ]
+              "required": ["name", "docstring", "args", "async", "complexity"]
             },
             "description": "List of functions."
           },
@@ -66,84 +54,47 @@
             "items": {
               "type": "object",
               "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Class name."
-                },
-                "docstring": {
-                  "type": "string",
-                  "description": "Detailed description of the class in Google Style."
-                },
+                "name": { "type": "string" },
+                "docstring": { "type": "string" },
                 "methods": {
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
-                      "name": {
-                        "type": "string",
-                        "description": "Method name."
-                      },
-                      "docstring": {
-                        "type": "string",
-                        "description": "Detailed description of the method in Google Style."
-                      },
+                      "name": { "type": "string" },
+                      "docstring": { "type": "string" },
                       "args": {
                         "type": "array",
-                        "items": {
-                          "type": "string"
+                        "items": { "type": "string" }
+                      },
+                      "async": { "type": "boolean" },
+                      "type": { "type": "string" },
+                      "complexity": { "type": "integer" },
+                      "halstead": {
+                        "type": "object",
+                        "properties": {
+                          "volume": { "type": "number" },
+                          "difficulty": { "type": "number" },
+                          "effort": { "type": "number" }
                         },
-                        "description": "List of argument names."
-                      },
-                      "async": {
-                        "type": "boolean",
-                        "description": "Whether the method is asynchronous."
-                      },
-                      "type": {
-                        "type": "string",
-                        "description": "Method type (e.g., 'instance', 'class', 'static')."
-                      },
-                      "complexity": {
-                        "type": "integer",
-                        "description": "Cyclomatic complexity of the method."
+                        "required": []
                       }
                     },
-                    "required": [
-                      "name",
-                      "docstring",
-                      "args",
-                      "async",
-                      "type",
-                      "complexity"
-                    ]
-                  },
-                  "description": "List of methods."
+                    "required": ["name", "docstring", "args", "async", "type", "complexity"]
+                  }
                 }
               },
-              "required": [
-                "name",
-                "docstring",
-                "methods"
-              ]
-            },
-            "description": "List of classes."
+              "required": ["name", "docstring", "methods"]
+            }
           },
           "halstead": {
             "type": "object",
             "properties": {
-              "volume": {
-                "type": "number",
-                "description": "Halstead Volume"
-              },
-              "difficulty": {
-                "type": "number",
-                "description": "Halstead Difficulty"
-              },
-              "effort": {
-                "type": "number",
-                "description": "Halstead Effort"
-              }
+              "volume": { "type": "number" },
+              "difficulty": { "type": "number" },
+              "effort": { "type": "number" }
             },
-            "description": "Halstead complexity metrics."
+            "required": []
           },
           "maintainability_index": {
             "type": "number",
@@ -154,115 +105,27 @@
             "items": {
               "type": "object",
               "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Variable name."
-                },
-                "type": {
-                  "type": "string",
-                  "description": "Inferred data type of the variable."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "Description of the variable."
-                },
-                "file": {
-                  "type": "string",
-                  "description": "File where the variable is defined."
-                },
-                "line": {
-                  "type": "integer",
-                  "description": "Line number where the variable is defined."
-                },
-                "link": {
-                  "type": "string",
-                  "description": "Link to the variable definition."
-                },
-                "example": {
-                  "type": "string",
-                  "description": "Example usage of the variable."
-                },
-                "references": {
-                  "type": "string",
-                  "description": "References to the variable."
-                }
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "description": { "type": "string" }
               },
-              "required": [
-                "name",
-                "type",
-                "description",
-                "file",
-                "line",
-                "link",
-                "example",
-                "references"
-              ]
-            },
-            "description": "List of variables in the code."
+              "required": ["name", "type", "description"]
+            }
           },
           "constants": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Constant name."
-                },
-                "type": {
-                  "type": "string",
-                  "description": "Inferred data type of the constant."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "Description of the constant."
-                },
-                "file": {
-                  "type": "string",
-                  "description": "File where the constant is defined."
-                },
-                "line": {
-                  "type": "integer",
-                  "description": "Line number where the constant is defined."
-                },
-                "link": {
-                  "type": "string",
-                  "description": "Link to the constant definition."
-                },
-                "example": {
-                  "type": "string",
-                  "description": "Example usage of the constant."
-                },
-                "references": {
-                  "type": "string",
-                  "description": "References to the constant."
-                }
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "description": { "type": "string" }
               },
-              "required": [
-                "name",
-                "type",
-                "description",
-                "file",
-                "line",
-                "link",
-                "example",
-                "references"
-              ]
-            },
-            "description": "List of constants in the code."
+              "required": ["name", "type", "description"]
+            }
           }
         },
-        "required": [
-          "docstring_format",
-          "summary",
-          "changes_made",
-          "functions",
-          "classes",
-          "halstead",
-          "maintainability_index",
-          "variables",
-          "constants"
-        ]
+        "required": ["docstring_format", "summary", "functions", "classes"]
       }
     }
   ]

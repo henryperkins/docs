@@ -15,13 +15,12 @@
 
 ## Summary
 
-This file contains utility functions for cloning repositories, retrieving and filtering file paths, writing markdown documentation, and determining programming languages based on file extensions. It also includes functionality for loading configurations.
+The `simple.py` file contains utility functions for handling operations related to repositories and file management. It includes functions for cloning repositories, retrieving files from directories, and handling markdown writing and configurations. The file is designed to aid in the organization and documentation of project files, utilizing various helper functions to manage file paths, configurations, and language-related tasks.
 
 ## Recent Changes
 
-- Updated docstrings for clarity and consistency.
-- Refactored file retrieval functions for better performance.
-- Added error handling to cloning functions.
+- Implemented functions to clone repositories, list files, ignore specific patterns, write markdown files, determine programming language from file extensions, and load configurations.
+- Added main execution flow handling with argument parsing.
 
 
 # Code Structure
@@ -40,7 +39,7 @@ graph TD;
 
 | Metric | Value | Status |
 |--------|-------|--------|
-| Maintainability | 68.4 | ⚠️ Warning |
+| Maintainability | 71.2 | ⚠️ Warning |
 ## Complexity Metrics
 
 | Metric | Value |

@@ -15,11 +15,11 @@
 
 ## Summary
 
-This file contains the `GoHandler` class, which is responsible for handling Go programming language functionalities within the documentation system. It provides methods to extract the structure of Go code, insert documentation comments, and validate Go code syntax using tools like 'go fmt' and 'go vet'.
+The file implements the `GoHandler` class, designed to process Go programming language files by extracting code structures, inserting documentation, and validating code syntax. This utility serves to automate the documentation process of Go code, leveraging external scripts to parse and modify code, and using native Go tools for syntax validation.
 
 ## Recent Changes
 
-- Initial creation of the file with class definition.
+
 
 
 # Code Structure
@@ -28,7 +28,7 @@ This file contains the `GoHandler` class, which is responsible for handling Go p
 
 ### GoHandler
 
-Handler for the Go programming language.
+Handler for the Go programming language. This class facilitates the extraction of code structure, insertion of documentation, and validation of Go code syntax using default Go utilities.
 
 #### Methods
 

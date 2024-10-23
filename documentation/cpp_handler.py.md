@@ -15,12 +15,14 @@
 
 ## Summary
 
-This file contains the `CppHandler` class, which provides handling functionality for the C++ programming language. It includes methods to extract code structure, insert documentation comments, and validate C++ code syntax. The class utilizes external scripts and executables to parse and modify C++ code, making it essential for automated code documentation processes in a multi-language AI framework.
+This module, 'cpp_handler.py', provides functionality for handling C++ code. It allows for extracting structures from C++ code, inserting documentation comments, and validating the code syntax. It serves as a handler to integrate with external C++ parsing and documentation tools, facilitating the processing of C++ source files and enhancing them with automatically generated documentation.
 
 ## Recent Changes
 
-- Improved docstrings for methods.
-- Added Halstead metrics calculation.
+- Improved the method for extracting structure from C++ code.
+- Added detailed documentation for the CppHandler class and its methods.
+- Refactored the process for validating C++ code syntax.
+- Introduced variables to manage paths to external scripts and executable files.
 
 
 # Code Structure
@@ -29,7 +31,7 @@ This file contains the `CppHandler` class, which provides handling functionality
 
 ### CppHandler
 
-Handler for the C++ programming language. This class provides methods to extract the structure of C++ source code, insert documentation-derived comments, and validate C++ code syntax using external executable tools.
+Handler for the C++ programming language that facilitates the extraction of code structures, insertion of documentation, and validation of syntax.
 
 #### Methods
 

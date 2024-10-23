@@ -1,46 +1,46 @@
 // js_ts_metrics.js
-
-const fs = require('fs');
 const escomplex = require('typhonjs-escomplex');
 
-function calculateMetrics(code, language) {
-    const isTypeScript = language === 'typescript';
+process.stdin.on('data', async (data) => {
+    try {
+        const input = JSON.parse(data.toString());
+        const code = input.code;
+        const options = input.options;
 
-    // Analyze the code
-    const analysis = escomplex.analyzeModule(code, {
-        esmImportExport: true,
-        jsx: true,
-        loc: true,
-        newmi: true,
-        skipCalculation: false,
-        ignoreErrors: false,
-        useTypeScriptEstree: isTypeScript,
-    });
+        const analysis = escomplex.analyzeModule(code, options);
 
-    // Extract relevant metrics
-    const metrics = {
-        aggregate: analysis.aggregate,
-        functions: analysis.functions.map(func => ({
-            name: func.name,
-            cyclomatic: func.cyclomatic,
-            halstead: func.halstead,
-            paramCount: func.params,
-            lineStart: func.lineStart,
-            lineEnd: func.lineEnd,
-        })),
-        maintainability: analysis.maintainability,
-    };
+        const halstead = analysis.aggregate.halstead;
+        const functionsMetrics = analysis.functions.reduce((acc, method) => {
+            acc[method.name] = {
+                complexity: method.cyclomatic,
+                sloc: method.sloc,
+                params: method.params,
+                halstead: method.halstead
+            };
+            return acc;
+        }, {});
 
-    return metrics;
-}
+        const result = {
+            complexity: analysis.aggregate.cyclomatic,
+            maintainability: analysis.maintainability,
+            halstead: {
+                volume: halstead.volume,
+                difficulty: halstead.difficulty,
+                effort: halstead.effort
+            },
+            functions: functionsMetrics
+        };
 
-function main() {
-    const input = fs.readFileSync(0, 'utf-8');
-    const data = JSON.parse(input);
-    const code = data.code;
-    const language = data.language || 'javascript';
-    const metrics = calculateMetrics(code, language);
-    console.log(JSON.stringify(metrics));
-}
+        console.log(JSON.stringify(result));
 
-main();
+    } catch (error) {
+        console.error(`Metrics calculation error: ${error.message}`);
+        const defaultMetrics = {
+            complexity: 0,
+            maintainability: 0,
+            halstead: { volume: 0, difficulty: 0, effort: 0 },
+            functions: {}
+        };
+        console.log(JSON.stringify(defaultMetrics));
+    }
+});

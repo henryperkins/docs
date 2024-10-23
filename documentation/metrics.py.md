@@ -15,13 +15,13 @@
 
 ## Summary
 
-The 'metrics.py' file is designed to compute various software metrics for a given piece of code. This includes Halstead complexity metrics, cyclomatic complexity, and maintainability index. These metrics aid in understanding code complexity, effort required for maintenance, and overall code quality. The file provides functions to calculate individual metrics as well as a comprehensive function that returns all metrics. Additionally, it includes several variables and constants used within these calculations.
+The 'metrics.py' file provides functionality to calculate various code metrics, including Halstead complexity metrics, cyclomatic complexity metrics, the maintainability index, and all available metrics for source code. These metrics are essential for analyzing the complexity, maintainability, and overall quality of code. The functions leverage Radon's capabilities to perform detailed analyses and return comprehensive metric data in structured formats.
 
 ## Recent Changes
 
-- Added detailed docstrings for functions.
-- Refactored variable names for clarity.
-- Updated Halstead metrics calculation logic.
+- Improved docstring descriptions for function return values.
+- Added example usages for variables and constants (placeholders).
+- Updated Halstead metric calculations.
 
 
 # Code Structure

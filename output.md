@@ -20,50 +20,6 @@
   - [Recent Changes](#recent-changes)
 - [Code Structure](#code-structure)
   - [Classes](#classes)
-- [Dependencies](#dependencies)
-- [Metrics](#metrics)
-  - [Code Quality](#code-quality)
-  - [Complexity Metrics](#complexity-metrics)
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-  - [Summary](#summary)
-  - [Recent Changes](#recent-changes)
-- [Code Structure](#code-structure)
-  - [Classes](#classes)
-    - [BaseHandler](#basehandler)
-      - [Methods](#methods)
-- [Dependencies](#dependencies)
-- [Metrics](#metrics)
-  - [Code Quality](#code-quality)
-  - [Complexity Metrics](#complexity-metrics)
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-  - [Summary](#summary)
-  - [Recent Changes](#recent-changes)
-- [Code Structure](#code-structure)
-  - [Classes](#classes)
-- [Dependencies](#dependencies)
-- [Metrics](#metrics)
-  - [Code Quality](#code-quality)
-  - [Complexity Metrics](#complexity-metrics)
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-  - [Summary](#summary)
-  - [Recent Changes](#recent-changes)
-- [Code Structure](#code-structure)
-  - [Classes](#classes)
-    - [JavaHandler](#javahandler)
-      - [Methods](#methods)
-- [Dependencies](#dependencies)
-- [Metrics](#metrics)
-  - [Code Quality](#code-quality)
-  - [Complexity Metrics](#complexity-metrics)
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-  - [Summary](#summary)
-  - [Recent Changes](#recent-changes)
-- [Code Structure](#code-structure)
-  - [Classes](#classes)
     - [CSSHandler](#csshandler)
       - [Methods](#methods)
 - [Dependencies](#dependencies)
@@ -76,16 +32,8 @@
   - [Recent Changes](#recent-changes)
 - [Code Structure](#code-structure)
   - [Classes](#classes)
-- [Dependencies](#dependencies)
-- [Metrics](#metrics)
-  - [Code Quality](#code-quality)
-  - [Complexity Metrics](#complexity-metrics)
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-  - [Summary](#summary)
-  - [Recent Changes](#recent-changes)
-- [Code Structure](#code-structure)
-  - [Classes](#classes)
+    - [HTMLHandler](#htmlhandler)
+      - [Methods](#methods)
 - [Dependencies](#dependencies)
 - [Metrics](#metrics)
   - [Code Quality](#code-quality)
@@ -98,26 +46,6 @@
   - [Classes](#classes)
     - [GoHandler](#gohandler)
       - [Methods](#methods)
-- [Dependencies](#dependencies)
-- [Metrics](#metrics)
-  - [Code Quality](#code-quality)
-  - [Complexity Metrics](#complexity-metrics)
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-  - [Summary](#summary)
-  - [Recent Changes](#recent-changes)
-- [Code Structure](#code-structure)
-  - [Classes](#classes)
-- [Dependencies](#dependencies)
-- [Metrics](#metrics)
-  - [Code Quality](#code-quality)
-  - [Complexity Metrics](#complexity-metrics)
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-  - [Summary](#summary)
-  - [Recent Changes](#recent-changes)
-- [Code Structure](#code-structure)
-  - [Classes](#classes)
 - [Dependencies](#dependencies)
 - [Metrics](#metrics)
   - [Code Quality](#code-quality)
@@ -150,8 +78,30 @@
   - [Recent Changes](#recent-changes)
 - [Code Structure](#code-structure)
   - [Classes](#classes)
-    - [HTMLHandler](#htmlhandler)
+    - [BaseHandler](#basehandler)
       - [Methods](#methods)
+- [Dependencies](#dependencies)
+- [Metrics](#metrics)
+  - [Code Quality](#code-quality)
+  - [Complexity Metrics](#complexity-metrics)
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+  - [Summary](#summary)
+  - [Recent Changes](#recent-changes)
+- [Code Structure](#code-structure)
+  - [Classes](#classes)
+    - [JavaHandler](#javahandler)
+      - [Methods](#methods)
+- [Dependencies](#dependencies)
+- [Metrics](#metrics)
+  - [Code Quality](#code-quality)
+  - [Complexity Metrics](#complexity-metrics)
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+  - [Summary](#summary)
+  - [Recent Changes](#recent-changes)
+- [Code Structure](#code-structure)
+  - [Classes](#classes)
 - [Dependencies](#dependencies)
 - [Metrics](#metrics)
   - [Code Quality](#code-quality)
@@ -164,6 +114,36 @@
   - [Classes](#classes)
     - [JSTsHandler](#jstshandler)
       - [Methods](#methods)
+- [Dependencies](#dependencies)
+- [Metrics](#metrics)
+  - [Code Quality](#code-quality)
+  - [Complexity Metrics](#complexity-metrics)
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+  - [Summary](#summary)
+  - [Recent Changes](#recent-changes)
+- [Code Structure](#code-structure)
+  - [Classes](#classes)
+- [Dependencies](#dependencies)
+- [Metrics](#metrics)
+  - [Code Quality](#code-quality)
+  - [Complexity Metrics](#complexity-metrics)
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+  - [Summary](#summary)
+  - [Recent Changes](#recent-changes)
+- [Code Structure](#code-structure)
+  - [Classes](#classes)
+- [Dependencies](#dependencies)
+- [Metrics](#metrics)
+  - [Code Quality](#code-quality)
+  - [Complexity Metrics](#complexity-metrics)
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+  - [Summary](#summary)
+  - [Recent Changes](#recent-changes)
+- [Code Structure](#code-structure)
+  - [Classes](#classes)
 - [Dependencies](#dependencies)
 - [Metrics](#metrics)
   - [Code Quality](#code-quality)
@@ -320,6 +300,16 @@
 - [Metrics](#metrics)
   - [Code Quality](#code-quality)
   - [Complexity Metrics](#complexity-metrics)
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+  - [Summary](#summary)
+  - [Recent Changes](#recent-changes)
+- [Code Structure](#code-structure)
+  - [Classes](#classes)
+- [Dependencies](#dependencies)
+- [Metrics](#metrics)
+  - [Code Quality](#code-quality)
+  - [Complexity Metrics](#complexity-metrics)
 
 # Table of Contents
 
@@ -338,11 +328,13 @@
 
 ## Summary
 
-This file contains the definition of the ContextManager class, which is responsible for managing persistent context information in AI interactions. It provides methods to add, retrieve, clear, remove, and query context entries.
+The 'context_manager.py' file contains the `ContextManager` class, which is responsible for managing persistent context information for AI interactions. It allows the addition, retrieval, and removal of context entries, as well as the ability to clear all entries and get the most relevant contexts based on a given query.
 
 ## Recent Changes
 
-
+- Documented 'ContextManager' class methods
+- Added Halstead metrics calculations
+- Calculated maintainability index
 
 
 # Code Structure
@@ -351,7 +343,7 @@ This file contains the definition of the ContextManager class, which is responsi
 
 ### ContextManager
 
-Manages persistent context information for AI interactions. This includes adding new context entries, retrieving all current entries, clearing entries, and querying for relevant entries based on a provided query.
+Manages persistent context information for AI interactions.
 
 #### Methods
 
@@ -397,18 +389,278 @@ graph TD;
 
 # Overview
 
-**File:** `halstead_utils.py`  
+**File:** `css_handler.py`  
 **Language:** python  
-**Path:** `halstead_utils.py`  
+**Path:** `language_functions/css_handler.py`  
 
 ## Summary
 
-The `halstead_utils.py` file contains utilities for safely calculating Halstead complexity metrics for a given piece of code. It provides error handling mechanisms to ensure that even if some calculations fail, default values are returned. This utility is crucial for analyzing the complexity and maintainability of code efficiently.
+This file contains the `CSSHandler` class, responsible for analyzing, inserting documentation, and validating CSS code. It leverages external JavaScript scripts managed through Node.js to parse and insert structured information into CSS code files, and utilizes stylelint for code validation. The `CSSHandler` class is designed to handle the intricacies of CSS code structure, providing methods for extraction, insertion, and validation processes.
 
 ## Recent Changes
 
-- Added error handling to Halstead metric calculations.
-- Optimized metric calculations for performance.
+- Initial creation of the CSSHandler class and methods
+- Integration with JavaScript parser and inserter scripts
+- Addition of stylelint for CSS code validation
+
+
+# Code Structure
+
+## Classes
+
+### CSSHandler
+
+Handler for the CSS programming language. This class manages the parsing, documentation insertion, and validation of CSS code using external tools and scripts, aiming to streamline CSS documentation and correctness assurance.
+
+#### Methods
+
+| Method | Description | Complexity |
+|--------|-------------|------------|
+| `__init__` | Initializes the `CSSHandler` with a function schema. | 1 |
+| `extract_structure` | Extracts the structure of the CSS code, analyzing selectors, properties, and rules. | 4 |
+| `insert_docstrings` | Inserts comments into CSS code based on the provided documentation. | 3 |
+| `validate_code` | Validates CSS code for correctness using 'stylelint'. | 4 |
+
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 81.6 | ✅ Good |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 4.8 |
+| Difficulty | 0.5 |
+| Effort | 2.4 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `html_handler.py`  
+**Language:** python  
+**Path:** `language_functions/html_handler.py`  
+
+## Summary
+
+The `html_handler.py` file is a module designed to handle tasks related to HTML code, such as structure extraction, documentation insertion, and code validation. It utilizes external JavaScript scripts for parsing and inserting documentation and validates HTML syntax using tools like 'tidy'. The main class, `HTMLHandler`, provides methods to perform these operations, facilitating the integration of automatic documentation into HTML projects.
+
+## Recent Changes
+
+- Initial creation of the HTMLHandler class and methods.
+- Integration of external JS scripts for parsing and inserting documentation.
+- Added HTML validation using 'tidy'.
+
+
+# Code Structure
+
+## Classes
+
+### HTMLHandler
+
+Handler for the HTML language. This class provides methods to extract structures, insert documentation, and validate HTML code.
+
+#### Methods
+
+| Method | Description | Complexity |
+|--------|-------------|------------|
+| `__init__` | Initializes the HTMLHandler with a function schema. | 1 |
+| `extract_structure` | Extracts the structure of the HTML code, analyzing tags, attributes, and nesting. | 4 |
+| `insert_docstrings` | Inserts comments into HTML code based on the provided documentation. | 3 |
+| `validate_code` | Validates HTML code for correctness using an HTML validator like 'tidy'. | 4 |
+
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 82.3 | ✅ Good |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 4.8 |
+| Difficulty | 0.5 |
+| Effort | 2.4 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `go_handler.py`  
+**Language:** python  
+**Path:** `language_functions/go_handler.py`  
+
+## Summary
+
+The file implements the `GoHandler` class, designed to process Go programming language files by extracting code structures, inserting documentation, and validating code syntax. This utility serves to automate the documentation process of Go code, leveraging external scripts to parse and modify code, and using native Go tools for syntax validation.
+
+## Recent Changes
+
+
+
+
+# Code Structure
+
+## Classes
+
+### GoHandler
+
+Handler for the Go programming language. This class facilitates the extraction of code structure, insertion of documentation, and validation of Go code syntax using default Go utilities.
+
+#### Methods
+
+| Method | Description | Complexity |
+|--------|-------------|------------|
+| `__init__` | Initializes the `GoHandler` with a function schema. | 1 |
+| `extract_structure` | Extracts the structure of the Go code, analyzing functions, types, and variables. | 4 |
+| `insert_docstrings` | Inserts comments into Go code based on the provided documentation. | 3 |
+| `validate_code` | Validates Go code for syntax correctness using 'go fmt' and 'go vet'. | 6 |
+
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 76.0 | ⚠️ Warning |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 18.6 |
+| Difficulty | 1.7 |
+| Effort | 31.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `cpp_handler.py`  
+**Language:** python  
+**Path:** `language_functions/cpp_handler.py`  
+
+## Summary
+
+This module, 'cpp_handler.py', provides functionality for handling C++ code. It allows for extracting structures from C++ code, inserting documentation comments, and validating the code syntax. It serves as a handler to integrate with external C++ parsing and documentation tools, facilitating the processing of C++ source files and enhancing them with automatically generated documentation.
+
+## Recent Changes
+
+- Improved the method for extracting structure from C++ code.
+- Added detailed documentation for the CppHandler class and its methods.
+- Refactored the process for validating C++ code syntax.
+- Introduced variables to manage paths to external scripts and executable files.
+
+
+# Code Structure
+
+## Classes
+
+### CppHandler
+
+Handler for the C++ programming language that facilitates the extraction of code structures, insertion of documentation, and validation of syntax.
+
+#### Methods
+
+| Method | Description | Complexity |
+|--------|-------------|------------|
+| `__init__` | Initializes the `CppHandler` with a function schema. | 1 |
+| `extract_structure` | Extracts the structure of the C++ code, analyzing classes, functions, and variables. | 6 |
+| `insert_docstrings` | Inserts comments into C++ code based on the provided documentation. | 5 |
+| `validate_code` | Validates C++ code for syntax correctness using 'g++' with the '-fsyntax-only' flag. | 5 |
+
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 71.8 | ⚠️ Warning |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 51.9 |
+| Difficulty | 1.0 |
+| Effort | 51.9 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `__init__.py`  
+**Language:** python  
+**Path:** `language_functions/__init__.py`  
+
+## Summary
+
+This file provides a factory function to retrieve the appropriate language handler based on the specified programming language and its schema. It serves as a centralized access point for language-specific handlers, allowing the system to interact with different programming languages seamlessly.
+
+## Recent Changes
+
+- Updated the function signature of get_handler to improve type annotations.
+- Refactored internal logic for handler retrieval for better performance.
+- Added new handlers for additional languages to expand support.
 
 
 # Code Structure
@@ -427,14 +679,14 @@ graph TD;
 
 | Metric | Value | Status |
 |--------|-------|--------|
-| Maintainability | 81.7 | ✅ Good |
+| Maintainability | 89.2 | ✅ Good |
 ## Complexity Metrics
 
 | Metric | Value |
 |--------|--------|
-| Volume | 110.4 |
-| Difficulty | 2.8 |
-| Effort | 305.6 |
+| Volume | 4.8 |
+| Difficulty | 0.5 |
+| Effort | 2.4 |
 
 # Table of Contents
 
@@ -453,11 +705,13 @@ graph TD;
 
 ## Summary
 
-This module defines an abstract base class, `BaseHandler`, for creating language-specific handlers. Each handler must implement methods to extract the structure of the code, insert docstrings or comments based on documentation, and validate the modified code for syntax correctness. The abstract methods ensure that subclasses provide specific implementations for different programming languages. The module follows a template approach that aids in maintaining a consistent interface across various language handlers.
+The `base_handler.py` file defines an abstract base class `BaseHandler` for creating language-specific code handlers. Each handler derived from `BaseHandler` must implement methods to extract the structure of the code, insert docstrings or comments, and validate the code for syntax correctness. This structure ensures a standardized approach to handling various programming languages in the documentation generation system.
 
 ## Recent Changes
 
-- Defined an abstract base class `BaseHandler` with three abstract methods: `extract_structure`, `insert_docstrings`, and `validate_code`.
+- Implemented abstract base class `BaseHandler`.
+- Defined abstract methods `extract_structure`, `insert_docstrings`, and `validate_code`.
+- Initiated logging functionality.
 
 
 # Code Structure
@@ -468,7 +722,8 @@ This module defines an abstract base class, `BaseHandler`, for creating language
 
 Abstract base class for language-specific handlers.
 
-Each handler must implement methods to extract the structure of the code, insert docstrings/comments, and validate the modified code.
+Each handler must implement methods to extract the structure of the code,
+insert docstrings/comments, and validate the modified code.
 
 #### Methods
 
@@ -511,68 +766,18 @@ graph TD;
 
 # Overview
 
-**File:** `metrics.py`  
-**Language:** python  
-**Path:** `metrics.py`  
-
-## Summary
-
-The 'metrics.py' file is designed to compute various software metrics for a given piece of code. This includes Halstead complexity metrics, cyclomatic complexity, and maintainability index. These metrics aid in understanding code complexity, effort required for maintenance, and overall code quality. The file provides functions to calculate individual metrics as well as a comprehensive function that returns all metrics. Additionally, it includes several variables and constants used within these calculations.
-
-## Recent Changes
-
-- Added detailed docstrings for functions.
-- Refactored variable names for clarity.
-- Updated Halstead metrics calculation logic.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 72.1 | ⚠️ Warning |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 123.2 |
-| Difficulty | 3.4 |
-| Effort | 418.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
 **File:** `java_handler.py`  
 **Language:** python  
 **Path:** `language_functions/java_handler.py`  
 
 ## Summary
 
-The 'java_handler.py' file provides a class, JavaHandler, that handles various operations related to Java code, including extracting code structure, inserting documentation, and validating the code. It leverages external scripts to perform these tasks, enhancing the automation of documentation and validation processes for Java code in a Python environment.
+This module provides the JavaHandler class, which handles the analysis and documentation of Java code. It facilitates the extraction of code structure, insertion of Javadoc comments, and validation of Java source code for syntax correctness. The class interacts with external JavaScript scripts to perform parsing and inserting operations and uses 'javac' for compiling and validating Java code.
 
 ## Recent Changes
 
-- N/A
+- Initial implementation of JavaHandler class.
+- Added methods for code extraction, documentation insertion, and validation.
 
 
 # Code Structure
@@ -625,82 +830,18 @@ graph TD;
 
 # Overview
 
-**File:** `css_handler.py`  
+**File:** `halstead_utils.py`  
 **Language:** python  
-**Path:** `language_functions/css_handler.py`  
+**Path:** `halstead_utils.py`  
 
 ## Summary
 
-The `css_handler.py` file defines the `CSSHandler` class, which is responsible for handling CSS code, including extracting the structure, inserting comments, and validating the code using external tools. This handler aids in the analysis and documentation of CSS code in automated workflows.
+This file provides utilities to safely calculate Halstead complexity metrics for a given piece of source code. It includes functionality to handle errors gracefully during the metric computation process.
 
 ## Recent Changes
 
-- Added detailed error handling for script execution.
-- Improved documentation generation capabilities for CSS.
-- Integrated stylelint for CSS validation.
-
-
-# Code Structure
-
-## Classes
-
-### CSSHandler
-
-Handler for the CSS programming language.
-
-#### Methods
-
-| Method | Description | Complexity |
-|--------|-------------|------------|
-| `__init__` | Initializes the `CSSHandler` with a function schema. | 1 |
-| `extract_structure` | Extracts the structure of the CSS code, analyzing selectors, properties, and rules. | 4 |
-| `insert_docstrings` | Inserts comments into CSS code based on the provided documentation. | 3 |
-| `validate_code` | Validates CSS code for correctness using 'stylelint'. | 4 |
-
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 81.6 | ✅ Good |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 4.8 |
-| Difficulty | 0.5 |
-| Effort | 2.4 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `__init__.py`  
-**Language:** python  
-**Path:** `language_functions/__init__.py`  
-
-## Summary
-
-This module provides a factory function to retrieve appropriate language handlers based on the specified programming language and function schema. It includes functionality for case-insensitive language matching.
-
-## Recent Changes
-
-- Added function 'get_handler' to provide language-specific handlers.
+- Refactored key metric calculations for accuracy
+- Added error handling during metrics computation
 
 
 # Code Structure
@@ -719,407 +860,14 @@ graph TD;
 
 | Metric | Value | Status |
 |--------|-------|--------|
-| Maintainability | 89.2 | ✅ Good |
+| Maintainability | 81.7 | ✅ Good |
 ## Complexity Metrics
 
 | Metric | Value |
 |--------|--------|
-| Volume | 4.8 |
-| Difficulty | 0.5 |
-| Effort | 2.4 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `language_functions.py`  
-**Language:** python  
-**Path:** `language_functions/language_functions.py`  
-
-## Summary
-
-This module provides core functionalities to handle documentation insertion for source code in various programming languages. It includes functions to dynamically retrieve language-specific handlers and utilize them to insert docstrings or comments into code. This process involves loading predefined schema and performing operations based on the language being handled.
-
-## Recent Changes
-
-- Improved docstring for the function 'get_handler'.
-- Updated the docstring for 'insert_docstrings' for clarity.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 73.5 | ⚠️ Warning |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 118.5 |
-| Difficulty | 2.9 |
-| Effort | 346.5 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `go_handler.py`  
-**Language:** python  
-**Path:** `language_functions/go_handler.py`  
-
-## Summary
-
-This file contains the `GoHandler` class, which is responsible for handling Go programming language functionalities within the documentation system. It provides methods to extract the structure of Go code, insert documentation comments, and validate Go code syntax using tools like 'go fmt' and 'go vet'.
-
-## Recent Changes
-
-- Initial creation of the file with class definition.
-
-
-# Code Structure
-
-## Classes
-
-### GoHandler
-
-Handler for the Go programming language.
-
-#### Methods
-
-| Method | Description | Complexity |
-|--------|-------------|------------|
-| `__init__` | Initializes the `GoHandler` with a function schema. | 1 |
-| `extract_structure` | Extracts the structure of the Go code, analyzing functions, types, and variables. | 4 |
-| `insert_docstrings` | Inserts comments into Go code based on the provided documentation. | 3 |
-| `validate_code` | Validates Go code for syntax correctness using 'go fmt' and 'go vet'. | 6 |
-
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 76.0 | ⚠️ Warning |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 18.6 |
-| Difficulty | 1.7 |
-| Effort | 31.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `utils.py`  
-**Language:** python  
-**Path:** `utils.py`  
-
-## Summary
-
-This module contains utility functions for handling various programming-related tasks, such as determining file languages, validating file extensions, managing thresholds for complexity metrics, validating JSON schemas, cleaning up code, and interacting with Node.js scripts. These utilities aid in code quality analysis, ensuring standardized coding practices, and facilitating automation tasks.
-
-## Recent Changes
-
-- Added asynchronous functions for formatting and validating code.
-- Introduced environment-based threshold configurations for maintainability and complexity.
-- Enhanced file handling with exclusion capabilities for directories, files, and types.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 57.9 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 201.2 |
-| Difficulty | 4.1 |
-| Effort | 826.6 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `.eslintrc.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/.eslintrc.js`  
-
-## Summary
-
-This file serves as a configuration file for ESLint, a tool used for identifying and fixing problems in JavaScript code. It contains rules and settings to enforce code quality and consistency within the project.
-
-## Recent Changes
-
-- Initial creation of the ESLint configuration file
-- Added basic rule settings for best practices
-- Included specific environments like browser and Node.js
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `cpp_handler.py`  
-**Language:** python  
-**Path:** `language_functions/cpp_handler.py`  
-
-## Summary
-
-This file contains the `CppHandler` class, which provides handling functionality for the C++ programming language. It includes methods to extract code structure, insert documentation comments, and validate C++ code syntax. The class utilizes external scripts and executables to parse and modify C++ code, making it essential for automated code documentation processes in a multi-language AI framework.
-
-## Recent Changes
-
-- Improved docstrings for methods.
-- Added Halstead metrics calculation.
-
-
-# Code Structure
-
-## Classes
-
-### CppHandler
-
-Handler for the C++ programming language. This class provides methods to extract the structure of C++ source code, insert documentation-derived comments, and validate C++ code syntax using external executable tools.
-
-#### Methods
-
-| Method | Description | Complexity |
-|--------|-------------|------------|
-| `__init__` | Initializes the `CppHandler` with a function schema. | 1 |
-| `extract_structure` | Extracts the structure of the C++ code, analyzing classes, functions, and variables. | 6 |
-| `insert_docstrings` | Inserts comments into C++ code based on the provided documentation. | 5 |
-| `validate_code` | Validates C++ code for syntax correctness using 'g++' with the '-fsyntax-only' flag. | 5 |
-
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 71.8 | ⚠️ Warning |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 51.9 |
-| Difficulty | 1.0 |
-| Effort | 51.9 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `simple.py`  
-**Language:** python  
-**Path:** `simple/simple.py`  
-
-## Summary
-
-This file contains utility functions for cloning repositories, retrieving and filtering file paths, writing markdown documentation, and determining programming languages based on file extensions. It also includes functionality for loading configurations.
-
-## Recent Changes
-
-- Updated docstrings for clarity and consistency.
-- Refactored file retrieval functions for better performance.
-- Added error handling to cloning functions.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 68.4 | ⚠️ Warning |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 72.3 |
-| Difficulty | 2.4 |
-| Effort | 173.6 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `html_handler.py`  
-**Language:** python  
-**Path:** `language_functions/html_handler.py`  
-
-## Summary
-
-This file defines the `HTMLHandler` class, which is responsible for handling HTML code. It provides methods to extract the structure of HTML, insert comments based on provided documentation, and validate HTML code using an external validator like 'tidy'. The class relies on external JavaScript scripts to perform parsing and insertion tasks, enhancing the modularity and reusability of code functionalities.
-
-## Recent Changes
-
-
-
-
-# Code Structure
-
-## Classes
-
-### HTMLHandler
-
-Handler for the HTML language.
-
-#### Methods
-
-| Method | Description | Complexity |
-|--------|-------------|------------|
-| `__init__` | Initializes the HTMLHandler with a function schema. | 1 |
-| `extract_structure` | Extracts the structure of the HTML code, analyzing tags, attributes, and nesting. | 4 |
-| `insert_docstrings` | Inserts comments into HTML code based on the provided documentation. | 3 |
-| `validate_code` | Validates HTML code for correctness using an HTML validator like 'tidy'. | 4 |
-
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 82.3 | ✅ Good |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 4.8 |
-| Difficulty | 0.5 |
-| Effort | 2.4 |
+| Volume | 110.4 |
+| Difficulty | 2.8 |
+| Effort | 305.6 |
 
 # Table of Contents
 
@@ -1138,13 +886,12 @@ graph TD;
 
 ## Summary
 
-The 'js_ts_handler.py' file contains the 'JSTsHandler' class, designed to handle JavaScript and TypeScript language processing. It provides functionalities to extract code structure, insert JSDoc comments, validate code for syntactic and style correctness, and calculate code complexity metrics. The class uses external Node.js scripts to perform these operations, making it a comprehensive tool for managing JavaScript and TypeScript code documentation and analysis.
+This file contains the `JSTsHandler` class, which handles JavaScript and TypeScript languages by providing functionality to extract the structure of code, insert documentation, validate code, and calculate complexity metrics. It interacts with external tools and scripts to perform its duties.
 
 ## Recent Changes
 
-- Refactored methods to enhance performance
-- Updated external script paths for better integration
-- Improved error handling in 'extract_structure' method
+- Added detailed Google-style docstrings to all methods in the JSTsHandler class.
+- Updated variable information with links and descriptions.
 
 
 # Code Structure
@@ -1153,7 +900,7 @@ The 'js_ts_handler.py' file contains the 'JSTsHandler' class, designed to handle
 
 ### JSTsHandler
 
-Handler for JavaScript and TypeScript languages.
+Handler for JavaScript and TypeScript languages. This class provides methods to extract code structure, insert documentation comments, validate code, and calculate complexity metrics for JS/TS codes.
 
 #### Methods
 
@@ -1198,17 +945,169 @@ graph TD;
 
 # Overview
 
+**File:** `language_functions.py`  
+**Language:** python  
+**Path:** `language_functions/language_functions.py`  
+
+## Summary
+
+This module provides functionality for handling language-specific documentation insertion into code files. It defines factory functions to select appropriate handlers based on the programming language and facilitates the insertion of documentation comments. It also manages the loading of function schemas required for annotating the source code with relevant docstrings or comments.
+
+## Recent Changes
+
+- Added Halstead complexity metric calculation.
+- Improved function docstrings and argument descriptions.
+- Updated code structure for better readability.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 73.5 | ⚠️ Warning |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 118.5 |
+| Difficulty | 2.9 |
+| Effort | 346.5 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `metrics.py`  
+**Language:** python  
+**Path:** `metrics.py`  
+
+## Summary
+
+The 'metrics.py' file provides functionality to calculate various code metrics, including Halstead complexity metrics, cyclomatic complexity metrics, the maintainability index, and all available metrics for source code. These metrics are essential for analyzing the complexity, maintainability, and overall quality of code. The functions leverage Radon's capabilities to perform detailed analyses and return comprehensive metric data in structured formats.
+
+## Recent Changes
+
+- Improved docstring descriptions for function return values.
+- Added example usages for variables and constants (placeholders).
+- Updated Halstead metric calculations.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 72.1 | ⚠️ Warning |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 123.2 |
+| Difficulty | 3.4 |
+| Effort | 418.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `utils.py`  
+**Language:** python  
+**Path:** `utils.py`  
+
+## Summary
+
+Utility functions for handling file operations, code formatting, and configuration loading within a code documentation generation system.
+
+## Recent Changes
+
+- Added async support for code formatting functions.
+- Improved exception handling in config loading.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 57.9 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 201.2 |
+| Difficulty | 4.1 |
+| Effort | 826.6 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
 **File:** `setupTests.js`  
 **Language:** javascript  
 **Path:** `documentation-viewer/src/setupTests.js`  
 
 ## Summary
 
-This file is intended to set up the testing environment for the project. It is typically used to configure testing tools and environment settings before running test suites, ensuring a consistent and isolated environment for test execution. However, due to a parsing error, the structure and specific functionality could not be extracted.
+This file is intended for setting up tests in a JavaScript environment. However, it contains no functional code, probably due to a parsing error.
 
 ## Recent Changes
 
-- Initial setup of testing environment.
+- Identified empty structure due to a parser error.
 
 
 # Code Structure
@@ -1250,6 +1149,55 @@ graph TD;
 **File:** `index.js`  
 **Language:** javascript  
 **Path:** `documentation-viewer/server/index.js`  
+
+## Summary
+
+Empty structure: Parser error. The file appears to have been processed but returned an empty structure due to a parsing error, indicating either a lack of recognizable content or an issue during analysis.
+
+## Recent Changes
+
+
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 0.0 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `App.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/src/App.js`  
 
 ## Summary
 
@@ -1296,118 +1244,20 @@ graph TD;
 
 # Overview
 
-**File:** `tailwind.config.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/tailwind.config.js`  
-
-## Summary
-
-This file is the configuration file for Tailwind CSS in the documentation viewer project. It typically contains custom theme configurations, such as colors, spacing, and other design tokens that are used throughout the application. The file may also include custom variants, plugins, and other Tailwind settings to ensure that the project's styling is fully customizable and maintainable.
-
-## Recent Changes
-
-- Initial creation of the Tailwind config file.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `metrics.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/server/metrics.js`  
-
-## Summary
-
-The '/home/azureuser/a/docs/documentation-viewer/server/metrics.js' file was analyzed, but it resulted in an empty structure. The absence of functions, classes, or variables suggests a possible parser error or that the file may be empty or irrelevant. No complexity metrics were derived.
-
-## Recent Changes
-
-- Structure parsed, resulting in empty.
-- Assumed parser error or empty content.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
 **File:** `main.py`  
 **Language:** python  
 **Path:** `main.py`  
 
 ## Summary
 
-This file is responsible for generating documentation for codebases. It includes functions for modifying Sentry events, parsing command-line arguments, configuring logging, and executing the main documentation generation process. The functionality is orchestrated using asynchronous programming and integrates with Azure OpenAI for processing.
+Orchestrates the documentation generation process by parsing command-line arguments, configuring logging, and coordinating the generation and validation of code documentation. Integrates with Sentry for error tracking and uses asynchronous processing for efficient operation.
 
 ## Recent Changes
 
-- Added async functionality to the main process.
-- Integrated Azure OpenAI API for enhanced processing.
-- Refactored logging configuration setup.
+- Updated error handling and logging integration with Sentry
+- Enhanced command-line argument parsing
+- Improved logging configuration and setup
+- Introduced async processing in the main orchestration function
 
 
 # Code Structure
@@ -1446,266 +1296,18 @@ graph TD;
 
 # Overview
 
-**File:** `App.test.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/src/App.test.js`  
-
-## Summary
-
-This file appears to be a test suite for the App component in a React application. It might contain unit tests that verify the functionality and rendering of the App component using a testing framework like Jest. However, the file structure could not be parsed correctly, resulting in an empty structure output.
-
-## Recent Changes
-
-- Initial creation of the test file for App component
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `index.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/src/index.js`  
-
-## Summary
-
-The provided JavaScript file is marked by an empty structure due to a parser error, indicating that the file might be empty or contain code that cannot be parsed. Consequently, there is no functionality, class, variable, or constant to document. Typically, such files may serve as placeholders or face issues with syntax that prevent proper parsing.
-
-## Recent Changes
-
-- No changes have been identified due to the empty structure.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `App.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/src/App.js`  
-
-## Summary
-
-The file seems to have encountered a parser error, resulting in an empty code structure with no identifiable components.
-
-## Recent Changes
-
-- Initial parsing attempt resulting in an error.
-- No identifiable functions or classes found.
-- Code structure could not be determined due to parsing issues.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `postcss.config.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/postcss.config.js`  
-
-## Summary
-
-This file is an error placeholder for a PostCSS configuration. It seems to contain no structure or code, likely due to a parsing error or an incomplete file.
-
-## Recent Changes
-
-- File identified as empty due to parser error.
-- No code structure (functions, classes, variables, constants) found.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
 **File:** `index.js`  
 **Language:** javascript  
 **Path:** `documentation-viewer/index.js`  
 
 ## Summary
 
-This file is empty due to a parser error, meaning its intended purpose and functionality have not been captured.
+The 'index.js' file contains an empty structure due to a parser error, indicating that no valid JavaScript code was detected or there was an issue in parsing. The file does not include any functions, classes, variables, constants, or imports and exports, and it's likely incomplete or improperly formatted.
 
 ## Recent Changes
 
-- Parser error leading to an empty structure.
-
-
-# Code Structure
-
-## Classes
-
-# Dependencies
-
-```mermaid
-graph TD;
-```
-
-# Metrics
-
-## Code Quality
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| Maintainability | 0.0 | ❌ Needs Improvement |
-## Complexity Metrics
-
-| Metric | Value |
-|--------|--------|
-| Volume | 0.0 |
-| Difficulty | 0.0 |
-| Effort | 0.0 |
-
-# Table of Contents
-
-1. [Overview](#overview)
-2. [Code Structure](#code-structure)
-3. [Dependencies](#dependencies)
-4. [Metrics](#metrics)
-
----
-
-# Overview
-
-**File:** `DocumentationViewer.js`  
-**Language:** javascript  
-**Path:** `documentation-viewer/src/components/DocumentationViewer.js`  
-
-## Summary
-
-The file is intended to implement a component structure for viewing documentation in a React application. However, it appears that there is an issue with the parser, and the structure couldn't be analyzed correctly. Hence, it seems the file might be empty, misconfigured, or not correctly parsed.
-
-## Recent Changes
-
-- Initialized the component structure.
-- Resolved parsing errors.
+- Initial creation of the file without any content.
+- Attempted parsing and structure extraction, resulting in a parser error.
 
 
 # Code Structure
@@ -1750,11 +1352,11 @@ graph TD;
 
 ## Summary
 
-This file is expected to contain functions related to collecting and reporting web performance metrics. However, there was a parser error resulting in an empty structure.
+The 'reportWebVitals.js' file is responsible for sending web vital metrics to an analytics endpoint for performance tracking and analysis. It's often used in web applications to monitor and log performance data such as loading times, responsiveness, and other vital statistics essential for improving user experience. By leveraging this data, developers can make informed decisions to optimize the application's performance.
 
 ## Recent Changes
 
-- Initial analysis resulted in a parser error, providing an empty code structure.
+- This file is currently structured as empty due to a parser error, hence no recent changes have been documented.
 
 
 # Code Structure
@@ -1793,20 +1395,17 @@ graph TD;
 
 # Overview
 
-**File:** `file_handlers.py`  
-**Language:** python  
-**Path:** `file_handlers.py`  
+**File:** `index.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/src/index.js`  
 
 ## Summary
 
-This file handles various operations related to extracting code structures, validating AI responses, fetching documentation from Azure OpenAI, and processing files for documentation generation. It includes asynchronous functions to manage network requests and file operations efficiently.
+This file appears to have an empty structure due to a parser error, resulting in no identified imports, exports, functions, classes, or variables.
 
 ## Recent Changes
 
-- Added comprehensive asynchronous functions for handling file backup and writing operations.
-- Implemented a new function to fetch documentation using Azure OpenAI API.
-- Enhanced the extract_code_structure function with additional language support.
-- Refactored the validate_ai_response function to include reformatting capabilities.
+- Identified parser error causing empty structure analysis
 
 
 # Code Structure
@@ -1825,14 +1424,316 @@ graph TD;
 
 | Metric | Value | Status |
 |--------|-------|--------|
-| Maintainability | 45.5 | ❌ Needs Improvement |
+| Maintainability | 0.0 | ❌ Needs Improvement |
 ## Complexity Metrics
 
 | Metric | Value |
 |--------|--------|
-| Volume | 440.2 |
-| Difficulty | 5.5 |
-| Effort | 2415.8 |
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `metrics.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/server/metrics.js`  
+
+## Summary
+
+The `metrics.js` file is intended to calculate and provide various software metrics for JavaScript code. These metrics are useful in analyzing the complexity and maintainability of the code, but due to a parser error, the structure could not be determined.
+
+## Recent Changes
+
+- Initial creation of the file.
+- Error handling improvements.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 0.0 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `.eslintrc.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/.eslintrc.js`  
+
+## Summary
+
+This file is an ESLint configuration file which defines the coding standards and style guidelines for JavaScript within the project. It ensures a consistent coding style across the codebase by specifying rules and environments to check during linting. The configuration is crucial for maintaining code quality and catching errors early in the development process.
+
+## Recent Changes
+
+- Initial creation of the file.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 0.0 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `DocumentationViewer.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/src/components/DocumentationViewer.js`  
+
+## Summary
+
+This file is designed to provide a user interface for viewing documentation within a web application. It serves as a React component that manages the rendering and interactions necessary for displaying the documentation content dynamically.
+
+## Recent Changes
+
+- Initial creation of the DocumentationViewer component.
+- Added state management for handling document-related interactions.
+- Introduced styles and UI layout for better user experience.
+- Implemented rendering logic to display documentation content within the application.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 0.0 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `postcss.config.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/postcss.config.js`  
+
+## Summary
+
+This configuration file is for PostCSS, a tool used for transforming CSS with JavaScript plugins. It allows setting up plugins that will process CSS files.
+
+## Recent Changes
+
+- Initial creation of the configuration file
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 0.0 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `App.test.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/src/App.test.js`  
+
+## Summary
+
+This file contains unit tests for the main app component of the documentation-viewer project. It includes various test cases to validate the functionality and performance of the app under different scenarios.
+
+## Recent Changes
+
+- Initial creation of test cases for app component.
+- Refactored tests to use React Testing Library.
+- Updated test cases to cover new features added to the app component.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 0.0 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
+**File:** `tailwind.config.js`  
+**Language:** javascript  
+**Path:** `documentation-viewer/tailwind.config.js`  
+
+## Summary
+
+This file defines the configuration settings for Tailwind CSS, a utility-first CSS framework. The configuration file allows customization of default settings such as colors, spacing, and responsive breakpoints.
+
+## Recent Changes
+
+- Initial creation of tailwind.config.js
+- Added custom theme settings
+- Configured plugins for Tailwind CSS
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 0.0 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 0.0 |
+| Difficulty | 0.0 |
+| Effort | 0.0 |
 
 # Table of Contents
 
@@ -1851,13 +1752,13 @@ graph TD;
 
 ## Summary
 
-The 'python_handler.py' module provides a handler for Python language processing. It includes functionality for extracting code structure, inserting docstrings, formatting docstrings in Google style, and validating Python code. The module is equipped with an Abstract Syntax Tree (AST) visitor for analyzing Python code components, and a mechanism for safely inserting documentation.
+This module provides a handler for manipulating and analyzing Python code. It includes classes for extracting and inserting docstrings, traversing code structures with an AST visitor, and validating modified code. The functionality supports generating structured documentation based on AI-produced insights.
 
 ## Recent Changes
 
-- Refactored code to improve readability and maintainability.
-- Added error handling in docstring insertion methods.
-- Optimized AST visitor for better performance.
+- Added detailed docstrings to methods in PythonHandler and CodeVisitor classes
+- Implemented _format_google_docstring method for consistent docstring format
+- Integrated AST-based code structure extraction
 
 
 # Code Structure
@@ -1872,7 +1773,7 @@ Handler for Python language.
 
 | Method | Description | Complexity |
 |--------|-------------|------------|
-| `__init__` | Initializes the PythonHandler with a function schema. | 1 |
+| `__init__` | Initializes the PythonHandler with a given function schema. | 1 |
 | `extract_structure` | Extracts the structure of the Python code, analyzing functions, classes, and assignments. | 3 |
 | `insert_docstrings` | Inserts docstrings into the Python code based on the provided documentation. | 8 |
 | `_format_google_docstring` | Formats a docstring in Google style. | 5 |
@@ -1911,19 +1812,71 @@ graph TD;
 
 # Overview
 
+**File:** `file_handlers.py`  
+**Language:** python  
+**Path:** `file_handlers.py`  
+
+## Summary
+
+This file provides utility functions for handling and processing code files. It includes functions for extracting code structure, backing up and writing new content, validating AI-generated responses, fetching documentation via the Azure OpenAI API, and processing files to generate documentation. It also includes tools for error handling and managing concurrency during API requests.
+
+## Recent Changes
+
+- Added concurrency management to API requests.
+- Refined error handling methodology.
+- Enhanced functionality by incorporating asynchronous operations in file processing.
+
+
+# Code Structure
+
+## Classes
+
+# Dependencies
+
+```mermaid
+graph TD;
+```
+
+# Metrics
+
+## Code Quality
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Maintainability | 45.5 | ❌ Needs Improvement |
+## Complexity Metrics
+
+| Metric | Value |
+|--------|--------|
+| Volume | 440.2 |
+| Difficulty | 5.5 |
+| Effort | 2415.8 |
+
+# Table of Contents
+
+1. [Overview](#overview)
+2. [Code Structure](#code-structure)
+3. [Dependencies](#dependencies)
+4. [Metrics](#metrics)
+
+---
+
+# Overview
+
 **File:** `write_documentation_report.py`  
 **Language:** python  
 **Path:** `write_documentation_report.py`  
 
 ## Summary
 
-The 'write_documentation_report.py' file provides functions for generating documentation reports in Markdown format. It focuses on various aspects such as generating badges, formatting tables, and generating a table of contents. The file also includes utilities for sanitizing text and filenames, generating summary content for variables and constants, and writing the final documentation content to a file. This module is designed to assist in orchestrating the documentation generation process based on given inputs.
+This module provides functions for generating documentation reports, badges, tables, and summaries for codebases, specifically focusing on creating Markdown content. It facilitates dynamic badge generation for various metrics, formats code structure into Markdown tables, extracts module docstrings, and sanitizes text and filenames for safe documentation usage.
 
 ## Recent Changes
 
-- Refactored code to improve readability.
-- Added support for dynamic badge generation.
-- Enhanced table of contents generation with nested levels.
+- Added functions for generating dynamic badges.
+- Implemented formatting functions for methods, classes, and functions.
+- Included table of contents generation.
+- Enhanced text and filename sanitization methods.
 
 
 # Code Structure

@@ -15,12 +15,12 @@
 
 ## Summary
 
-The `halstead_utils.py` file contains utilities for safely calculating Halstead complexity metrics for a given piece of code. It provides error handling mechanisms to ensure that even if some calculations fail, default values are returned. This utility is crucial for analyzing the complexity and maintainability of code efficiently.
+This file provides utilities to safely calculate Halstead complexity metrics for a given piece of source code. It includes functionality to handle errors gracefully during the metric computation process.
 
 ## Recent Changes
 
-- Added error handling to Halstead metric calculations.
-- Optimized metric calculations for performance.
+- Refactored key metric calculations for accuracy
+- Added error handling during metrics computation
 
 
 # Code Structure

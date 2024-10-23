@@ -15,13 +15,13 @@
 
 ## Summary
 
-The `css_handler.py` file defines the `CSSHandler` class, which is responsible for handling CSS code, including extracting the structure, inserting comments, and validating the code using external tools. This handler aids in the analysis and documentation of CSS code in automated workflows.
+This file contains the `CSSHandler` class, responsible for analyzing, inserting documentation, and validating CSS code. It leverages external JavaScript scripts managed through Node.js to parse and insert structured information into CSS code files, and utilizes stylelint for code validation. The `CSSHandler` class is designed to handle the intricacies of CSS code structure, providing methods for extraction, insertion, and validation processes.
 
 ## Recent Changes
 
-- Added detailed error handling for script execution.
-- Improved documentation generation capabilities for CSS.
-- Integrated stylelint for CSS validation.
+- Initial creation of the CSSHandler class and methods
+- Integration with JavaScript parser and inserter scripts
+- Addition of stylelint for CSS code validation
 
 
 # Code Structure
@@ -30,7 +30,7 @@ The `css_handler.py` file defines the `CSSHandler` class, which is responsible f
 
 ### CSSHandler
 
-Handler for the CSS programming language.
+Handler for the CSS programming language. This class manages the parsing, documentation insertion, and validation of CSS code using external tools and scripts, aiming to streamline CSS documentation and correctness assurance.
 
 #### Methods
 

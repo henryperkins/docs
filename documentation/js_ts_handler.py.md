@@ -15,13 +15,12 @@
 
 ## Summary
 
-The 'js_ts_handler.py' file contains the 'JSTsHandler' class, designed to handle JavaScript and TypeScript language processing. It provides functionalities to extract code structure, insert JSDoc comments, validate code for syntactic and style correctness, and calculate code complexity metrics. The class uses external Node.js scripts to perform these operations, making it a comprehensive tool for managing JavaScript and TypeScript code documentation and analysis.
+This file contains the `JSTsHandler` class, which handles JavaScript and TypeScript languages by providing functionality to extract the structure of code, insert documentation, validate code, and calculate complexity metrics. It interacts with external tools and scripts to perform its duties.
 
 ## Recent Changes
 
-- Refactored methods to enhance performance
-- Updated external script paths for better integration
-- Improved error handling in 'extract_structure' method
+- Added detailed Google-style docstrings to all methods in the JSTsHandler class.
+- Updated variable information with links and descriptions.
 
 
 # Code Structure
@@ -30,7 +29,7 @@ The 'js_ts_handler.py' file contains the 'JSTsHandler' class, designed to handle
 
 ### JSTsHandler
 
-Handler for JavaScript and TypeScript languages.
+Handler for JavaScript and TypeScript languages. This class provides methods to extract code structure, insert documentation comments, validate code, and calculate complexity metrics for JS/TS codes.
 
 #### Methods
 

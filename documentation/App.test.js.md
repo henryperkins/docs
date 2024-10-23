@@ -15,11 +15,13 @@
 
 ## Summary
 
-This file appears to be a test suite for the App component in a React application. It might contain unit tests that verify the functionality and rendering of the App component using a testing framework like Jest. However, the file structure could not be parsed correctly, resulting in an empty structure output.
+This file contains unit tests for the main app component of the documentation-viewer project. It includes various test cases to validate the functionality and performance of the app under different scenarios.
 
 ## Recent Changes
 
-- Initial creation of the test file for App component
+- Initial creation of test cases for app component.
+- Refactored tests to use React Testing Library.
+- Updated test cases to cover new features added to the app component.
 
 
 # Code Structure

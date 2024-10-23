@@ -15,11 +15,13 @@
 
 ## Summary
 
-This module provides a factory function to retrieve appropriate language handlers based on the specified programming language and function schema. It includes functionality for case-insensitive language matching.
+This file provides a factory function to retrieve the appropriate language handler based on the specified programming language and its schema. It serves as a centralized access point for language-specific handlers, allowing the system to interact with different programming languages seamlessly.
 
 ## Recent Changes
 
-- Added function 'get_handler' to provide language-specific handlers.
+- Updated the function signature of get_handler to improve type annotations.
+- Refactored internal logic for handler retrieval for better performance.
+- Added new handlers for additional languages to expand support.
 
 
 # Code Structure

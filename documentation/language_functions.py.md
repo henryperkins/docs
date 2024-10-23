@@ -15,12 +15,13 @@
 
 ## Summary
 
-This module provides core functionalities to handle documentation insertion for source code in various programming languages. It includes functions to dynamically retrieve language-specific handlers and utilize them to insert docstrings or comments into code. This process involves loading predefined schema and performing operations based on the language being handled.
+This module provides functionality for handling language-specific documentation insertion into code files. It defines factory functions to select appropriate handlers based on the programming language and facilitates the insertion of documentation comments. It also manages the loading of function schemas required for annotating the source code with relevant docstrings or comments.
 
 ## Recent Changes
 
-- Improved docstring for the function 'get_handler'.
-- Updated the docstring for 'insert_docstrings' for clarity.
+- Added Halstead complexity metric calculation.
+- Improved function docstrings and argument descriptions.
+- Updated code structure for better readability.
 
 
 # Code Structure

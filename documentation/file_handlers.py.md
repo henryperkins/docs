@@ -15,14 +15,13 @@
 
 ## Summary
 
-This file handles various operations related to extracting code structures, validating AI responses, fetching documentation from Azure OpenAI, and processing files for documentation generation. It includes asynchronous functions to manage network requests and file operations efficiently.
+This file provides utility functions for handling and processing code files. It includes functions for extracting code structure, backing up and writing new content, validating AI-generated responses, fetching documentation via the Azure OpenAI API, and processing files to generate documentation. It also includes tools for error handling and managing concurrency during API requests.
 
 ## Recent Changes
 
-- Added comprehensive asynchronous functions for handling file backup and writing operations.
-- Implemented a new function to fetch documentation using Azure OpenAI API.
-- Enhanced the extract_code_structure function with additional language support.
-- Refactored the validate_ai_response function to include reformatting capabilities.
+- Added concurrency management to API requests.
+- Refined error handling methodology.
+- Enhanced functionality by incorporating asynchronous operations in file processing.
 
 
 # Code Structure

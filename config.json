@@ -35,8 +35,8 @@
     ".cmd",
     ".d.ts",
     ".ps1"
-  ]
   ],
+
   "project_info": "Documentation generation system that analyzes code files, extracts structure, and generates comprehensive documentation with metrics.",
   "style_guidelines": "Use Google-style docstrings with comprehensive descriptions, arguments, returns, and examples."
 }

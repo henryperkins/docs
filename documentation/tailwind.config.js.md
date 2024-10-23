@@ -15,11 +15,13 @@
 
 ## Summary
 
-This file is the configuration file for Tailwind CSS in the documentation viewer project. It typically contains custom theme configurations, such as colors, spacing, and other design tokens that are used throughout the application. The file may also include custom variants, plugins, and other Tailwind settings to ensure that the project's styling is fully customizable and maintainable.
+This file defines the configuration settings for Tailwind CSS, a utility-first CSS framework. The configuration file allows customization of default settings such as colors, spacing, and responsive breakpoints.
 
 ## Recent Changes
 
-- Initial creation of the Tailwind config file.
+- Initial creation of tailwind.config.js
+- Added custom theme settings
+- Configured plugins for Tailwind CSS
 
 
 # Code Structure

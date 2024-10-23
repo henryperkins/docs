@@ -15,13 +15,14 @@
 
 ## Summary
 
-The 'write_documentation_report.py' file provides functions for generating documentation reports in Markdown format. It focuses on various aspects such as generating badges, formatting tables, and generating a table of contents. The file also includes utilities for sanitizing text and filenames, generating summary content for variables and constants, and writing the final documentation content to a file. This module is designed to assist in orchestrating the documentation generation process based on given inputs.
+This module provides functions for generating documentation reports, badges, tables, and summaries for codebases, specifically focusing on creating Markdown content. It facilitates dynamic badge generation for various metrics, formats code structure into Markdown tables, extracts module docstrings, and sanitizes text and filenames for safe documentation usage.
 
 ## Recent Changes
 
-- Refactored code to improve readability.
-- Added support for dynamic badge generation.
-- Enhanced table of contents generation with nested levels.
+- Added functions for generating dynamic badges.
+- Implemented formatting functions for methods, classes, and functions.
+- Included table of contents generation.
+- Enhanced text and filename sanitization methods.
 
 
 # Code Structure

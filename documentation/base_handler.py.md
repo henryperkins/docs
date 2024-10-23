@@ -15,11 +15,13 @@
 
 ## Summary
 
-This module defines an abstract base class, `BaseHandler`, for creating language-specific handlers. Each handler must implement methods to extract the structure of the code, insert docstrings or comments based on documentation, and validate the modified code for syntax correctness. The abstract methods ensure that subclasses provide specific implementations for different programming languages. The module follows a template approach that aids in maintaining a consistent interface across various language handlers.
+The `base_handler.py` file defines an abstract base class `BaseHandler` for creating language-specific code handlers. Each handler derived from `BaseHandler` must implement methods to extract the structure of the code, insert docstrings or comments, and validate the code for syntax correctness. This structure ensures a standardized approach to handling various programming languages in the documentation generation system.
 
 ## Recent Changes
 
-- Defined an abstract base class `BaseHandler` with three abstract methods: `extract_structure`, `insert_docstrings`, and `validate_code`.
+- Implemented abstract base class `BaseHandler`.
+- Defined abstract methods `extract_structure`, `insert_docstrings`, and `validate_code`.
+- Initiated logging functionality.
 
 
 # Code Structure
@@ -30,7 +32,8 @@ This module defines an abstract base class, `BaseHandler`, for creating language
 
 Abstract base class for language-specific handlers.
 
-Each handler must implement methods to extract the structure of the code, insert docstrings/comments, and validate the modified code.
+Each handler must implement methods to extract the structure of the code,
+insert docstrings/comments, and validate the modified code.
 
 #### Methods
 

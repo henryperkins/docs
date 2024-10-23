@@ -15,13 +15,12 @@
 
 ## Summary
 
-This module contains utility functions for handling various programming-related tasks, such as determining file languages, validating file extensions, managing thresholds for complexity metrics, validating JSON schemas, cleaning up code, and interacting with Node.js scripts. These utilities aid in code quality analysis, ensuring standardized coding practices, and facilitating automation tasks.
+Utility functions for handling file operations, code formatting, and configuration loading within a code documentation generation system.
 
 ## Recent Changes
 
-- Added asynchronous functions for formatting and validating code.
-- Introduced environment-based threshold configurations for maintainability and complexity.
-- Enhanced file handling with exclusion capabilities for directories, files, and types.
+- Added async support for code formatting functions.
+- Improved exception handling in config loading.
 
 
 # Code Structure

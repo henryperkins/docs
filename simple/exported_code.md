@@ -895,6 +895,280 @@ def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str
     return critical_info
 ```
 
+## schemas/function_schema.json
+
+```json
+{
+  "functions": [
+    {
+      "name": "generate_documentation",
+      "description": "Generates documentation for code structures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "docstring_format": {
+            "type": "string",
+            "description": "Format of the docstring (e.g., Google, NumPy, Sphinx).",
+            "enum": ["Google"]
+          },
+          "summary": {
+            "type": "string",
+            "description": "A detailed summary of the file."
+          },
+          "changes_made": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of changes made to the file."
+          },
+          "functions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Function name."
+                },
+                "docstring": {
+                  "type": "string",
+                  "description": "Detailed description of the function in Google Style."
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of argument names."
+                },
+                "async": {
+                  "type": "boolean",
+                  "description": "Whether the function is asynchronous."
+                },
+                "complexity": {
+                  "type": "integer",
+                  "description": "Cyclomatic complexity of the function."
+                }
+              },
+              "required": [
+                "name",
+                "docstring",
+                "args",
+                "async",
+                "complexity"
+              ]
+            },
+            "description": "List of functions."
+          },
+          "classes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Class name."
+                },
+                "docstring": {
+                  "type": "string",
+                  "description": "Detailed description of the class in Google Style."
+                },
+                "methods": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "Method name."
+                      },
+                      "docstring": {
+                        "type": "string",
+                        "description": "Detailed description of the method in Google Style."
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "List of argument names."
+                      },
+                      "async": {
+                        "type": "boolean",
+                        "description": "Whether the method is asynchronous."
+                      },
+                      "type": {
+                        "type": "string",
+                        "description": "Method type (e.g., 'instance', 'class', 'static')."
+                      },
+                      "complexity": {
+                        "type": "integer",
+                        "description": "Cyclomatic complexity of the method."
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "docstring",
+                      "args",
+                      "async",
+                      "type",
+                      "complexity"
+                    ]
+                  },
+                  "description": "List of methods."
+                }
+              },
+              "required": [
+                "name",
+                "docstring",
+                "methods"
+              ]
+            },
+            "description": "List of classes."
+          },
+          "halstead": {
+            "type": "object",
+            "properties": {
+              "volume": {
+                "type": "number",
+                "description": "Halstead Volume"
+              },
+              "difficulty": {
+                "type": "number",
+                "description": "Halstead Difficulty"
+              },
+              "effort": {
+                "type": "number",
+                "description": "Halstead Effort"
+              }
+            },
+            "description": "Halstead complexity metrics."
+          },
+          "maintainability_index": {
+            "type": "number",
+            "description": "Maintainability index of the code."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Variable name."
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Inferred data type of the variable."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description of the variable."
+                },
+                "file": {
+                  "type": "string",
+                  "description": "File where the variable is defined."
+                },
+                "line": {
+                  "type": "integer",
+                  "description": "Line number where the variable is defined."
+                },
+                "link": {
+                  "type": "string",
+                  "description": "Link to the variable definition."
+                },
+                "example": {
+                  "type": "string",
+                  "description": "Example usage of the variable."
+                },
+                "references": {
+                  "type": "string",
+                  "description": "References to the variable."
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "description",
+                "file",
+                "line",
+                "link",
+                "example",
+                "references"
+              ]
+            },
+            "description": "List of variables in the code."
+          },
+          "constants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Constant name."
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Inferred data type of the constant."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description of the constant."
+                },
+                "file": {
+                  "type": "string",
+                  "description": "File where the constant is defined."
+                },
+                "line": {
+                  "type": "integer",
+                  "description": "Line number where the constant is defined."
+                },
+                "link": {
+                  "type": "string",
+                  "description": "Link to the constant definition."
+                },
+                "example": {
+                  "type": "string",
+                  "description": "Example usage of the constant."
+                },
+                "references": {
+                  "type": "string",
+                  "description": "References to the constant."
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "description",
+                "file",
+                "line",
+                "link",
+                "example",
+                "references"
+              ]
+            },
+            "description": "List of constants in the code."
+          }
+        },
+        "required": [
+          "docstring_format",
+          "summary",
+          "changes_made",
+          "functions",
+          "classes",
+          "halstead",
+          "maintainability_index",
+          "variables",
+          "constants"
+        ]
+      }
+    }
+  ]
+}
+```
+
 ## halstead_utils.py
 
 ```python
@@ -2356,161 +2630,6 @@ def get_metric_status(value: float) -> str:
 def sanitize_filename(filename: str) -> str:
     """Sanitizes filename by removing invalid characters."""
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
-```
-
-## simple/simple.py
-
-```python
-import os
-import sys
-import shutil
-import subprocess
-import argparse
-import fnmatch
-import json
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-def clone_repo(repo_url, clone_dir):
-    subprocess.run(['git', 'clone', repo_url, clone_dir], check=True)
-
-def get_all_files(directory, ignore_patterns):
-    """
-    Gets a list of all files within a directory and its subdirectories, 
-    excluding files and directories specified in the ignore_patterns.
-
-    Args:
-        directory (str): The path to the directory to search.
-        ignore_patterns (list): A list of patterns to exclude files and directories.
-
-    Returns:
-        list: A list of absolute paths to the found files.
-    """
-    files_list = []
-
-    for root, dirs, files in os.walk(directory, topdown=True):
-        # Remove ignored directories from 'dirs'
-        dirs[:] = [d for d in dirs if not is_ignored(os.path.join(root, d), ignore_patterns)]
-
-        for file in files:
-            full_path = os.path.join(root, file)
-            if not is_ignored(full_path, ignore_patterns):
-                files_list.append(full_path)
-
-    return files_list
-
-def is_ignored(path, ignore_patterns):
-    """
-    Checks if a file or directory should be ignored based on the ignore patterns.
-
-    Args:
-        path (str): The path to the file or directory.
-        ignore_patterns (list): A list of ignore patterns.
-
-    Returns:
-        bool: True if the path should be ignored, False otherwise.
-    """
-    for pattern in ignore_patterns:
-        # Handle both directory patterns and file patterns
-        if pattern.endswith('/') or pattern.endswith('\\'):  # Directory pattern
-            if pattern in path:
-                logging.debug(f"Ignoring directory: {path} matches pattern: {pattern}")
-                return True
-        elif '*' in pattern:  # Pattern with wildcard, potentially matching directories
-            base_pattern = pattern.split('/', 1)[0]  # Get the part before the first '/'
-            if base_pattern in path:
-                logging.debug(f"Ignoring path: {path} matches pattern: {pattern}")
-                return True
-        else:  # File pattern or simple directory name
-            if fnmatch.fnmatch(os.path.basename(path), pattern):
-                logging.debug(f"Ignoring file: {path} matches pattern: {pattern}")
-                return True
-    logging.debug(f"Not ignoring: {path}")
-    return False
-
-def write_markdown(files_list, output_file, repo_dir):
-    with open(output_file, 'w', encoding='utf-8') as md_file:
-        for filepath in files_list:
-            relative_path = os.path.relpath(filepath, repo_dir)
-            md_file.write(f'## {relative_path}\n\n')
-            # Determine language for syntax highlighting
-            file_extension = os.path.splitext(filepath)[1][1:]
-            language = language_from_extension(file_extension)
-            md_file.write(f'```{language}\n')
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            except (UnicodeDecodeError, FileNotFoundError):
-                # Skip binary files or files that can't be decoded
-                content = '[Binary file content not displayed or file not found]'
-            md_file.write(content)
-            md_file.write('\n```\n\n')
-
-def language_from_extension(extension):
-    language_extensions = {
-        'py': 'python',
-        'js': 'javascript',
-        'java': 'java',
-        'c': 'c',
-        'cpp': 'cpp',
-        'cs': 'csharp',
-        'rb': 'ruby',
-        'php': 'php',
-        'go': 'go',
-        'rs': 'rust',
-        'sh': 'bash',
-        'html': 'html',
-        'css': 'css',
-        'md': 'markdown',
-        'json': 'json',
-        'xml': 'xml',
-        'yml': 'yaml',
-        'yaml': 'yaml',
-        'ts': 'typescript',
-        'kt': 'kotlin',
-        'swift': 'swift',
-        'pl': 'perl',
-        'r': 'r',
-        # Add other extensions and languages as needed
-    }
-    return language_extensions.get(extension.lower(), '')
-
-def load_config():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_file = os.path.join(script_dir, 'config.json')
-
-    if os.path.exists(config_file):
-        with open(config_file, 'r', encoding='utf-8') as f:
-            try:
-                config = json.load(f)
-                ignore_patterns = config.get('ignore', [])
-                logging.info(f"Loaded ignore patterns: {ignore_patterns}")
-                return ignore_patterns
-            except json.JSONDecodeError as e:
-                logging.error(f"Error parsing {config_file}: {e}")
-                sys.exit(1)
-    else:
-        logging.warning(f"Configuration file {config_file} not found. Proceeding without ignore patterns.")
-        return []
-
-def main():
-    parser = argparse.ArgumentParser(description='Export source code from a GitHub repository or local directory to a Markdown file.')
-    parser.add_argument('input_path', help='GitHub Repository URL or Local Directory Path')
-    args = parser.parse_args()
-
-    input_path = args.input_path
-
-    # Load config file from the script's directory
-    ignore_patterns = load_config()
-
-    cleanup_needed = False
-
-    # Add more logic here if needed
-
-if __name__ == '__main__':
-    main()
 ```
 
 ## language_functions/language_functions.py
@@ -4113,154 +4232,311 @@ class GoHandler(BaseHandler):
 
 ```python
 """
-js_ts_handler.py
+Enhanced JavaScript/TypeScript Handler with comprehensive support for modern features.
 
-Handles JavaScript and TypeScript code analysis, documentation generation, and modification.
+This handler provides robust parsing, analysis, and documentation generation for JavaScript and TypeScript code,
+including support for modern language features, React components, and detailed metrics calculation.
 """
 
 import os
 import logging
 import subprocess
 import json
-from typing import Dict, Any, Optional
+import tempfile
+from typing import Dict, Any, Optional, List, Union
+from dataclasses import dataclass
+from enum import Enum
 
 from language_functions.base_handler import BaseHandler
+from metrics import calculate_all_metrics
 
 logger = logging.getLogger(__name__)
 
+class JSDocStyle(Enum):
+    """Enumeration of supported documentation styles."""
+    JSDOC = "jsdoc"
+    TSDOC = "tsdoc"
+
+@dataclass
+class MetricsResult:
+    """Container for code metrics results."""
+    complexity: int
+    maintainability: float
+    halstead: Dict[str, float]
+    function_metrics: Dict[str, Dict[str, Any]]
+
 class JSTsHandler(BaseHandler):
-    """Handler for JavaScript and TypeScript languages."""
+    """Handler for JavaScript and TypeScript languages with enhanced capabilities."""
 
     def __init__(self, function_schema: Dict[str, Any]):
-        """
-        Initialize the JavaScript/TypeScript handler.
-
-        Args:
-            function_schema (Dict[str, Any]): Schema defining documentation structure.
-        """
+        """Initialize the handler with configuration."""
         self.function_schema = function_schema
         self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         """
-        Extracts the structure of the JavaScript/TypeScript code.
+        Extracts detailed code structure with enhanced error handling and TypeScript support.
 
         Args:
-            code (str): Source code to analyze.
-            file_path (str, optional): Path to the source file.
+            code (str): Source code to analyze
+            file_path (str, optional): Path to the source file
 
         Returns:
-            Dict[str, Any]: Extracted code structure or empty structure on failure.
+            Dict[str, Any]: Comprehensive code structure and metrics
         """
         try:
-            # Skip if file should be excluded
-            if self._should_skip_file(file_path):
-                return self._get_empty_structure(f"Skipped: {file_path}")
-
-            # Determine language based on file extension
-            language = self._get_language(file_path)
-
+            # Determine language and parser options
+            is_typescript = self._is_typescript_file(file_path)
+            parser_options = self._get_parser_options(is_typescript)
+            
             # Prepare input for parser
             input_data = {
                 "code": code,
-                "language": language,
+                "language": "typescript" if is_typescript else "javascript",
                 "filePath": file_path or "unknown",
-                "options": {
-                    "errorRecovery": True,
-                    "plugins": self._get_parser_plugins(language)
-                }
+                "options": parser_options
             }
 
+            # Get metrics first
+            metrics = self._calculate_metrics(code, is_typescript)
+
             # Run parser script
-            structure = self._run_script(
-                script_name="js_ts_parser.js",
-                input_data=input_data,
-                error_message=f"Error parsing {file_path}"
-            )
+            structure = self._run_parser_script(input_data)
+            if not structure:
+                return self._get_empty_structure("Parser error")
 
-            # Run metrics analysis
-            metrics = self._run_script(
-                script_name="js_ts_metrics.js",
-                input_data=input_data,
-                error_message=f"Error calculating metrics for {file_path}"
-            )
+            # Enhance structure with metrics
+            structure.update({
+                "halstead": metrics.halstead,
+                "complexity": metrics.complexity,
+                "maintainability_index": metrics.maintainability,
+                "function_metrics": metrics.function_metrics
+            })
 
-            # Merge metrics into structure
-            if metrics and isinstance(metrics, dict):
-                structure.update(metrics)
+            # Add React-specific analysis if needed
+            if self._is_react_file(file_path):
+                react_info = self._analyze_react_components(code, is_typescript)
+                structure["react_components"] = react_info
 
             return structure
 
         except Exception as e:
-            logger.error(f"Unexpected error analyzing {file_path}: {e}", exc_info=True)
+            logger.error(f"Error extracting structure: {str(e)}", exc_info=True)
             return self._get_empty_structure(f"Error: {str(e)}")
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
         """
-        Inserts documentation into JavaScript/TypeScript code.
+        Inserts JSDoc/TSDoc comments with improved formatting and type information.
 
         Args:
-            code (str): Original source code.
-            documentation (Dict[str, Any]): Documentation to insert.
+            code (str): Original source code
+            documentation (Dict[str, Any]): Documentation to insert
 
         Returns:
-            str: Modified source code with documentation.
+            str: Modified source code with documentation
         """
         try:
+            is_typescript = self._is_typescript_file(documentation.get("file_path"))
+            doc_style = JSDocStyle.TSDOC if is_typescript else JSDocStyle.JSDOC
+
             input_data = {
                 "code": code,
                 "documentation": documentation,
+                "language": "typescript" if is_typescript else "javascript",
                 "options": {
-                    "docStyle": "JSDoc",  # or 'TSDoc' for TypeScript
-                    "insertSpacing": True,
+                    "style": doc_style.value,
+                    "includeTypes": is_typescript,
                     "preserveExisting": True
                 }
             }
 
-            result = self._run_script(
-                script_name="js_ts_inserter.js",
-                input_data=input_data,
-                error_message="Error inserting documentation"
-            )
-
-            if result and isinstance(result, str):
-                return result
-
-            return code  # Return original code if insertion fails
+            return self._run_inserter_script(input_data) or code
 
         except Exception as e:
-            logger.error(f"Error inserting documentation: {e}", exc_info=True)
+            logger.error(f"Error inserting documentation: {str(e)}", exc_info=True)
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
-        Validates JavaScript/TypeScript code syntax.
+        Validates code using ESLint with TypeScript support.
 
         Args:
-            code (str): Code to validate.
-            file_path (Optional[str]): Path to the source file.
+            code (str): Code to validate
+            file_path (Optional[str]): Path to source file
 
         Returns:
-            bool: True if code is valid, False otherwise.
+            bool: True if valid, False otherwise
         """
         try:
+            if not file_path:
+                logger.warning("File path not provided for validation")
+                return True
+
+            is_typescript = self._is_typescript_file(file_path)
+            config_path = self._get_eslint_config(is_typescript)
+
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='.ts' if is_typescript else '.js',
+                encoding='utf-8',
+                delete=False
+            ) as tmp:
+                tmp.write(code)
+                temp_path = tmp.name
+
+            try:
+                result = subprocess.run(
+                    ["eslint", "--config", config_path, temp_path],
+                    capture_output=True,
+                    text=True
+                )
+                return result.returncode == 0
+            finally:
+                os.unlink(temp_path)
+
+        except Exception as e:
+            logger.error(f"Validation error: {str(e)}", exc_info=True)
+            return False
+
+    def _calculate_metrics(self, code: str, is_typescript: bool) -> MetricsResult:
+        """Calculates comprehensive code metrics."""
+        try:
+            # Use typhonjs-escomplex for detailed metrics
             input_data = {
                 "code": code,
-                "language": self._get_language(file_path),
-                "filePath": file_path or "unknown"
+                "options": {
+                    "typescript": is_typescript,
+                    "sourceType": "module",
+                    "loc": True,
+                    "cyclomatic": True,
+                    "halstead": True,
+                    "maintainability": True
+                }
             }
 
             result = self._run_script(
-                script_name="js_ts_validator.js",
+                script_name="js_ts_metrics.js",
                 input_data=input_data,
-                error_message=f"Error validating {file_path}"
+                error_message="Error calculating metrics"
             )
 
-            return bool(result and result.get("isValid", False))
+            if not result:
+                return MetricsResult(0, 0.0, {}, {})
+
+            return MetricsResult(
+                complexity=result.get("complexity", 0),
+                maintainability=result.get("maintainability", 0.0),
+                halstead=result.get("halstead", {}),
+                function_metrics=result.get("functions", {})
+            )
 
         except Exception as e:
-            logger.error(f"Error during validation: {e}", exc_info=True)
+            logger.error(f"Error calculating metrics: {str(e)}", exc_info=True)
+            return MetricsResult(0, 0.0, {}, {})
+
+    def _analyze_react_components(self, code: str, is_typescript: bool) -> Dict[str, Any]:
+        """Analyzes React components and their properties."""
+        try:
+            input_data = {
+                "code": code,
+                "options": {
+                    "typescript": is_typescript,
+                    "plugins": ["jsx", "react"]
+                }
+            }
+
+            return self._run_script(
+                script_name="react_analyzer.js",
+                input_data=input_data,
+                error_message="Error analyzing React components"
+            ) or {}
+
+        except Exception as e:
+            logger.error(f"Error analyzing React components: {str(e)}", exc_info=True)
+            return {}
+
+    def _get_parser_options(self, is_typescript: bool) -> Dict[str, Any]:
+        """Gets appropriate parser options based on file type."""
+        options = {
+            "sourceType": "module",
+            "plugins": [
+                "jsx",
+                "decorators-legacy",
+                ["decorators", { "decoratorsBeforeExport": True }],
+                "classProperties",
+                "classPrivateProperties",
+                "classPrivateMethods",
+                "exportDefaultFrom",
+                "exportNamespaceFrom",
+                "dynamicImport",
+                "nullishCoalescing",
+                "optionalChaining",
+            ]
+        }
+        
+        if is_typescript:
+            options["plugins"].extend([
+                "typescript",
+                "decorators-legacy",
+                "classProperties"
+            ])
+
+        return options
+
+    @staticmethod
+    def _is_typescript_file(file_path: Optional[str]) -> bool:
+        """Determines if a file is TypeScript based on extension."""
+        if not file_path:
             return False
+        return file_path.lower().endswith(('.ts', '.tsx'))
+
+    @staticmethod
+    def _is_react_file(file_path: Optional[str]) -> bool:
+        """Determines if a file contains React components."""
+        if not file_path:
+            return False
+        return file_path.lower().endswith(('.jsx', '.tsx'))
+
+    def _get_eslint_config(self, is_typescript: bool) -> str:
+        """Gets appropriate ESLint configuration file path."""
+        config_name = '.eslintrc.typescript.json' if is_typescript else '.eslintrc.json'
+        return os.path.join(self.script_dir, config_name)
+
+    def _get_empty_structure(self, reason: str = "") -> Dict[str, Any]:
+        """Returns an empty structure with optional reason."""
+        return {
+            "classes": [],
+            "functions": [],
+            "variables": [],
+            "constants": [],
+            "imports": [],
+            "exports": [],
+            "react_components": [],
+            "summary": f"Empty structure: {reason}" if reason else "Empty structure",
+            "halstead": {
+                "volume": 0,
+                "difficulty": 0,
+                "effort": 0
+            },
+            "complexity": 0,
+            "maintainability_index": 0
+        }
+
+    def _run_parser_script(self, input_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Runs the parser script with error handling."""
+        return self._run_script(
+            script_name="js_ts_parser.js",
+            input_data=input_data,
+            error_message="Error running parser"
+        )
+
+    def _run_inserter_script(self, input_data: Dict[str, Any]) -> Optional[str]:
+        """Runs the documentation inserter script with error handling."""
+        return self._run_script(
+            script_name="js_ts_inserter.js",
+            input_data=input_data,
+            error_message="Error running inserter"
+        )
 
     def _run_script(
         self,
@@ -4270,16 +4546,16 @@ class JSTsHandler(BaseHandler):
         timeout: int = 30
     ) -> Any:
         """
-        Runs a Node.js script with the given input data.
+        Runs a Node.js script with robust error handling.
 
         Args:
-            script_name (str): Name of the script to run.
-            input_data (Dict[str, Any]): Input data for the script.
-            error_message (str): Error message prefix for logging.
-            timeout (int): Timeout in seconds.
+            script_name (str): Name of the script to run
+            input_data (Dict[str, Any]): Input data for the script
+            error_message (str): Error message prefix
+            timeout (int): Timeout in seconds
 
         Returns:
-            Any: Script output or None on failure.
+            Any: Script output or None on failure
         """
         script_path = os.path.join(self.script_dir, script_name)
         
@@ -4318,65 +4594,6 @@ class JSTsHandler(BaseHandler):
         except Exception as e:
             logger.error(f"{error_message}: {str(e)}")
             return None
-
-    def _get_language(self, file_path: Optional[str]) -> str:
-        """Determines the language based on file extension."""
-        if not file_path:
-            return "javascript"
-        ext = os.path.splitext(file_path)[1].lower()
-        return "typescript" if ext in [".ts", ".tsx"] else "javascript"
-
-    def _should_skip_file(self, file_path: Optional[str]) -> bool:
-        """Determines if a file should be skipped."""
-        if not file_path:
-            return False
-            
-        skip_patterns = [
-            "node_modules",
-            ".d.ts",
-            ".test.",
-            ".spec.",
-            ".min.",
-            "dist/",
-            "build/"
-        ]
-        return any(pattern in file_path for pattern in skip_patterns)
-
-    def _get_parser_plugins(self, language: str) -> list:
-        """Gets the appropriate parser plugins based on language."""
-        plugins = [
-            "jsx",
-            "decorators-legacy",
-            ["decorators", { "decoratorsBeforeExport": True }],
-            "classProperties",
-            "classPrivateProperties",
-            "classPrivateMethods",
-            "exportDefaultFrom",
-            "exportNamespaceFrom",
-            "dynamicImport"
-        ]
-        
-        if language == "typescript":
-            plugins.append("typescript")
-        
-        return plugins
-
-    def _get_empty_structure(self, reason: str = "") -> Dict[str, Any]:
-        """Returns an empty structure with optional reason."""
-        return {
-            "classes": [],
-            "functions": [],
-            "variables": [],
-            "constants": [],
-            "summary": f"Skipped: {reason}" if reason else "Empty structure",
-            "changes_made": [],
-            "halstead": {
-                "volume": 0,
-                "difficulty": 0,
-                "effort": 0
-            },
-            "maintainability_index": 0
-        }
 ```
 
 ## documentation-viewer/postcss.config.js
@@ -4558,11 +4775,7 @@ code {
 
 ```
 
-## documentation-viewer/src/logo.svg
 
-```
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 841.9 595.3"><g fill="#61DAFB"><path d="M666.3 296.5c0-32.5-40.7-63.3-103.1-82.4 14.4-63.6 8-114.2-20.2-130.4-6.5-3.8-14.1-5.6-22.4-5.6v22.3c4.6 0 8.3.9 11.4 2.6 13.6 7.8 19.5 37.5 14.9 75.7-1.1 9.4-2.9 19.3-5.1 29.4-19.6-4.8-41-8.5-63.5-10.9-13.5-18.5-27.5-35.3-41.6-50 32.6-30.3 63.2-46.9 84-46.9V78c-27.5 0-63.5 19.6-99.9 53.6-36.4-33.8-72.4-53.2-99.9-53.2v22.3c20.7 0 51.4 16.5 84 46.6-14 14.7-28 31.4-41.3 49.9-22.6 2.4-44 6.1-63.6 11-2.3-10-4-19.7-5.2-29-4.7-38.2 1.1-67.9 14.6-75.8 3-1.8 6.9-2.6 11.5-2.6V78.5c-8.4 0-16 1.8-22.6 5.6-28.1 16.2-34.4 66.7-19.9 130.1-62.2 19.2-102.7 49.9-102.7 82.3 0 32.5 40.7 63.3 103.1 82.4-14.4 63.6-8 114.2 20.2 130.4 6.5 3.8 14.1 5.6 22.5 5.6 27.5 0 63.5-19.6 99.9-53.6 36.4 33.8 72.4 53.2 99.9 53.2 8.4 0 16-1.8 22.6-5.6 28.1-16.2 34.4-66.7 19.9-130.1 62-19.1 102.5-49.9 102.5-82.3zm-130.2-66.7c-3.7 12.9-8.3 26.2-13.5 39.5-4.1-8-8.4-16-13.1-24-4.6-8-9.5-15.8-14.4-23.4 14.2 2.1 27.9 4.7 41 7.9zm-45.8 106.5c-7.8 13.5-15.8 26.3-24.1 38.2-14.9 1.3-30 2-45.2 2-15.1 0-30.2-.7-45-1.9-8.3-11.9-16.4-24.6-24.2-38-7.6-13.1-14.5-26.4-20.8-39.8 6.2-13.4 13.2-26.8 20.7-39.9 7.8-13.5 15.8-26.3 24.1-38.2 14.9-1.3 30-2 45.2-2 15.1 0 30.2.7 45 1.9 8.3 11.9 16.4 24.6 24.2 38 7.6 13.1 14.5 26.4 20.8 39.8-6.3 13.4-13.2 26.8-20.7 39.9zm32.3-13c5.4 13.4 10 26.8 13.8 39.8-13.1 3.2-26.9 5.9-41.2 8 4.9-7.7 9.8-15.6 14.4-23.7 4.6-8 8.9-16.1 13-24.1zM421.2 430c-9.3-9.6-18.6-20.3-27.8-32 9 .4 18.2.7 27.5.7 9.4 0 18.7-.2 27.8-.7-9 11.7-18.3 22.4-27.5 32zm-74.4-58.9c-14.2-2.1-27.9-4.7-41-7.9 3.7-12.9 8.3-26.2 13.5-39.5 4.1 8 8.4 16 13.1 24 4.7 8 9.5 15.8 14.4 23.4zM420.7 163c9.3 9.6 18.6 20.3 27.8 32-9-.4-18.2-.7-27.5-.7-9.4 0-18.7.2-27.8.7 9-11.7 18.3-22.4 27.5-32zm-74 58.9c-4.9 7.7-9.8 15.6-14.4 23.7-4.6 8-8.9 16-13 24-5.4-13.4-10-26.8-13.8-39.8 13.1-3.1 26.9-5.8 41.2-7.9zm-90.5 125.2c-35.4-15.1-58.3-34.9-58.3-50.6 0-15.7 22.9-35.6 58.3-50.6 8.6-3.7 18-7 27.7-10.1 5.7 19.6 13.2 40 22.5 60.9-9.2 20.8-16.6 41.1-22.2 60.6-9.9-3.1-19.3-6.5-28-10.2zM310 490c-13.6-7.8-19.5-37.5-14.9-75.7 1.1-9.4 2.9-19.3 5.1-29.4 19.6 4.8 41 8.5 63.5 10.9 13.5 18.5 27.5 35.3 41.6 50-32.6 30.3-63.2 46.9-84 46.9-4.5-.1-8.3-1-11.3-2.7zm237.2-76.2c4.7 38.2-1.1 67.9-14.6 75.8-3 1.8-6.9 2.6-11.5 2.6-20.7 0-51.4-16.5-84-46.6 14-14.7 28-31.4 41.3-49.9 22.6-2.4 44-6.1 63.6-11 2.3 10.1 4.1 19.8 5.2 29.1zm38.5-66.7c-8.6 3.7-18 7-27.7 10.1-5.7-19.6-13.2-40-22.5-60.9 9.2-20.8 16.6-41.1 22.2-60.6 9.9 3.1 19.3 6.5 28.1 10.2 35.4 15.1 58.3 34.9 58.3 50.6-.1 15.7-23 35.6-58.4 50.6zM320.8 78.4z"/><circle cx="420.9" cy="296.5" r="45.7"/><path d="M520.5 78.1z"/></g></svg>
-```
 
 ## documentation-viewer/src/index.js
 
@@ -5281,3 +5494,426 @@ class CodeMetricsAnalyzer:
 
 ```
 
+## scripts/js_ts_parser.js
+
+```javascript
+// Enhanced JavaScript/TypeScript parser with comprehensive analysis capabilities
+
+const babelParser = require('@babel/parser');
+const traverse = require('@babel/traverse').default;
+const t = require('@babel/types');
+const tsEstree = require('@typescript-eslint/typescript-estree');
+const escomplex = require('typhonjs-escomplex');
+
+class JSTSParser {
+    constructor(options = {}) {
+        this.options = {
+            sourceType: 'module',
+            errorRecovery: true,
+            ...options
+        };
+    }
+
+    parse(code, language = 'javascript') {
+        try {
+            const isTypeScript = language === 'typescript';
+            const ast = this._parseCode(code, isTypeScript);
+            const structure = this._initializeStructure();
+            
+            // Calculate metrics first
+            const metrics = this._calculateMetrics(code, isTypeScript);
+            Object.assign(structure, metrics);
+            
+            this._traverseAST(ast, structure, isTypeScript);
+            
+            return structure;
+        } catch (error) {
+            console.error(`Parse error: ${error.message}`);
+            return this._getEmptyStructure(error.message);
+        }
+    }
+
+    _parseCode(code, isTypeScript) {
+        if (isTypeScript) {
+            return tsEstree.parse(code, {
+                jsx: true,
+                tokens: true,
+                loc: true,
+                range: true,
+                comment: true,
+            });
+        }
+
+        return babelParser.parse(code, {
+            sourceType: this.options.sourceType,
+            plugins: this._getBabelPlugins(isTypeScript),
+            errorRecovery: this.options.errorRecovery,
+            tokens: true,
+        });
+    }
+
+    _calculateMetrics(code, isTypeScript) {
+        try {
+            const analysis = escomplex.analyzeModule(code, {
+                sourceType: 'module',
+                useTypeScriptEstree: isTypeScript,
+                loc: true,
+                newmi: true,
+                skipCalculation: false
+            });
+
+            return {
+                complexity: analysis.aggregate.cyclomatic,
+                maintainability_index: analysis.maintainability,
+                halstead: {
+                    volume: analysis.aggregate.halstead.volume,
+                    difficulty: analysis.aggregate.halstead.difficulty,
+                    effort: analysis.aggregate.halstead.effort
+                },
+                function_metrics: analysis.methods.reduce((acc, method) => {
+                    acc[method.name] = {
+                        complexity: method.cyclomatic,
+                        sloc: method.sloc,
+                        params: method.params
+                    };
+                    return acc;
+                }, {})
+            };
+        } catch (error) {
+            console.error(`Metrics calculation error: ${error.message}`);
+            return {
+                complexity: 0,
+                maintainability_index: 0,
+                halstead: { volume: 0, difficulty: 0, effort: 0 },
+                function_metrics: {}
+            };
+        }
+    }
+
+    _traverseAST(ast, structure, isTypeScript) {
+        const visitors = {
+            // Class handling
+            ClassDeclaration: (path) => {
+                const classInfo = this._extractClassInfo(path, isTypeScript);
+                structure.classes.push(classInfo);
+            },
+
+            // Function handling
+            FunctionDeclaration: (path) => {
+                const functionInfo = this._extractFunctionInfo(path, isTypeScript);
+                structure.functions.push(functionInfo);
+            },
+
+            // Variable declarations
+            VariableDeclaration: (path) => {
+                const declarations = this._extractVariableInfo(path, isTypeScript);
+                const collection = path.node.kind === 'const' ? 
+                    structure.constants : structure.variables;
+                collection.push(...declarations);
+            },
+
+            // Import/Export handling
+            ImportDeclaration: (path) => {
+                const importInfo = this._extractImportInfo(path);
+                structure.imports.push(importInfo);
+            },
+
+            ExportDefaultDeclaration: (path) => {
+                const exportInfo = this._extractExportInfo(path, true);
+                structure.exports.push(exportInfo);
+            },
+
+            ExportNamedDeclaration: (path) => {
+                const exportInfo = this._extractExportInfo(path, false);
+                structure.exports.push(exportInfo);
+            },
+
+            // React component handling
+            JSXElement: (path) => {
+                if (this._isReactComponent(path)) {
+                    const componentInfo = this._extractReactComponentInfo(path);
+                    structure.react_components.push(componentInfo);
+                }
+            },
+
+            // TypeScript specific handlers
+            TSInterfaceDeclaration: (path) => {
+                if (isTypeScript) {
+                    const interfaceInfo = this._extractInterfaceInfo(path);
+                    structure.interfaces.push(interfaceInfo);
+                }
+            },
+
+            TSTypeAliasDeclaration: (path) => {
+                if (isTypeScript) {
+                    const typeInfo = this._extractTypeInfo(path);
+                    structure.types.push(typeInfo);
+                }
+            }
+        };
+
+        traverse(ast, visitors);
+    }
+
+    _extractClassInfo(path, isTypeScript) {
+        const node = path.node;
+        const className = node.id?.name || 'Anonymous';
+        const decorators = this._extractDecorators(node);
+        const superClass = node.superClass?.name;
+        const implementedInterfaces = isTypeScript ? 
+            this._extractImplementedInterfaces(node) : [];
+
+        const methods = node.body.body
+            .filter(member => t.isClassMethod(member) || t.isClassPrivateMethod(member))
+            .map(method => this._extractMethodInfo(method, isTypeScript));
+
+        const properties = node.body.body
+            .filter(member => t.isClassProperty(member) || t.isClassPrivateProperty(member))
+            .map(prop => this._extractPropertyInfo(prop, isTypeScript));
+
+        return {
+            name: className,
+            superClass,
+            interfaces: implementedInterfaces,
+            decorators,
+            methods,
+            properties,
+            docstring: this._extractDocstring(node),
+            isAbstract: node.abstract || false,
+            isExported: this._isExported(path)
+        };
+    }
+
+    _extractMethodInfo(node, isTypeScript) {
+        const methodName = this._getMethodName(node);
+        const params = this._extractParameters(node.params, isTypeScript);
+        const returnType = isTypeScript ? this._extractReturnType(node) : null;
+        const decorators = this._extractDecorators(node);
+        const accessibility = this._getAccessibility(node);
+        const isAsync = node.async || false;
+        const isStatic = node.static || false;
+        const isAbstract = node.abstract || false;
+
+        return {
+            name: methodName,
+            params,
+            returnType,
+            decorators,
+            accessibility,
+            isAsync,
+            isStatic,
+            isAbstract,
+            docstring: this._extractDocstring(node),
+            complexity: this._calculateMethodComplexity(node)
+        };
+    }
+
+    _extractReactComponentInfo(path) {
+        const component = path.findParent(p => 
+            t.isFunctionDeclaration(p) || 
+            t.isArrowFunctionExpression(p) || 
+            t.isClassDeclaration(p)
+        );
+
+        if (!component) return null;
+
+        const props = this._extractReactProps(component);
+        const hooks = this._extractReactHooks(component);
+        const state = this._extractReactState(component);
+        const effects = this._extractReactEffects(component);
+
+        return {
+            name: component.node.id?.name || 'Anonymous',
+            type: t.isClassDeclaration(component) ? 'class' : 'function',
+            props,
+            hooks,
+            state,
+            effects,
+            docstring: this._extractDocstring(component.node),
+            isExported: this._isExported(component)
+        };
+    }
+
+    _extractReactProps(component) {
+        const props = [];
+
+        if (t.isClassDeclaration(component)) {
+            // Handle class component props
+            const constructor = component.node.body.body
+                .find(node => t.isClassMethod(node) && node.kind === 'constructor');
+            
+            if (constructor && constructor.params[0]) {
+                const propsParam = constructor.params[0];
+                props.push(...this._extractPropsFromTypeAnnotation(propsParam));
+            }
+        } else {
+            // Handle functional component props
+            const param = component.node.params[0];
+            if (param) {
+                props.push(...this._extractPropsFromTypeAnnotation(param));
+            }
+        }
+
+        return props;
+    }
+
+    _extractPropsFromTypeAnnotation(param) {
+        if (!param.typeAnnotation) return [];
+
+        const propsType = param.typeAnnotation.typeAnnotation;
+        if (!t.isTSTypeLiteral(propsType)) return [];
+
+        return propsType.members.map(member => ({
+            name: member.key.name,
+            type: this._getTypeString(member.typeAnnotation.typeAnnotation),
+            required: !member.optional,
+            defaultValue: this._getDefaultValue(member)
+        }));
+    }
+
+    _extractReactHooks(component) {
+        const hooks = [];
+        traverse(component.node, {
+            CallExpression(path) {
+                if (t.isIdentifier(path.node.callee) && 
+                    path.node.callee.name.startsWith('use')) {
+                    hooks.push({
+                        name: path.node.callee.name,
+                        dependencies: this._extractHookDependencies(path.node)
+                    });
+                }
+            }
+        });
+        return hooks;
+    }
+
+    _extractReactEffects(component) {
+        const effects = [];
+        traverse(component.node, {
+            CallExpression(path) {
+                if (t.isIdentifier(path.node.callee) && 
+                    path.node.callee.name === 'useEffect') {
+                    effects.push({
+                        dependencies: this._extractHookDependencies(path.node),
+                        cleanup: this._hasEffectCleanup(path.node)
+                    });
+                }
+            }
+        });
+        return effects;
+    }
+
+    _getBabelPlugins(isTypeScript) {
+        const plugins = [
+            'jsx',
+            'decorators-legacy',
+            ['decorators', { decoratorsBeforeExport: true }],
+            'classProperties',
+            'classPrivateProperties',
+            'classPrivateMethods',
+            'exportDefaultFrom',
+            'exportNamespaceFrom',
+            'dynamicImport',
+            'nullishCoalescing',
+            'optionalChaining',
+        ];
+
+        if (isTypeScript) {
+            plugins.push('typescript');
+        }
+
+        return plugins;
+    }
+
+    _initializeStructure() {
+        return {
+            classes: [],
+            functions: [],
+            variables: [],
+            constants: [],
+            imports: [],
+            exports: [],
+            interfaces: [],
+            types: [],
+            react_components: [],
+            complexity: 0,
+            maintainability_index: 0,
+            halstead: {
+                volume: 0,
+                difficulty: 0,
+                effort: 0
+            },
+            summary: "",
+            function_metrics: {}
+        };
+    }
+
+    _getEmptyStructure(reason = '') {
+        return {
+            ...this._initializeStructure(),
+            summary: `Empty structure: ${reason}`
+        };
+    }
+
+    _extractDocstring(node) {
+        const comments = node.leadingComments || [];
+        for (const comment of comments) {
+            if (comment.type === 'CommentBlock' && 
+                (comment.value.startsWith('*') || comment.value.startsWith('/'))) {
+                return comment.value.replace(/^\*+/, '').trim();
+            }
+        }
+        return '';
+    }
+}
+
+module.exports = JSTSParser;
+```
+
+
+## scripts/package.json
+```json
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "main": "extract_structure.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "acorn-parser": "node acorn_parser.js",
+    "acorn-inserter": "node acorn_inserter.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@babel/generator": "^7.25.7",
+    "@babel/parser": "^7.25.9",
+    "@babel/traverse": "^7.25.9",
+    "@babel/types": "^7.25.9",
+    "@typescript-eslint/typescript-estree": "^8.8.1",
+    "acorn": "^8.12.1",
+    "acorn-typescript": "^1.0.0",
+    "acorn-walk": "^8.3.4",
+    "ajv": "^8.17.1",
+    "astring": "^1.9.0",
+    "babel": "^6.23.0",
+    "cheerio": "^1.0.0",
+    "css": "^3.0.0",
+    "escodegen": "^2.1.0",
+    "java-parser": "^2.3.2",
+    "prettier": "^3.3.3",
+    "recast": "^0.23.9",
+    "stringify": "^5.2.0",
+    "stylelint": "^16.10.0",
+    "tslint": "^5.20.1",
+    "typescript": "^5.6.3",
+    "typhonjs-escomplex": "^0.1.0"
+  },
+  "description": "",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "eslint": "^9.12.0"
+  }
+}
+```

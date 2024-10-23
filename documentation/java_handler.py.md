@@ -15,11 +15,12 @@
 
 ## Summary
 
-The 'java_handler.py' file provides a class, JavaHandler, that handles various operations related to Java code, including extracting code structure, inserting documentation, and validating the code. It leverages external scripts to perform these tasks, enhancing the automation of documentation and validation processes for Java code in a Python environment.
+This module provides the JavaHandler class, which handles the analysis and documentation of Java code. It facilitates the extraction of code structure, insertion of Javadoc comments, and validation of Java source code for syntax correctness. The class interacts with external JavaScript scripts to perform parsing and inserting operations and uses 'javac' for compiling and validating Java code.
 
 ## Recent Changes
 
-- N/A
+- Initial implementation of JavaHandler class.
+- Added methods for code extraction, documentation insertion, and validation.
 
 
 # Code Structure

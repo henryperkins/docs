@@ -15,11 +15,13 @@
 
 ## Summary
 
-This file contains the definition of the ContextManager class, which is responsible for managing persistent context information in AI interactions. It provides methods to add, retrieve, clear, remove, and query context entries.
+The 'context_manager.py' file contains the `ContextManager` class, which is responsible for managing persistent context information for AI interactions. It allows the addition, retrieval, and removal of context entries, as well as the ability to clear all entries and get the most relevant contexts based on a given query.
 
 ## Recent Changes
 
-
+- Documented 'ContextManager' class methods
+- Added Halstead metrics calculations
+- Calculated maintainability index
 
 
 # Code Structure
@@ -28,7 +30,7 @@ This file contains the definition of the ContextManager class, which is responsi
 
 ### ContextManager
 
-Manages persistent context information for AI interactions. This includes adding new context entries, retrieving all current entries, clearing entries, and querying for relevant entries based on a provided query.
+Manages persistent context information for AI interactions.
 
 #### Methods
 

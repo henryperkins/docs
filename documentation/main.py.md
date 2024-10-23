@@ -15,13 +15,14 @@
 
 ## Summary
 
-This file is responsible for generating documentation for codebases. It includes functions for modifying Sentry events, parsing command-line arguments, configuring logging, and executing the main documentation generation process. The functionality is orchestrated using asynchronous programming and integrates with Azure OpenAI for processing.
+Orchestrates the documentation generation process by parsing command-line arguments, configuring logging, and coordinating the generation and validation of code documentation. Integrates with Sentry for error tracking and uses asynchronous processing for efficient operation.
 
 ## Recent Changes
 
-- Added async functionality to the main process.
-- Integrated Azure OpenAI API for enhanced processing.
-- Refactored logging configuration setup.
+- Updated error handling and logging integration with Sentry
+- Enhanced command-line argument parsing
+- Improved logging configuration and setup
+- Introduced async processing in the main orchestration function
 
 
 # Code Structure

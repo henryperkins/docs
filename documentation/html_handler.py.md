@@ -15,11 +15,13 @@
 
 ## Summary
 
-This file defines the `HTMLHandler` class, which is responsible for handling HTML code. It provides methods to extract the structure of HTML, insert comments based on provided documentation, and validate HTML code using an external validator like 'tidy'. The class relies on external JavaScript scripts to perform parsing and insertion tasks, enhancing the modularity and reusability of code functionalities.
+The `html_handler.py` file is a module designed to handle tasks related to HTML code, such as structure extraction, documentation insertion, and code validation. It utilizes external JavaScript scripts for parsing and inserting documentation and validates HTML syntax using tools like 'tidy'. The main class, `HTMLHandler`, provides methods to perform these operations, facilitating the integration of automatic documentation into HTML projects.
 
 ## Recent Changes
 
-
+- Initial creation of the HTMLHandler class and methods.
+- Integration of external JS scripts for parsing and inserting documentation.
+- Added HTML validation using 'tidy'.
 
 
 # Code Structure
@@ -28,7 +30,7 @@ This file defines the `HTMLHandler` class, which is responsible for handling HTM
 
 ### HTMLHandler
 
-Handler for the HTML language.
+Handler for the HTML language. This class provides methods to extract structures, insert documentation, and validate HTML code.
 
 #### Methods
 

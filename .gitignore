@@ -91,6 +91,8 @@ Thumbs.db
 /docs/_build/
 /documentation/generated/
 /server/data/*.json
+simple
+documentation
 
 # Temporary files
 *.swp
