@@ -95,7 +95,9 @@ Thumbs.db
 /docs/_build/
 /documentation/generated/
 simple
-documentation
+# Ignore documentation directory but track documentation-system
+documentation/
+!documentation-system/
 
 # Temporary files
 *.swp
