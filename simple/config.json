@@ -19,11 +19,6 @@
         "SECURITY.md",
         ".git",
         ".github",
-        "documentation-viewer/.gitignore",
-        "documentation-viewer/src/logo.svg",
-        "documentation-viewer/public/logo512.png",
-        "documentation-viewer/public/favicon.ico",
-        "documentation-viewer/public/logo192.png",
         "simple"
     ]
 }

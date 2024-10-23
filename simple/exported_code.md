@@ -1,96 +1,3 @@
-## file structure
-
-```plaintext
-(pip) azureuser@hperkin41:~/docs$ tree -L 4 --gitignore
-.
-├── README.md
-├── SECURITY.md
-├── codecov
-├── config.json
-├── context_manager.py
-├── documentation-viewer
-│   ├── README.md
-│   ├── index.css
-│   ├── index.js
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── postcss.config.js
-│   ├── public
-│   │   ├── favicon.ico
-│   │   ├── index.html
-│   │   ├── logo192.png
-│   │   ├── logo512.png
-│   │   ├── manifest.json
-│   │   └── robots.txt
-│   ├── server
-│   │   ├── data
-│   │   │   ├── documentation.json
-│   │   │   └── metrics.json
-│   │   ├── index.js
-│   │   ├── metrics.js
-│   │   ├── node_modules
-│   │   ├── package-lock.json
-│   │   └── package.json
-│   ├── src
-│   │   ├── App.css
-│   │   ├── App.js
-│   │   ├── App.test.js
-│   │   ├── components
-│   │   │   └── DocumentationViewer.js
-│   │   ├── index.css
-│   │   ├── index.js
-│   │   ├── logo.svg
-│   │   ├── reportWebVitals.js
-│   │   └── setupTests.js
-│   └── tailwind.config.js
-├── file_handlers.py
-├── halstead_utils.py
-├── language_functions
-│   ├── __init__.py
-│   ├── __pycache__
-│   ├── base_handler.py
-│   ├── cpp_handler.py
-│   ├── css_handler.py
-│   ├── go_handler.py
-│   ├── html_handler.py
-│   ├── java_handler.py
-│   ├── js_ts_handler.py
-│   ├── language_functions.py
-│   └── python_handler.py
-├── main.py
-├── metrics.py
-├── package-lock.json
-├── package.json
-├── pyproject.toml
-├── requirements.txt
-├── schemas
-│   └── function_schema.json
-├── scripts
-│   ├── cpp_inserter.cpp
-│   ├── cpp_parser.cpp
-│   ├── css_inserter.js
-│   ├── css_parser.js
-│   ├── go_inserter.go
-│   ├── go_parser.go
-│   ├── html_inserter.js
-│   ├── html_parser.js
-│   ├── java_inserter.js
-│   ├── java_parser.js
-│   ├── js_ts_inserter.js
-│   ├── js_ts_metrics.js
-│   ├── js_ts_parser.js
-│   ├── package-lock.json
-│   └── package.json
-├── server
-│   ├── package-lock.json
-│   └── package.json
-├── utils.py
-└── write_documentation_report.py
-
-105 directories, 71 files
-```
-
-
 ## main.py
 
 ```python
@@ -356,34 +263,25 @@ file_handlers.py
 
 This module contains asynchronous functions for processing individual files, extracting code structures, generating documentation via Azure OpenAI API calls, and inserting docstrings into the code. It also manages backups and uses the ContextManager to maintain persistent context across files.
 """
-
 import os
 import shutil
 import logging
-import aiofiles
 import aiohttp
 import json
 import asyncio
 import jsonschema
-from typing import Set, List, Dict, Any, Optional
-from jsonschema import validate, ValidationError  # Add these imports
+from typing import Set, List, Dict, Any, Optional, Tuple
+from jsonschema import validate, ValidationError
 from language_functions import get_handler
 from language_functions.base_handler import BaseHandler
 from utils import (
     is_binary,
     get_language,
-    is_valid_extension,
     clean_unused_imports_async,
     format_with_black_async,
-    run_flake8_async,
 )
-from write_documentation_report import (
-    generate_documentation_prompt,
-    write_documentation_report,
-    sanitize_filename,
-    generate_table_of_contents,
-)
-from context_manager import ContextManager  # Import ContextManager
+from write_documentation_report import generate_documentation_prompt, write_documentation_report
+from context_manager import ContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -604,122 +502,112 @@ def validate_documentation(documentation: Dict[str, Any], schema: Dict[str, Any]
         # You might want to add logic here to attempt to fix the documentation
         return None
 
-
 async def process_file(
-    session: aiohttp.ClientSession,
-    file_path: str,
-    skip_types: Set[str],
-    semaphore: asyncio.Semaphore,
-    deployment_name: str,
-    function_schema: Dict[str, Any],
-    repo_root: str,
-    project_info: str,
-    style_guidelines: str,
-    safe_mode: bool,
-    azure_api_key: str,
-    azure_endpoint: str,
-    azure_api_version: str,
-    output_dir: str,
+    session, file_path, skip_types, semaphore, deployment_name,
+    function_schema, repo_root, project_info, style_guidelines, safe_mode,
+    azure_api_key, azure_endpoint, azure_api_version, output_dir
 ) -> Optional[str]:
-    """
-    Processes a single file to extract its structure and generate documentation.
+    """Main file processing function."""
 
-    Args:
-        session (aiohttp.ClientSession): The HTTP session for making requests.
-        file_path (str): Path to the file to process.
-        skip_types (Set[str]): Set of file extensions to skip.
-        semaphore (asyncio.Semaphore): Semaphore to limit concurrent API requests.
-        deployment_name (str): The Azure OpenAI deployment name.
-        function_schema (Dict[str, Any]): The schema defining functions.
-        repo_root (str): Root directory of the repository.
-        project_info (str): Information about the project.
-        style_guidelines (str): Documentation style guidelines.
-        safe_mode (bool): If True, no files will be modified.
-        azure_api_key (str): The API key for Azure OpenAI.
-        azure_endpoint (str): The endpoint URL for the Azure OpenAI service.
-        azure_api_version (str): The API version to use.
-        output_dir (str): Directory to save documentation files.
-
-    Returns:
-        Optional[str]: The content of the documentation report or None if processing fails.
-    """
-    logger.debug(f"Processing file: {file_path}")
-
-    # Early checks for file processing
-    if not should_process_file(file_path):
-        logger.debug(f"Skipping file: {file_path}")
+    if not should_process_file(file_path, skip_types):
         return None
 
+    content, language, handler = await _prepare_file(file_path, function_schema, skip_types)
+    if not all([content, language, handler]):  # Check if all are not None/False
+        return None
+
+    code_structure = await _extract_code_structure(content, file_path, language, handler)
+    if not code_structure:
+        return None
+
+    documentation = await _generate_documentation(
+        session, semaphore, deployment_name, function_schema,
+        repo_root, project_info, style_guidelines, code_structure, file_path,
+        azure_api_key, azure_endpoint, azure_api_version
+    )
+    if not documentation:
+        return None
+
+    _update_documentation_metrics(documentation, code_structure)
+
+    if not safe_mode:
+        await _insert_and_validate_documentation(handler, content, documentation, file_path, language)
+
+    return await _write_documentation_report(documentation, language, file_path, repo_root, output_dir)
+
+
+
+async def _prepare_file(file_path: str, function_schema: Dict[str, Any], skip_types: Set[str]) -> tuple[Optional[str], Optional[str], Optional[BaseHandler]]:
+    """Reads file content, gets language and handler."""
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return None, None, None
+
+    _, ext = os.path.splitext(file_path)
+    extra_skip_types = {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'}
+    if ext in extra_skip_types or ext in skip_types or not ext or "node_modules" in file_path:
+        logger.debug(f"Skipping file '{file_path}' due to extension/location: {ext}")
+        return None, None, None
+
+    if is_binary(file_path):
+        logger.debug(f"Skipping binary file: {file_path}")
+        return None, None, None
+
+    language = get_language(ext)
+    if language == "plaintext":
+        logger.debug(f"Skipping plaintext file: {file_path}")
+        return None, None, None
+
+    handler = get_handler(language, function_schema)
+    if not handler:
+        logger.debug(f"No handler available for language: {language}")
+        return None, None, None
+
     try:
-        # Check if file exists
-        if not os.path.exists(file_path):
-            logger.error(f"File not found: {file_path}")
+        async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+            content = await f.read()
+        logger.debug(f"Successfully read content from {file_path}")
+        return content, language, handler
+    except UnicodeDecodeError:
+        logger.warning(f"Skipping file due to encoding issues: {file_path}")
+        return None, None, None
+    except Exception as e:
+        logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
+        return None, None, None
+
+
+async def _extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler) -> Optional[Dict[str, Any]]:
+    """Extracts code structure and adds context."""
+
+    try:
+        code_structure = await extract_code_structure(content, file_path, language, handler)  # Assuming this function is defined elsewhere
+        if not code_structure:
             return None
 
-        # Get file extension and check if we should process this file
-        _, ext = os.path.splitext(file_path)
-        
-        # Additional skip types for config and hidden files
-        extra_skip_types = {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'}
-        if ext in extra_skip_types or ext in skip_types or not ext:
-            logger.debug(f"Skipping file '{file_path}' due to extension: {ext}")
-            return None
-
-        # Skip files in node_modules
-        if "node_modules" in file_path:
-            logger.debug(f"Skipping node_modules file: {file_path}")
-            return None
-
-        # Check if file is binary
-        if is_binary(file_path):
-            logger.debug(f"Skipping binary file: {file_path}")
-            return None
-
-        # Get language and handler
-        language = get_language(ext)
-        logger.debug(f"Detected language for '{file_path}': {language}")
-
-        if language == "plaintext":
-            logger.debug(f"Skipping plaintext file: {file_path}")
-            return None
-
-        handler = get_handler(language, function_schema)
-        if not handler:
-            logger.debug(f"No handler available for language: {language}")
-            return None
-
-        # Read file content
         try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-                content = await f.read()
-            logger.debug(f"Successfully read content from {file_path}")
-        except UnicodeDecodeError:
-            logger.warning(f"Skipping file due to encoding issues: {file_path}")
-            return None
+            critical_info = extract_critical_info(code_structure, file_path)  # Assuming this function is defined elsewhere
+            context_manager.add_context(critical_info)
         except Exception as e:
-            logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
-            return None
+            logger.error(f"Error extracting critical info: {e}", exc_info=True)
+            critical_info = f"File: {file_path}\n# Failed to extract detailed information"
+            context_manager.add_context(critical_info)
+        return code_structure
 
-        # Extract code structure
-        try:
-            code_structure = await extract_code_structure(content, file_path, language, handler)
-            if not code_structure:
-                logger.warning(f"Could not extract code structure from '{file_path}'")
-                return None
+    except Exception as e:
+        logger.error(f"Error extracting structure: {e}", exc_info=True)
+        return None
 
-            # Add to context manager
-            try:
-                critical_info = extract_critical_info(code_structure, file_path)
-                context_manager.add_context(critical_info)
-            except Exception as e:
-                logger.error(f"Error extracting critical info from '{file_path}': {e}", exc_info=True)
-                # Continue processing even if critical info extraction fails
-                critical_info = f"File: {file_path}\n# Failed to extract detailed information"
-                context_manager.add_context(critical_info)
 
-            # Generate prompt with context
-            persistent_context = "\n".join(context_manager.get_context())
-            prompt = f"""
+
+async def _generate_documentation(
+    session, semaphore, deployment_name, function_schema,
+    repo_root, project_info, style_guidelines, code_structure, file_path,
+    azure_api_key, azure_endpoint, azure_api_version
+) -> Optional[Dict[str, Any]]:
+    """Generates documentation from Azure OpenAI."""
+    try:
+        persistent_context = "\n".join(context_manager.get_context())
+        prompt = f"""
 [Context Start]
 {persistent_context}
 [Context End]
@@ -729,140 +617,116 @@ async def process_file(
     code_structure=code_structure,
     project_info=project_info,
     style_guidelines=style_guidelines,
-    language=language,
+    language=get_language(os.path.splitext(file_path)[1]),
     function_schema=function_schema
 )}
-""".strip()
+        """.strip()
 
-            # Generate documentation
-            documentation = await fetch_documentation_rest(
-                session=session,
-                prompt=prompt,
-                semaphore=semaphore,
-                deployment_name=deployment_name,
-                function_schema=function_schema,
-                azure_api_key=azure_api_key,
-                azure_endpoint=azure_endpoint,
-                azure_api_version=azure_api_version,
-            )
+        documentation = await fetch_documentation_rest(  # Assuming this function is defined elsewhere
+            session=session,
+            prompt=prompt,
+            semaphore=semaphore,
+            deployment_name=deployment_name,
+            function_schema=function_schema,
+            azure_api_key=azure_api_key,
+            azure_endpoint=azure_endpoint,
+            azure_api_version=azure_api_version,
+        )
 
-            if not documentation:
-                logger.error(f"Failed to generate documentation for '{file_path}'")
-                return None
-
-            # Update documentation with code structure metrics
-            documentation.update({
-                "halstead": code_structure.get("halstead", {}),
-                "maintainability_index": code_structure.get("maintainability_index"),
-                "variables": code_structure.get("variables", []),
-                "constants": code_structure.get("constants", []),
-                "changes_made": documentation.get("changes_made", [])
-            })
-
-            # Update complexity metrics
-            function_complexity = {
-                func["name"]: func.get("complexity", 0)
-                for func in code_structure.get("functions", [])
-            }
-            for func in documentation.get("functions", []):
-                func["complexity"] = function_complexity.get(func["name"], 0)
-
-            class_complexity = {}
-            for cls in code_structure.get("classes", []):
-                class_name = cls["name"]
-                methods_complexity = {
-                    method["name"]: method.get("complexity", 0)
-                    for method in cls.get("methods", [])
-                }
-                class_complexity[class_name] = methods_complexity
-
-            for cls in documentation.get("classes", []):
-                class_name = cls["name"]
-                methods_complexity = class_complexity.get(class_name, {})
-                for method in cls.get("methods", []):
-                    method["complexity"] = methods_complexity.get(method["name"], 0)
-
-            # Process documentation
-            if not safe_mode:
-                try:
-                    new_content = await asyncio.to_thread(
-                        handler.insert_docstrings,
-                        content,
-                        documentation
-                    )
-
-                    if language.lower() == "python":
-                        new_content = await clean_unused_imports_async(new_content, file_path)
-                        new_content = await format_with_black_async(new_content)
-
-                    is_valid = await asyncio.to_thread(
-                        handler.validate_code,
-                        new_content,
-                        file_path
-                    )
-
-                    if is_valid:
-                        await backup_and_write_new_content(file_path, new_content)
-                        logger.info(f"Documentation inserted into '{file_path}'")
-                    else:
-                        logger.error(f"Code validation failed for '{file_path}'")
-                except Exception as e:
-                    logger.error(f"Error processing documentation for '{file_path}': {e}", exc_info=True)
-
-            # Generate documentation report
-            try:
-                file_content = await write_documentation_report(
-                    documentation=documentation,
-                    language=language,
-                    file_path=file_path,
-                    repo_root=repo_root,
-                    output_dir=output_dir,
-                )
-
-                logger.info(f"Finished processing '{file_path}'")
-                return file_content
-
-            except Exception as e:
-                logger.error(f"Error generating documentation report for '{file_path}': {e}", exc_info=True)
-                return None
-
-        except Exception as e:
-            logger.error(f"Error processing structure for '{file_path}': {e}", exc_info=True)
-            return None
+        if not documentation:
+            logger.error(f"Failed to generate documentation for '{file_path}'")
+        return documentation
 
     except Exception as e:
-        logger.error(f"Unexpected error processing '{file_path}': {e}", exc_info=True)
+        logger.error(f"Error generating documentation: {e}", exc_info=True)
         return None
 
-def should_process_file(file_path: str) -> bool:
+
+def _update_documentation_metrics(documentation: Dict[str, Any], code_structure: Dict[str, Any]) -> None:
+    """Updates documentation with metrics from code structure."""
+
+    documentation.update({
+        "halstead": code_structure.get("halstead", {}),
+        "maintainability_index": code_structure.get("maintainability_index"),
+        "variables": code_structure.get("variables", []),
+        "constants": code_structure.get("constants", []),
+        "changes_made": documentation.get("changes_made", [])
+    })
+
+    function_complexity = {func["name"]: func.get("complexity", 0) for func in code_structure.get("functions", [])}
+    for func in documentation.get("functions", []):
+        func["complexity"] = function_complexity.get(func["name"], 0)
+
+    class_complexity = {}
+    for cls in code_structure.get("classes", []):
+        methods_complexity = {method["name"]: method.get("complexity", 0) for method in cls.get("methods", [])}
+        class_complexity[cls["name"]] = methods_complexity
+
+    for cls in documentation.get("classes", []):
+        methods_complexity = class_complexity.get(cls["name"], {})
+        for method in cls.get("methods", []):
+            method["complexity"] = methods_complexity.get(method["name"], 0)
+
+
+async def _insert_and_validate_documentation(handler: BaseHandler, content: str, documentation: Dict[str, Any], file_path: str, language: str) -> None:
+    """Inserts documentation and validates the updated code."""
+    try:
+        new_content = await asyncio.to_thread(handler.insert_docstrings, content, documentation)
+
+        if language.lower() == "python":
+            new_content = await clean_unused_imports_async(new_content, file_path)
+            new_content = await format_with_black_async(new_content)
+
+        is_valid = await asyncio.to_thread(handler.validate_code, new_content, file_path)
+
+        if is_valid:
+            await backup_and_write_new_content(file_path, new_content)  # Assuming this function is defined elsewhere
+            logger.info(f"Documentation inserted into '{file_path}'")
+        else:
+            logger.error(f"Code validation failed for '{file_path}'")
+
+    except Exception as e:
+        logger.error(f"Error processing documentation: {e}", exc_info=True)
+
+
+async def _write_documentation_report(documentation: Dict[str, Any], language: str, file_path: str, repo_root: str, output_dir: str) -> Optional[str]:
+    """Writes the documentation report to a file."""
+    try:
+        file_content = await write_documentation_report(
+            documentation=documentation,
+            language=language,
+            file_path=file_path,
+            repo_root=repo_root,
+            output_dir=output_dir,
+        )
+        logger.info(f"Finished processing '{file_path}'")
+        return file_content
+
+    except Exception as e:
+        logger.error(f"Error generating report: {e}", exc_info=True)
+        return None
+
+def should_process_file(file_path: str, skip_types: Set[str]) -> bool:
     """
-    Determines if a file should be processed based on various criteria.
-
-    Args:
-        file_path (str): Path to the file.
-
-    Returns:
-        bool: True if the file should be processed, False otherwise.
+    Checks if a file should be processed based on path, extension and skip types.
     """
-    # Skip symlinks
-    if os.path.islink(file_path):
-        return False
 
-    # Skip node_modules related paths
-    if any(part in file_path for part in ['node_modules', '.bin']):
-        return False
-
-    # Skip if file doesn't exist
     if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
         return False
 
-    # Skip TypeScript declaration files
-    if file_path.endswith('.d.ts'):
-        return False
+    _, ext = os.path.splitext(file_path)
 
-    # Skip certain directories
-    excluded_dirs = {'.git', '__pycache__', 'node_modules', '.bin', 'build', 'dist'}
-    if any(excluded in file_path for excluded in excluded_dirs):
+    # Combines all skip conditions for clarity
+    if (
+        os.path.islink(file_path) or
+        any(part in file_path for part in ['node_modules', '.bin']) or
+        file_path.endswith('.d.ts') or
+        any(excluded in file_path for excluded in {'.git', '__pycache__', 'node_modules', '.bin', 'build', 'dist'}) or
+        ext in {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'} or
+        ext in skip_types or not ext
+    ):
+        logger.debug(f"Skipping file '{file_path}' due to extension/location: {ext}")
         return False
 
     return True
@@ -988,51 +852,49 @@ def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str
     return critical_info
 ```
 
-## halstead_utils.py
+## metrics.py
 
 ```python
+"""
+metrics.py
+
+This module provides functions for calculating various code metrics, including:
+- Halstead complexity metrics
+- Cyclomatic complexity
+- Maintainability index
+- Raw metrics (lines of code, blank lines, comment lines, etc.)
+- Other code quality metrics (method length, argument count, etc.)
+"""
+
 import logging
 import math
-from typing import Dict, Any
-from radon.metrics import h_visit
+from typing import Dict, Any, Tuple, Optional
+import ast
+
+from radon.complexity import cc_visit, SCORE
+from radon.metrics import h_visit, mi_visit
+from radon.raw import analyze
 
 logger = logging.getLogger(__name__)
 
-def calculate_halstead_metrics_safe(code: str) -> Dict[str, Any]:
-    """
-    Safely calculates Halstead metrics with proper error handling.
-    
-    Args:
-        code (str): The source code to analyze.
-        
-    Returns:
-        Dict[str, Any]: Dictionary containing Halstead metrics with safe default values if calculation fails.
-    """
+
+def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
+    """Calculates Halstead complexity metrics."""
     try:
         halstead_visitor = h_visit(code)
-        
-        # Access the 'total' attribute for file-level metrics
         total_metrics = halstead_visitor.total
 
-        # Basic metrics
-        h1 = len(total_metrics.operators)  # Access operators from total_metrics
+        h1 = len(total_metrics.operators)
         h2 = len(total_metrics.operands)
         N1 = sum(total_metrics.operators.values())
         N2 = sum(total_metrics.operands.values())
-        
-        # Derived metrics
+
         vocabulary = h1 + h2
         length = N1 + N2
-        
-        # Safe calculation of volume
-        volume = (length * math.log2(vocabulary)) if vocabulary > 0 else 0
-        
-        # Safe calculation of difficulty
-        difficulty = ((h1 * N2) / (2 * h2)) if h2 > 0 else 0
-        
-        # Calculate effort
+        volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
+        difficulty = (h1 * N2) / (2 * h2) if h2 > 0 else 0
         effort = difficulty * volume
-        
+
         return {
             "volume": round(volume, 2),
             "difficulty": round(difficulty, 2),
@@ -1043,13 +905,13 @@ def calculate_halstead_metrics_safe(code: str) -> Dict[str, Any]:
             "distinct_operands": h2,
             "total_operators": N1,
             "total_operands": N2,
-            "operator_counts": dict(total_metrics.operators),  # Access operators from total_metrics
-            "operand_counts": dict(total_metrics.operands)
+            "operator_counts": dict(total_metrics.operators),
+            "operand_counts": dict(total_metrics.operands),
         }
-        
+
     except Exception as e:
         logger.error(f"Error calculating Halstead metrics: {e}")
-        return {
+        return {  # Return a dictionary of zeros on error
             "volume": 0,
             "difficulty": 0,
             "effort": 0,
@@ -1060,181 +922,129 @@ def calculate_halstead_metrics_safe(code: str) -> Dict[str, Any]:
             "total_operators": 0,
             "total_operands": 0,
             "operator_counts": {},
-            "operand_counts": {}
-        }
-
-```
-
-## metrics.py
-
-```python
-"""
-metrics.py
-
-This module provides functions for calculating various code metrics including:
-- Halstead complexity metrics
-- Cyclomatic complexity
-- Maintainability index
-- Other code quality metrics
-
-It serves as a centralized location for all metric calculations used throughout the project.
-"""
-
-import logging
-import math
-from typing import Dict, Any, Tuple, Optional
-
-from radon.complexity import cc_visit
-from radon.metrics import h_visit, mi_visit
-
-logger = logging.getLogger(__name__)
-
-def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
-    """
-    Calculates Halstead complexity metrics for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Dict[str, Any]: Dictionary containing Halstead metrics:
-            - volume: Program volume
-            - difficulty: Program difficulty
-            - effort: Programming effort
-            - vocabulary: Program vocabulary
-            - length: Program length
-            - distinct_operators: Number of distinct operators
-            - distinct_operands: Number of distinct operands
-            - total_operators: Total number of operators
-            - total_operands: Total number of operands
-    """
-    try:
-        # Get the metrics from radon
-        halstead_visit = h_visit(code)
-        
-        # The h_visit() function returns a list of HalsteadVisitor objects
-        # We'll take the first one (module level) if available
-        if not halstead_visit:
-            raise ValueError("No Halstead metrics available")
-            
-        # Get the first visitor
-        visitor = halstead_visit[0]
-        
-        # Access the h1, h2, N1, N2 properties directly
-        h1 = visitor.h1  # distinct operators
-        h2 = visitor.h2  # distinct operands
-        N1 = visitor.N1  # total operators
-        N2 = visitor.N2  # total operands
-        
-        # Calculate derived metrics
-        vocabulary = h1 + h2
-        length = N1 + N2
-        
-        # Handle edge cases to avoid math errors
-        if vocabulary > 0:
-            volume = length * math.log2(vocabulary)
-        else:
-            volume = 0
-            
-        if h2 > 0:
-            difficulty = (h1 * N2) / (2 * h2)
-        else:
-            difficulty = 0
-            
-        effort = difficulty * volume
-        
-        return {
-            "volume": round(volume, 2),
-            "difficulty": round(difficulty, 2),
-            "effort": round(effort, 2),
-            "vocabulary": vocabulary,
-            "length": length,
-            "distinct_operators": h1,
-            "distinct_operands": h2,
-            "total_operators": N1,
-            "total_operands": N2
-        }
-    except Exception as e:
-        logger.error(f"Error calculating Halstead metrics: {e}")
-        return {
-            "volume": 0,
-            "difficulty": 0,
-            "effort": 0,
-            "vocabulary": 0,
-            "length": 0,
-            "distinct_operators": 0,
-            "distinct_operands": 0,
-            "total_operators": 0,
-            "total_operands": 0
+            "operand_counts": {},
         }
 
 
-def calculate_complexity_metrics(code: str) -> Tuple[Dict[str, int], int]:
-    """
-    Calculates cyclomatic complexity metrics for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Tuple[Dict[str, int], int]: A tuple containing:
-            - Dictionary mapping function names to their complexity scores
-            - Total complexity score for the entire code
-    """
+def calculate_cyclomatic_complexity(code: str) -> Tuple[Dict[str, int], int]:
+    """Calculates cyclomatic complexity."""
     try:
         complexity_scores = cc_visit(code)
         function_complexity = {score.fullname: score.complexity for score in complexity_scores}
         total_complexity = sum(score.complexity for score in complexity_scores)
         return function_complexity, total_complexity
     except Exception as e:
-        logger.error(f"Error calculating complexity metrics: {e}")
+        logger.error(f"Error calculating cyclomatic complexity: {e}")
         return {}, 0
 
+
 def calculate_maintainability_index(code: str) -> Optional[float]:
-    """
-    Calculates the maintainability index for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Optional[float]: The maintainability index score or None if calculation fails.
-    """
+    """Calculates maintainability index."""
     try:
         return mi_visit(code, True)
     except Exception as e:
         logger.error(f"Error calculating maintainability index: {e}")
         return None
 
+
+def calculate_raw_metrics(code: str) -> Dict[str, int]:
+    """Calculates raw metrics (LOC, comments, blank lines, etc.)."""
+    try:
+        raw_metrics = analyze(code)
+        return {
+            "loc": raw_metrics.loc,
+            "lloc": raw_metrics.lloc,
+            "sloc": raw_metrics.sloc,
+            "comments": raw_metrics.comments,
+            "multi": raw_metrics.multi,
+            "blank": raw_metrics.blank,
+        }
+    except Exception as e:
+        logger.error(f"Error calculating raw metrics: {e}")
+        return {
+            "loc": 0,
+            "lloc": 0,
+            "sloc": 0,
+            "comments": 0,
+            "multi": 0,
+            "blank": 0,
+        }
+
+def calculate_code_quality_metrics(code: str) -> Dict[str, Any]:
+    """Calculates code quality metrics."""
+    try:
+        tree = ast.parse(code)
+        metrics = {
+            "method_length": [],
+            "argument_count": [],
+            "nesting_level": [], # Now a list to store per-function nesting levels
+            "max_nesting_level": 0 # Track the overall maximum nesting
+        }
+
+        class QualityVisitor(ast.NodeVisitor):
+            def __init__(self):
+                self.current_nesting = 0
+                self.max_nesting = 0
+
+            def visit_FunctionDef(self, node):
+                self.current_nesting = 0 # Reset for each function
+                self.max_nesting = 0 # Reset for each function
+                self.generic_visit(node)
+                metrics["nesting_level"].append(self.max_nesting)
+                metrics["method_length"].append(node.end_lineno - node.lineno + 1)
+                metrics["argument_count"].append(len(node.args.args))
+            
+            def visit_AsyncFunctionDef(self, node):
+                self.visit_FunctionDef(node) # Treat async functions the same
+
+            def visit_If(self, node):
+                self.current_nesting += 1
+                self.max_nesting = max(self.max_nesting, self.current_nesting)
+                self.generic_visit(node)
+                self.current_nesting -= 1
+
+            def visit_While(self, node):
+                self.current_nesting += 1
+                self.max_nesting = max(self.max_nesting, self.current_nesting)
+                self.generic_visit(node)
+                self.current_nesting -= 1
+
+            def visit_For(self, node):
+                self.current_nesting += 1
+                self.max_nesting = max(self.max_nesting, self.current_nesting)
+                self.generic_visit(node)
+                self.current_nesting -= 1
+
+            # Similar logic for other nesting structures (try, except, etc.)
+
+        QualityVisitor().visit(tree)
+
+        metrics["max_nesting_level"] = max(metrics["nesting_level"]) if metrics["nesting_level"] else 0
+        metrics["avg_nesting_level"] = sum(metrics["nesting_level"]) / len(metrics["nesting_level"]) if metrics["nesting_level"] else 0
+        # ... (Calculate averages for method_length and argument_count as before)
+
+        return metrics
+
+    except Exception as e:
+        logger.error(f"Error calculating code quality metrics: {e}")
+        return {
+            "method_length": [],
+            "argument_count": [],
+            "nesting_level": 0,
+            "avg_method_length": 0,
+            "avg_argument_count": 0,
+        }
+
+
 def calculate_all_metrics(code: str) -> Dict[str, Any]:
-    """
-    Calculates all available metrics for the given code.
-
-    Args:
-        code (str): The source code to analyze.
-
-    Returns:
-        Dict[str, Any]: Dictionary containing all calculated metrics:
-            - halstead: Halstead complexity metrics
-            - complexity: Cyclomatic complexity metrics
-            - maintainability_index: Maintainability index score
-            - function_complexity: Individual function complexity scores
-    """
+    """Calculates all available metrics."""
     metrics = {}
-    
-    # Calculate Halstead metrics
     metrics["halstead"] = calculate_halstead_metrics(code)
-    
-    # Calculate complexity metrics
-    function_complexity, total_complexity = calculate_complexity_metrics(code)
-    metrics["complexity"] = total_complexity
-    metrics["function_complexity"] = function_complexity
-    
-    # Calculate maintainability index
+    metrics["cyclomatic"] = calculate_cyclomatic_complexity(code) # Changed name for clarity
     metrics["maintainability_index"] = calculate_maintainability_index(code)
-    
+    metrics["raw"] = calculate_raw_metrics(code)
+    metrics["quality"] = calculate_code_quality_metrics(code)  # New metrics
     return metrics
-
 ```
 
 ## utils.py
@@ -1899,7 +1709,106 @@ if not logger.hasHandlers():
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
+async def save_documentation_to_db(
+    documentation: Dict[str, Any],
+    project_id: str,
+    file_path: str,
+    api_url: str
+) -> Optional[str]:
+    """
+    Saves the generated documentation to the MongoDB database through the API.
 
+    Args:
+        documentation (Dict[str, Any]): The documentation to save
+        project_id (str): The project identifier
+        file_path (str): Path to the source file
+        api_url (str): The API endpoint URL
+
+    Returns:
+        Optional[str]: The ID of the created document, or None if the operation failed
+    """
+    try:
+        # Prepare the documentation data
+        doc_data = {
+            "project_id": project_id,
+            "file_path": file_path,
+            "version": os.getenv("PROJECT_VERSION", "1.0.0"),
+            "language": documentation.get("language", "unknown"),
+            "summary": documentation.get("summary", ""),
+            "classes": documentation.get("classes", []),
+            "functions": documentation.get("functions", []),
+            "metrics": documentation.get("metrics", {}),
+            "generated_by": "documentation-generator"
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{api_url}/documentation",
+                json=doc_data,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status == 201:
+                    result = await response.json()
+                    logger.info(f"Documentation saved to database for {file_path}")
+                    return result.get("_id")
+                else:
+                    error_data = await response.json()
+                    logger.error(f"Failed to save documentation: {error_data}")
+                    return None
+
+    except Exception as e:
+        logger.error(f"Error saving documentation to database: {e}", exc_info=True)
+        return None
+
+async def update_documentation_in_db(
+    documentation: Dict[str, Any],
+    project_id: str,
+    file_path: str,
+    api_url: str
+) -> bool:
+    """
+    Updates existing documentation in the MongoDB database.
+
+    Args:
+        documentation (Dict[str, Any]): The updated documentation
+        project_id (str): The project identifier
+        file_path (str): Path to the source file
+        api_url (str): The API endpoint URL
+
+    Returns:
+        bool: True if the update was successful, False otherwise
+    """
+    try:
+        doc_data = {
+            "project_id": project_id,
+            "file_path": file_path,
+            "version": os.getenv("PROJECT_VERSION", "1.0.0"),
+            "language": documentation.get("language", "unknown"),
+            "summary": documentation.get("summary", ""),
+            "classes": documentation.get("classes", []),
+            "functions": documentation.get("functions", []),
+            "metrics": documentation.get("metrics", {}),
+            "generated_by": "documentation-generator"
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                f"{api_url}/documentation/{project_id}/{file_path}",
+                json=doc_data,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                if response.status == 200:
+                    logger.info(f"Documentation updated in database for {file_path}")
+                    return True
+                else:
+                    error_data = await response.json()
+                    logger.error(f"Failed to update documentation: {error_data}")
+                    return False
+
+    except Exception as e:
+        logger.error(f"Error updating documentation in database: {e}", exc_info=True)
+        return False
+    
 def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], logo: str = None) -> str:
     """
     Generates a dynamic badge for a given metric.
@@ -2002,7 +1911,6 @@ def format_table(headers: List[str], rows: List[List[str]]) -> str:
         sanitized_row = [sanitize_text(cell) for cell in row]
         table += "| " + " | ".join(sanitized_row) + " |\n"
     return table
-
 
 def truncate_description(description: str, max_length: int = 100) -> str:
     """
@@ -6580,855 +6488,6 @@ process.stdin.on('end', () => {
   // Output the structure as JSON
   console.log(JSON.stringify(structure, null, 2));
 });
-
-```
-
-## documentation-viewer/postcss.config.js
-
-```javascript
-module.exports = {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-}
-
-```
-
-## documentation-viewer/index.css
-
-```css
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
-
-```
-
-## documentation-viewer/index.js
-
-```javascript
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './index.css';
-import App from './App';
-import reportWebVitals from './reportWebVitals';
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-
-reportWebVitals();
-
-```
-
-## documentation-viewer/tailwind.config.js
-
-```javascript
-module.exports = {
-  content: [
-    "./src/**/*.{js,jsx,ts,tsx}",
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [
-    require('@tailwindcss/typography'),
-  ],
-}
-
-```
-
-## documentation-viewer/src/setupTests.js
-
-```javascript
-// jest-dom adds custom jest matchers for asserting on DOM nodes.
-// allows you to do things like:
-// expect(element).toHaveTextContent(/react/i)
-// learn more: https://github.com/testing-library/jest-dom
-import '@testing-library/jest-dom';
-
-```
-
-## documentation-viewer/src/App.css
-
-```css
-.App {
-  text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-```
-
-## documentation-viewer/src/index.css
-
-```css
-@import 'tailwindcss/base';
-@import 'tailwindcss/components';
-@import 'tailwindcss/utilities';
-
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
-
-```
-
-## documentation-viewer/src/index.js
-
-```javascript
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './index.css';
-import App from './App';
-import reportWebVitals from './reportWebVitals';
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-reportWebVitals();
-
-```
-
-## documentation-viewer/src/App.test.js
-
-```javascript
-import { render, screen } from '@testing-library/react';
-import App from './App';
-
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
-});
-
-```
-
-## documentation-viewer/src/App.js
-
-```javascript
-import React from 'react';
-import DocumentationViewer from './components/DocumentationViewer';
-
-function App() {
-  return (
-    <div className="App">
-      <DocumentationViewer />
-    </div>
-  );
-}
-
-export default App;
-
-```
-
-## documentation-viewer/src/reportWebVitals.js
-
-```javascript
-const reportWebVitals = onPerfEntry => {
-  if (onPerfEntry && onPerfEntry instanceof Function) {
-    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-      getCLS(onPerfEntry);
-      getFID(onPerfEntry);
-      getFCP(onPerfEntry);
-      getLCP(onPerfEntry);
-      getTTFB(onPerfEntry);
-    });
-  }
-};
-
-export default reportWebVitals;
-
-```
-
-## documentation-viewer/src/components/DocumentationViewer.js
-
-```javascript
-import React, { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Moon, 
-  Sun, 
-  ChevronDown, 
-  ChevronRight, 
-  Code, 
-  FileText, 
-  Activity,
-  AlertCircle 
-} from 'lucide-react';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar 
-} from 'recharts';
-
-const LoadingSpinner = () => (
-  <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-  </div>
-);
-
-const ErrorMessage = ({ message }) => (
-  <div className="flex items-center justify-center min-h-screen text-red-500">
-    <AlertCircle className="w-6 h-6 mr-2" />
-    <span>{message}</span>
-  </div>
-);
-
-const DocumentationViewer = () => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [documentation, setDocumentation] = useState(null);
-  const [metrics, setMetrics] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // Fetch documentation
-        const docResponse = await fetch('http://localhost:5000/api/documentation');
-        const docData = await docResponse.json();
-        
-        // Fetch metrics
-        const metricsResponse = await fetch('http://localhost:5000/api/metrics');
-        const metricsData = await metricsResponse.json();
-        
-        setDocumentation(docData);
-        setMetrics(metricsData);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching data:', err);
-        setError('Failed to load documentation data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  if (loading) return <LoadingSpinner />;
-  if (error) return <ErrorMessage message={error} />;
-  if (!documentation || !metrics) return <ErrorMessage message="No data available" />;
-
-  console.log('Documentation:', documentation); // Debugging log
-  console.log('Metrics:', metrics); // Debugging log
-
-  return (
-    <div className={isDarkMode ? 'dark' : ''}>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        {/* Header */}
-        <nav className="bg-white dark:bg-gray-800 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 py-3">
-            <div className="flex items-center justify-between">
-              <h1 className="text-xl font-bold">Documentation Viewer</h1>
-              
-              <div className="flex items-center space-x-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search documentation..."
-                    className="pl-10 pr-4 py-2 rounded-lg border dark:bg-gray-700 dark:border-gray-600"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                
-                <button
-                  onClick={() => setIsDarkMode(!isDarkMode)}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Tabs */}
-            <div className="flex space-x-4 mt-4">
-              {['overview', 'code', 'metrics'].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    activeTab === tab
-                      ? 'bg-blue-500 text-white'
-                      : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-        </nav>
-
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          {activeTab === 'overview' && documentation && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className={`p-6 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-                  <h3 className="text-lg font-semibold mb-2">Code Quality</h3>
-                  <div className="text-3xl font-bold text-blue-500">
-                    {documentation.code_quality?.overall_score || 'N/A'}%
-                  </div>
-                </div>
-                
-                <div className={`p-6 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-                  <h3 className="text-lg font-semibold mb-2">Coverage</h3>
-                  <div className="text-3xl font-bold text-green-500">
-                    {documentation.coverage?.overall || 'N/A'}%
-                  </div>
-                </div>
-                
-                <div className={`p-6 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-                  <h3 className="text-lg font-semibold mb-2">Maintainability</h3>
-                  <div className="text-3xl font-bold text-purple-500">
-                    {documentation.maintainability_index || 'N/A'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Metrics Chart */}
-              {metrics && (
-                <div className={`p-6 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-                  <h3 className="text-lg font-semibold mb-4">Trends</h3>
-                  <div className="h-64">
-                    <ResponsiveContainer>
-                      <LineChart data={metrics.complexity_trends}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="complexity" stroke="#8884d8" name="Complexity" />
-                        <Line type="monotone" dataKey="coverage" stroke="#82ca9d" name="Coverage" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Add other tab content here */}
-        </main>
-      </div>
-    </div>
-  );
-};
-
-export default DocumentationViewer;
-
-```
-
-## documentation-viewer/public/index.html
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-react-app"
-    />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>React App</title>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
-  </body>
-</html>
-
-```
-
-## documentation-viewer/server/index.js
-
-```javascript
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs').promises;
-
-const app = express();
-
-// Enable CORS for all routes
-app.use(cors());
-
-// Parse JSON bodies
-app.use(express.json());
-
-// API Routes
-app.get('/api/documentation', async (req, res) => {
-    try {
-        const data = await fs.readFile(
-            path.join(__dirname, 'data', 'documentation.json'),
-            'utf8'
-        );
-        res.json(JSON.parse(data));
-    } catch (error) {
-        console.error('Error reading documentation:', error);
-        res.status(500).json({
-            error: 'Failed to load documentation',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-});
-
-app.get('/api/metrics', async (req, res) => {
-    try {
-        const data = await fs.readFile(
-            path.join(__dirname, 'data', 'metrics.json'),
-            'utf8'
-        );
-        res.json(JSON.parse(data));
-    } catch (error) {
-        console.error('Error reading metrics:', error);
-        res.status(500).json({
-            error: 'Failed to load metrics',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-        error: 'Internal Server Error',
-        details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Documentation API available at http://localhost:${PORT}/api/documentation`);
-    console.log(`Metrics API available at http://localhost:${PORT}/api/metrics`);
-});
-
-```
-
-## documentation-viewer/server/metrics.js
-
-```javascript
-import ast
-import networkx as nx
-from dataclasses import dataclass
-from typing import List, Dict, Set, Optional
-from collections import defaultdict
-import re
-
-@dataclass
-class DependencyInfo:
-    """Stores information about code dependencies."""
-    name: str
-    type: str
-    version: Optional[str]
-    references: List[str]
-    locations: List[Dict[str, int]]  # file and line numbers
-    is_internal: bool
-
-class CodeMetricsAnalyzer:
-    """Analyzes code for various metrics and dependencies."""
-    
-    def __init__(self, code: str, file_path: str):
-        self.code = code
-        self.file_path = file_path
-        self.ast_tree = ast.parse(code)
-        self.dependency_graph = nx.DiGraph()
-        self.cognitive_complexity = 0
-        self.dependencies: Dict[str, DependencyInfo] = {}
-        
-    def analyze(self) -> Dict:
-        """Performs comprehensive code analysis."""
-        return {
-            "cognitive_complexity": self.calculate_cognitive_complexity(),
-            "dependencies": self.extract_dependencies(),
-            "coverage_metrics": self.calculate_coverage_metrics(),
-            "code_quality": self.analyze_code_quality(),
-            "dependency_graph": self.generate_dependency_graph()
-        }
-
-    def calculate_cognitive_complexity(self) -> int:
-        """
-        Calculates cognitive complexity based on:
-        - Nesting levels
-        - Logical operations
-        - Control flow breaks
-        - Recursion
-        """
-        class CognitiveComplexityVisitor(ast.NodeVisitor):
-            def __init__(self):
-                self.complexity = 0
-                self.nesting_level = 0
-
-            def visit_If(self, node):
-                self.complexity += 1 + self.nesting_level
-                self.nesting_level += 1
-                self.generic_visit(node)
-                self.nesting_level -= 1
-
-            def visit_While(self, node):
-                self.complexity += 1 + self.nesting_level
-                self.nesting_level += 1
-                self.generic_visit(node)
-                self.nesting_level -= 1
-
-            def visit_For(self, node):
-                self.complexity += 1 + self.nesting_level
-                self.nesting_level += 1
-                self.generic_visit(node)
-                self.nesting_level -= 1
-
-            def visit_Try(self, node):
-                self.complexity += 1 + self.nesting_level
-                self.nesting_level += 1
-                self.generic_visit(node)
-                self.nesting_level -= 1
-
-            def visit_BoolOp(self, node):
-                self.complexity += len(node.values) - 1
-                self.generic_visit(node)
-
-            def visit_Break(self, node):
-                self.complexity += 1
-
-            def visit_Continue(self, node):
-                self.complexity += 1
-
-        visitor = CognitiveComplexityVisitor()
-        visitor.visit(self.ast_tree)
-        return visitor.complexity
-
-    def extract_dependencies(self) -> Dict[str, DependencyInfo]:
-        """
-        Extracts both internal and external dependencies with detailed information.
-        """
-        class DependencyVisitor(ast.NodeVisitor):
-            def __init__(self):
-                self.dependencies = defaultdict(lambda: DependencyInfo(
-                    name="",
-                    type="",
-                    version=None,
-                    references=[],
-                    locations=[],
-                    is_internal=False
-                ))
-                self.current_function = None
-
-            def visit_Import(self, node):
-                for name in node.names:
-                    self.add_dependency(name.name, "import", node.lineno)
-
-            def visit_ImportFrom(self, node):
-                module = node.module or ""
-                for name in node.names:
-                    full_name = f"{module}.{name.name}" if module else name.name
-                    self.add_dependency(full_name, "import_from", node.lineno)
-
-            def add_dependency(self, name: str, dep_type: str, lineno: int):
-                dep = self.dependencies[name]
-                dep.name = name
-                dep.type = dep_type
-                dep.is_internal = self.is_internal_dependency(name)
-                dep.locations.append({
-                    "line": lineno,
-                    "type": dep_type
-                })
-
-            @staticmethod
-            def is_internal_dependency(name: str) -> bool:
-                internal_patterns = [
-                    r'^\..*',  # Relative imports
-                    r'^(?!django|flask|requests|numpy|pandas).*'  # Non-standard library
-                ]
-                return any(re.match(pattern, name) for pattern in internal_patterns)
-
-        visitor = DependencyVisitor()
-        visitor.visit(self.ast_tree)
-        return visitor.dependencies
-
-    def calculate_coverage_metrics(self) -> Dict:
-        """
-        Calculates various coverage metrics including:
-        - Line coverage
-        - Branch coverage
-        - Function coverage
-        """
-        return {
-            "line_coverage": self._calculate_line_coverage(),
-            "branch_coverage": self._calculate_branch_coverage(),
-            "function_coverage": self._calculate_function_coverage()
-        }
-
-    def _calculate_line_coverage(self) -> float:
-        """Calculates line coverage percentage."""
-        total_lines = len(self.code.splitlines())
-        covered_lines = total_lines - len(self._get_unreachable_lines())
-        return (covered_lines / total_lines) * 100 if total_lines > 0 else 0
-
-    def _calculate_branch_coverage(self) -> float:
-        """Calculates branch coverage percentage."""
-        branches = self._get_branches()
-        covered_branches = self._get_covered_branches(branches)
-        return (covered_branches / len(branches)) * 100 if branches else 0
-
-    def _calculate_function_coverage(self) -> float:
-        """Calculates function coverage percentage."""
-        functions = self._get_functions()
-        covered_functions = self._get_covered_functions(functions)
-        return (covered_functions / len(functions)) * 100 if functions else 0
-
-    def analyze_code_quality(self) -> Dict:
-        """
-        Analyzes code quality metrics including:
-        - Method length
-        - Argument count
-        - Cognitive complexity
-        - Docstring coverage
-        - Import complexity
-        """
-        return {
-            "method_length_score": self._analyze_method_lengths(),
-            "argument_count_score": self._analyze_argument_counts(),
-            "cognitive_complexity_score": self._analyze_cognitive_complexity(),
-            "docstring_coverage_score": self._analyze_docstring_coverage(),
-            "import_complexity_score": self._analyze_import_complexity()
-        }
-
-    def generate_dependency_graph(self) -> nx.DiGraph:
-        """
-        Generates a dependency graph showing relationships between modules.
-        """
-        for dep_name, dep_info in self.dependencies.items():
-            self.dependency_graph.add_node(
-                dep_name,
-                type=dep_info.type,
-                is_internal=dep_info.is_internal
-            )
-            
-            # Add edges for related dependencies
-            for ref in dep_info.references:
-                if ref in self.dependencies:
-                    self.dependency_graph.add_edge(dep_name, ref)
-
-        return self.dependency_graph
-
-    def _get_unreachable_lines(self) -> Set[int]:
-        """Identifies unreachable lines of code."""
-        unreachable = set()
-        
-        class UnreachableCodeVisitor(ast.NodeVisitor):
-            def visit_Return(self, node):
-                # Check for code after return statements
-                parent = node
-                while hasattr(parent, 'parent'):
-                    parent = parent.parent
-                    if isinstance(parent, ast.FunctionDef):
-                        break
-                
-                if isinstance(parent, ast.FunctionDef):
-                    for child in ast.iter_child_nodes(parent):
-                        if hasattr(child, 'lineno') and child.lineno > node.lineno:
-                            unreachable.add(child.lineno)
-
-        visitor = UnreachableCodeVisitor()
-        visitor.visit(self.ast_tree)
-        return unreachable
-
-    def _analyze_method_lengths(self) -> float:
-        """Analyzes method lengths and returns a score."""
-        lengths = []
-        
-        class MethodLengthVisitor(ast.NodeVisitor):
-            def visit_FunctionDef(self, node):
-                lengths.append(node.end_lineno - node.lineno)
-
-        visitor = MethodLengthVisitor()
-        visitor.visit(self.ast_tree)
-        
-        if not lengths:
-            return 100.0
-            
-        avg_length = sum(lengths) / len(lengths)
-        return max(0, 100 - (avg_length - 15) * 2)  # Penalize methods longer than 15 lines
-
-    def _analyze_argument_counts(self) -> float:
-        """Analyzes function argument counts and returns a score."""
-        arg_counts = []
-        
-        class ArgumentCountVisitor(ast.NodeVisitor):
-            def visit_FunctionDef(self, node):
-                arg_counts.append(len(node.args.args))
-
-        visitor = ArgumentCountVisitor()
-        visitor.visit(self.ast_tree)
-        
-        if not arg_counts:
-            return 100.0
-            
-        avg_args = sum(arg_counts) / len(arg_counts)
-        return max(0, 100 - (avg_args - 4) * 10)  # Penalize functions with more than 4 arguments
-
-    def _get_branches(self) -> List[ast.AST]:
-        """Gets all branch nodes in the code."""
-        branches = []
-        
-        class BranchVisitor(ast.NodeVisitor):
-            def visit_If(self, node):
-                branches.append(node)
-                self.generic_visit(node)
-                
-            def visit_While(self, node):
-                branches.append(node)
-                self.generic_visit(node)
-                
-            def visit_For(self, node):
-                branches.append(node)
-                self.generic_visit(node)
-
-        visitor = BranchVisitor()
-        visitor.visit(self.ast_tree)
-        return branches
-
-    def _get_covered_branches(self, branches: List[ast.AST]) -> int:
-        """Estimates number of covered branches based on complexity."""
-        # This is a placeholder - in a real implementation, you'd use actual coverage data
-        return len(branches) // 2
-
-    def _get_functions(self) -> List[ast.FunctionDef]:
-        """Gets all function definitions in the code."""
-        functions = []
-        
-        class FunctionVisitor(ast.NodeVisitor):
-            def visit_FunctionDef(self, node):
-                functions.append(node)
-                self.generic_visit(node)
-
-        visitor = FunctionVisitor()
-        visitor.visit(self.ast_tree)
-        return functions
-
-    def _get_covered_functions(self, functions: List[ast.FunctionDef]) -> int:
-        """Estimates number of covered functions based on complexity."""
-        # This is a placeholder - in a real implementation, you'd use actual coverage data
-        return len(functions) - len([f for f in functions if self._is_complex_function(f)])
-
-    def _is_complex_function(self, function: ast.FunctionDef) -> bool:
-        """Determines if a function is complex based on various metrics."""
-        return (
-            len(function.body) > 20 or  # Long function
-            len(function.args.args) > 5 or  # Many arguments
-            len(list(ast.walk(function))) > 50  # Many AST nodes
-        )
 
 ```
 
