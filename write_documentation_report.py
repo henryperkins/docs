@@ -1,3 +1,11 @@
+"""
+write_documentation_report.py
+
+This module provides functions for generating documentation reports in both JSON (for frontend) 
+and Markdown formats. It includes utilities for creating badges, formatting tables, generating 
+summaries, and structuring documentation data.
+"""
+
 import aiofiles
 import re
 import json
@@ -5,18 +13,17 @@ import os
 import textwrap
 import logging
 import sys
-from typing import Optional, Dict, Any, List, cast
-import ast  # Import ast module
+from typing import Optional, Dict, Any, List, Union
+from pathlib import Path
 
-# Import default thresholds from utils
 from utils import (
     DEFAULT_COMPLEXITY_THRESHOLDS,
     DEFAULT_HALSTEAD_THRESHOLDS,
     DEFAULT_MAINTAINABILITY_THRESHOLDS,
+    get_threshold
 )
 
 logger = logging.getLogger(__name__)
-
 
 def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], logo: str = None) -> str:
     """Generates a Markdown badge for a given metric."""
@@ -163,156 +170,307 @@ def generate_summary(documentation: Dict[str, Any]) -> str:
 
 
 def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
-    """Generates a prompt for documentation generation."""
-    # ... (no changes)
+    """
+    Generates a prompt for documentation generation that is compatible with the provided schema.
+
+    Args:
+        file_name (str): The name of the file.
+        code_structure (dict): The code structure.
+        project_info (str): Information about the project.
+        style_guidelines (str): The style guidelines.
+        language (str): The programming language.
+        function_schema (dict): The function schema.
+
+    Returns:
+        str: The generated prompt.
+    """
+    docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
+    
+    prompt = f"""
+    You are a code documentation generator. Your task is to generate documentation for the following {language} file: '{file_name}'.
+    
+    Project Info:
+    {project_info}
+
+    Style Guidelines:
+    {style_guidelines}
+
+    Use the {docstring_format} style for docstrings.
+
+    The documentation should strictly follow this schema:
+    {{
+        "docstring_format": "{docstring_format}",
+        "summary": "A detailed summary of the file.",
+        "changes_made": ["List of changes made"],
+        "functions": [
+            {{
+                "name": "Function name",
+                "docstring": "Detailed description in {docstring_format} style",
+                "args": ["List of argument names"],
+                "async": true/false,
+                "complexity": integer
+            }}
+        ],
+        "classes": [
+            {{
+                "name": "Class name",
+                "docstring": "Detailed description in {docstring_format} style",
+                "methods": [
+                    {{
+                        "name": "Method name",
+                        "docstring": "Detailed description in {docstring_format} style",
+                        "args": ["List of argument names"],
+                        "async": true/false,
+                        "type": "instance/class/static",
+                        "complexity": integer
+                    }}
+                ]
+            }}
+        ],
+        "halstead": {{
+            "volume": number,
+            "difficulty": number,
+            "effort": number
+        }},
+        "maintainability_index": number,
+        "variables": [
+            {{
+                "name": "Variable name",
+                "type": "Inferred data type",
+                "description": "Description of the variable",
+                "file": "File name",
+                "line": integer,
+                "link": "Link to definition",
+                "example": "Example usage",
+                "references": "References to the variable"
+            }}
+        ],
+        "constants": [
+            {{
+                "name": "Constant name",
+                "type": "Inferred data type",
+                "description": "Description of the constant",
+                "file": "File name",
+                "line": integer,
+                "link": "Link to definition",
+                "example": "Example usage",
+                "references": "References to the constant"
+            }}
+        ]
+    }}
+
+    Ensure that all required fields are included and properly formatted according to the schema.
+
+    Given the following code structure:
+    {json.dumps(code_structure, indent=2)}
+
+    Generate detailed documentation that strictly follows the provided schema. Include the following:
+    1. A comprehensive summary of the file's purpose and functionality.
+    2. A list of recent changes or modifications made to the file.
+    3. Detailed documentation for all functions, including their arguments, return types, and whether they are asynchronous.
+    4. Comprehensive documentation for all classes and their methods, including inheritance information if applicable.
+    5. Information about all variables and constants, including their types, descriptions, and usage examples.
+    6. Accurate Halstead metrics (volume, difficulty, and effort) for the entire file.
+    7. The maintainability index of the file.
+
+    Ensure that all docstrings follow the {docstring_format} format and provide clear, concise, and informative descriptions.
+    """
+    return textwrap.dedent(prompt).strip()
 
 
 async def write_documentation_report(
-    documentation: Optional[dict],
+    documentation: Optional[Dict[str, Any]],
     language: str,
     file_path: str,
     repo_root: str,
     output_dir: str
-) -> Optional[str]:
-    """Generates and writes the documentation report."""
+) -> Optional[Dict[str, Any]]:
+    """
+    Generates documentation in both frontend-compatible JSON and Markdown formats.
 
+    Args:
+        documentation: The documentation data.
+        language: The programming language.
+        file_path: Path to the source file.
+        repo_root: Root directory of the repository.
+        output_dir: Output directory for documentation.
+
+    Returns:
+        Optional[Dict[str, Any]]: The formatted documentation data, or None if generation fails.
+    """
     if not documentation:
         logger.warning(f"No documentation to write for '{file_path}'")
         return None
 
     try:
+        # Create output directory
         os.makedirs(output_dir, exist_ok=True)
         relative_path = os.path.relpath(file_path, repo_root)
-        file_name = os.path.basename(file_path)  # Get file name
 
-        # Generate table of contents
-        toc = [
-            "# Table of Contents\n",
-            "1. [Overview](#overview)",
-            "2. [Code Structure](#code-structure)",
-            "3. [Dependencies](#dependencies)",
-            "4. [Metrics](#metrics)",
-            "\n---\n"
-        ]
+        # Generate frontend-compatible JSON structure
+        frontend_docs = {
+            "summary": documentation.get("summary", ""),
+            "classes": [
+                {
+                    "name": cls["name"],
+                    "docstring": cls["docstring"],
+                    "methods": [
+                        {
+                            "name": method["name"],
+                            "docstring": method["docstring"],
+                            "args": method.get("args", []),
+                            "async": method.get("async", False),
+                            "complexity": method.get("complexity", 0),
+                            "type": method.get("type", "instance")
+                        }
+                        for method in cls.get("methods", [])
+                    ]
+                }
+                for cls in documentation.get("classes", [])
+            ],
+            "functions": [
+                {
+                    "name": func["name"],
+                    "docstring": func["docstring"],
+                    "args": func.get("args", []),
+                    "async": func.get("async", False),
+                    "complexity": func.get("complexity", 0)
+                }
+                for func in documentation.get("functions", [])
+            ],
+            "metrics": {
+                "maintainability_index": documentation.get("maintainability_index", 0),
+                "complexity": documentation.get("complexity", 0),
+                "halstead": documentation.get("halstead", {
+                    "volume": 0,
+                    "difficulty": 0,
+                    "effort": 0
+                })
+            }
+        }
 
-        # Generate Overview section
-        overview = [
-            "# Overview\n",
-            f"**File:** `{file_name}`  ", # Use file_name variable
-            f"**Language:** {language}  ",
-            f"**Path:** `{relative_path}`  \n",
-            generate_summary(documentation), # Call generate_summary with documentation
-            "## Recent Changes\n",
-            "\n".join(f"- {change}" for change in documentation.get('changes_made', ['No recent changes.'])),
-            "\n"
-        ]
+        # Also generate Markdown content for reference
+        markdown_content = await generate_markdown_content(documentation, language, file_path, relative_path)
 
-        # Generate Code Structure section
-        code_structure_parts = ["# Code Structure\n"]
-
-        if documentation.get("classes"):
-            code_structure_parts.append("## Classes\n")
-            code_structure_parts.append(format_classes(documentation["classes"]))
-
-        if documentation.get("functions"):
-            code_structure_parts.append("## Functions\n")
-            code_structure_parts.append(format_functions(documentation["functions"]))
-
-        code_structure_md = "\n".join(code_structure_parts)
-
-
-        # Generate Dependencies section
-        dependencies = [
-            "# Dependencies\n",
-            "```mermaid",
-            "graph TD;",
-        ]
-        
-        # Create dependency graph (Consider replacing with a more robust library)
-        dep_map = {}
-        for dep in documentation.get('variables', []) + documentation.get('constants', []):
-            if dep.get('type') == 'import':
-                dep_name = dep['name']
-                dep_refs = dep.get('references', [])
-                dep_map[dep_name] = dep_refs
-                dependencies.append(f"    {dep_name}[{dep_name}];")
-        
-        for dep, refs in dep_map.items():
-            for ref in refs:
-                if ref in dep_map:
-                    dependencies.append(f"    {dep} --> {ref};")
-        
-        dependencies.extend(["```\n"])
-
-
-        # Generate Metrics section
-        metrics_parts = [
-            "# Metrics\n",
-            "## Code Quality\n",
-            generate_all_badges(documentation.get("metrics", {})),  # Pass the metrics dictionary
-        ]
-
-        if "halstead" in documentation:
-            halstead = documentation["halstead"]
-            metrics_parts.extend([ # Use metrics_parts
-                "## Halstead Metrics\n",
-                "| Metric | Value |",
-                "|--------|--------|",
-                f"| Volume | {halstead.get('volume', 0):.1f} |",
-                f"| Difficulty | {halstead.get('difficulty', 0):.1f} |",
-                f"| Effort | {halstead.get('effort', 0):.1f} |",
-                # ... Add other Halstead metrics here ...
-            ])
-
-        if "raw" in documentation:
-            raw = documentation["raw"]
-            metrics_parts.extend([ # Use metrics_parts
-                "## Raw Metrics\n",
-                "| Metric | Value |",
-                "|--------|--------|",
-                f"| Lines of Code (LOC) | {raw.get('loc', 0)} |",
-                f"| Logical Lines of Code (LLOC) | {raw.get('lloc', 0)} |",
-                f"| Source Lines of Code (SLOC) | {raw.get('sloc', 0)} |",
-                f"| Comments | {raw.get('comments', 0)} |",
-                f"| Multiline Strings | {raw.get('multi', 0)} |",
-                f"| Blank Lines | {raw.get('blank', 0)} |",
-            ])
-
-        if "quality" in documentation:
-            quality = documentation["quality"]
-            metrics_parts.extend([ # Use metrics_parts
-                "## Code Quality Metrics\n",
-                "| Metric | Value |",
-                "|--------|--------|",
-                f"| Average Method Length | {quality.get('avg_method_length', 0):.1f} |",
-                f"| Average Argument Count | {quality.get('avg_argument_count', 0):.1f} |",
-                f"| Max Nesting Level | {quality.get('max_nesting_level', 0)} |",
-                f"| Average Nesting Level | {quality.get('avg_nesting_level', 0):.1f} |",
-                # ... Add other code quality metrics here ...
-            ])
-
-        # Combine all sections
-        content = "\n".join([
-            *toc,
-            *overview,
-            code_structure_md,
-            *dependencies,
-            *metrics_parts # Correct variable name here
-        ])
-
-        # Write the documentation file
+        # Write both formats
         safe_filename = sanitize_filename(os.path.basename(file_path))
-        output_path = os.path.join(output_dir, f"{safe_filename}.md")
-        
-        async with aiofiles.open(output_path, 'w', encoding='utf-8') as f:
-            await f.write(content)
+        base_path = Path(output_dir) / safe_filename
 
-        logger.info(f"Documentation written to {output_path}")
-        return content
+        # Write JSON for frontend
+        json_path = base_path.with_suffix('.json')
+        async with aiofiles.open(json_path, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(frontend_docs, indent=2))
+
+        # Write Markdown for reference
+        md_path = base_path.with_suffix('.md')
+        async with aiofiles.open(md_path, 'w', encoding='utf-8') as f:
+            await f.write(markdown_content)
+
+        logger.info(f"Documentation written to {json_path} and {md_path}")
+        return frontend_docs
 
     except Exception as e:
         logger.error(f"Error writing documentation report: {e}", exc_info=True)
         return None
+
+async def generate_markdown_content(
+    documentation: Dict[str, Any],
+    language: str,
+    file_path: str,
+    relative_path: str
+) -> str:
+    """Generates enhanced markdown content with collapsible sections and better formatting."""
+    
+    # Generate table of contents
+    toc = [
+        "# Table of Contents\n",
+        "1. [Overview](#overview)",
+        "2. [Code Structure](#code-structure)",
+        "3. [Dependencies](#dependencies)",
+        "4. [Metrics](#metrics)",
+        "\n---\n"
+    ]
+
+    # Generate Overview section
+    overview = [
+        "# Overview\n",
+        f"**File:** `{os.path.basename(file_path)}`  ",
+        f"**Language:** {language}  ",
+        f"**Path:** `{relative_path}`  \n",
+        "## Summary\n",
+        f"{documentation.get('summary', 'No summary available.')}\n",
+        "## Recent Changes\n",
+        "\n".join(f"- {change}" for change in documentation.get('changes_made', ['No recent changes.'])),
+        "\n"
+    ]
+
+    # Generate Code Structure section
+    code_structure = ["# Code Structure\n"]
+    
+    if documentation.get("classes"):
+        code_structure.append("## Classes\n")
+        code_structure.append(format_classes(documentation["classes"]))
+
+    if documentation.get("functions"):
+        code_structure.append("## Functions\n")
+        code_structure.append(format_functions(documentation["functions"]))
+
+    # Generate Dependencies section
+    dependencies = [
+        "# Dependencies\n",
+        "```mermaid",
+        "graph TD;",
+    ]
+    
+    # Create dependency graph
+    dep_map = {}
+    for dep in documentation.get('variables', []) + documentation.get('constants', []):
+        if dep.get('type') == 'import':
+            dep_name = dep['name']
+            dep_refs = dep.get('references', [])
+            dep_map[dep_name] = dep_refs
+            dependencies.append(f"    {dep_name}[{dep_name}];")
+    
+    for dep, refs in dep_map.items():
+        for ref in refs:
+            if ref in dep_map:
+                dependencies.append(f"    {dep} --> {ref};")
+    
+    dependencies.extend(["```\n"])
+
+    # Generate Metrics section
+    metrics = [
+        "# Metrics\n",
+        "## Code Quality\n",
+        generate_all_badges(
+            complexity=documentation.get("complexity"),
+            halstead=documentation.get("halstead"),
+            mi=documentation.get("maintainability_index")
+        ),
+        "\n"
+    ]
+
+    if "halstead" in documentation:
+        halstead = documentation["halstead"]
+        metrics.extend([
+            "## Halstead Metrics\n",
+            "| Metric | Value |",
+            "|--------|--------|",
+            f"| Volume | {halstead.get('volume', 0):.1f} |",
+            f"| Difficulty | {halstead.get('difficulty', 0):.1f} |",
+            f"| Effort | {halstead.get('effort', 0):.1f} |",
+        ])
+
+    # Combine all sections
+    content = "\n".join([
+        *toc,
+        *overview,
+        *code_structure,
+        *dependencies,
+        *metrics
+    ])
+
+    return content
 
 
 def get_metric_status(value: float) -> str:
