@@ -1,4 +1,6 @@
 # Dependencies
+.git/*
+.github/*
 /node_modules
 /.pnp
 .pnp.js

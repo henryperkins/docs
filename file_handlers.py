@@ -19,7 +19,6 @@ from utils import (
     clean_unused_imports_async,
     format_with_black_async,
     should_process_file,
-    prepare_file,
 )
 from write_documentation_report import generate_documentation_prompt, write_documentation_report
 from context_manager import ContextManager
@@ -87,7 +86,7 @@ async def backup_and_write_new_content(file_path: str, new_content: str) -> None
                 logger.error(f"Failed to restore backup for '{file_path}': {restore_error}", exc_info=True)
 
 
-def validate_ai_response(response: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]]:
+def validate_ai_response(response: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validates the AI response against the provided schema.
 

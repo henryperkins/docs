@@ -10,6 +10,7 @@ import json
 import logging
 import asyncio
 import subprocess
+import pathspec
 from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
 from jsonschema import Draft7Validator, ValidationError, SchemaError
@@ -464,6 +465,53 @@ async def run_node_insert_docstrings(script_name: str, input_data: dict) -> Opti
 # ----------------------------
 # Documentation Generation
 # ----------------------------
+
+def calculate_project_metrics(successful_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculates aggregate project metrics."""
+
+    if not successful_results:
+        logger.warning("No successful results to calculate project metrics.")  # Add warning
+        return {  # Return default metrics
+            "maintainability_index": 0,
+            "complexity": 0,
+            "halstead": {
+                "volume": 0,
+                "difficulty": 0,
+                "effort": 0,
+            },
+        }
+
+    total_files = len(successful_results)
+    metric_sums = {  # Use a dictionary to store sums
+        "maintainability_index": 0,
+        "complexity": 0,
+        "halstead_volume": 0,
+        "halstead_difficulty": 0,
+        "halstead_effort": 0,
+    }
+
+    for result in successful_results:
+        metrics = result.get("metrics", {selectedText})
+        for metric_name in metric_sums:
+            try:
+                value = float(metrics.get(metric_name.replace("halstead_", "halstead."))) # Handle nested Halstead metrics
+                metric_sums[metric_name] += value
+            except (TypeError, ValueError):
+                logger.warning(f"Invalid value for {metric_name} in file {result.get('file_path', 'unknown')}: {metrics.get(metric_name)}")
+
+    # Calculate averages and aggregate metrics
+    avg_maintainability = metric_sums["maintainability_index"] / total_files if total_files else 0
+    
+    return {
+        "maintainability_index": avg_maintainability,
+        "complexity": metric_sums["complexity"],
+        "halstead": {
+            "volume": metric_sums["halstead_volume"],
+            "difficulty": metric_sums["halstead_difficulty"] / total_files if total_files else 0,
+            "effort": metric_sums["halstead_effort"],
+        },
+        # ... (Add other aggregate metrics here)
+    }
 
 def validate_schema(schema_path: str) -> Optional[Dict[str, Any]]:
     """

@@ -1,4 +1,5 @@
 # process_manager.py
+import os
 import asyncio
 import aiohttp
 import json
@@ -12,10 +13,10 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from utils import load_function_schema, generate_markdown_content, sanitize_filename, calculate_project_metrics, should_process_file
-from file_handlers import process_file, generate_documentation_prompt
+from utils import load_function_schema, calculate_project_metrics, should_process_file
+from file_handlers import process_file
 from context_manager import ContextManager
-from write_documentation_report import write_documentation_report
+from write_documentation_report import write_documentation_report, generate_markdown_content, generate_documentation_prompt, sanitize_filename
 
 logger = logging.getLogger(__name__)
 
