@@ -1,11 +1,13 @@
+// src/App.tsx
 import React from 'react';
+import { DocumentationProvider } from './stores/DocumentationContext';
 import DocumentationViewer from './components/DocumentationViewer';
 
 const App: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <DocumentationProvider>
       <DocumentationViewer />
-    </div>
+    </DocumentationProvider>
   );
 };
 
