@@ -1,4 +1,5 @@
 # js_ts_handler.py
+
 import os
 import logging
 import subprocess
@@ -116,9 +117,16 @@ class JSTsHandler(BaseHandler):
                     capture_output=True,
                     text=True
                 )
+                if result.returncode == 0:
+                    logger.debug("ESLint validation passed.")
+                else:
+                    logger.error(f"ESLint validation failed: {result.stdout}\n{result.stderr}")
                 return result.returncode == 0
             finally:
-                os.unlink(temp_path)
+                try:
+                    os.unlink(temp_path)
+                except OSError as e:
+                    logger.error(f"Error deleting temporary file {temp_path}: {e}")
 
         except Exception as e:
             logger.error(f"Validation error: {str(e)}", exc_info=True)
@@ -142,10 +150,29 @@ class JSTsHandler(BaseHandler):
                 input_data=input_data,
                 error_message="Metrics calculation failed"
             )
-            logger.debug(f"Metrics calculation result: {result}")
+            logger.debug(f"Metrics calculation result: {result}")  # Added logging
 
-            if result is None or not isinstance(result, dict) or not all(key in result for key in ["complexity", "maintainability", "halstead", "functions"]):
-                logger.error("Invalid metrics result format.")
+            if result is None:
+                logger.error("Metrics calculation returned None.")
+                return None
+
+            if not isinstance(result, dict):
+                logger.error(f"Metrics result is not a dictionary: {type(result)}")
+                return None
+
+            required_keys = ["complexity", "maintainability", "halstead", "functions"]
+            if not all(key in result for key in required_keys):
+                missing_keys = [key for key in required_keys if key not in result]
+                logger.error(f"Metrics result is missing keys: {missing_keys}")
+                return None
+
+            # Ensure all necessary fields are of correct type
+            if not isinstance(result["halstead"], dict):
+                logger.error("Halstead metrics should be a dictionary.")
+                return None
+
+            if not isinstance(result["functions"], dict):
+                logger.error("Function metrics should be a dictionary.")
                 return None
 
             return MetricsResult(
@@ -257,7 +284,8 @@ class JSTsHandler(BaseHandler):
         if isinstance(result, str):
             return result
         elif isinstance(result, dict):
-            return json.dumps(result)
+            # Assuming js_ts_inserter.js returns the modified code as JSON with a 'code' key
+            return result.get("code")
         else:
             logger.error("Inserter script did not return code string.")
             return None
@@ -265,6 +293,12 @@ class JSTsHandler(BaseHandler):
     def _run_script(self, script_name: str, input_data: Dict[str, Any], error_message: str) -> Any:
         try:
             script_path = os.path.join(self.script_dir, script_name)
+            if not os.path.isfile(script_path):
+                logger.error(f"Script not found: {script_path}")
+                return None
+
+            logger.debug(f"Running script: {script_path} with input data: {input_data}")
+
             process = subprocess.run(
                 ['node', script_path],
                 input=json.dumps(input_data, ensure_ascii=False).encode('utf-8'),
@@ -278,12 +312,15 @@ class JSTsHandler(BaseHandler):
                 return None
 
             output = process.stdout.strip()
+            logger.debug(f"Script Output ({script_name}): {output}")  # Added logging
+
             try:
                 return json.loads(output)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 if script_name == "js_ts_inserter.js":
+                    # If inserter script returns plain code, not JSON
                     return output
-                logger.error(f"{error_message}: Invalid JSON output")
+                logger.error(f"{error_message}: Invalid JSON output. Error: {e}")
                 return None
 
         except subprocess.CalledProcessError as e:

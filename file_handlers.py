@@ -462,52 +462,42 @@ async def process_all_files(
 
 
 def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str:
-    """
-    Extracts critical information from the code structure to be used as persistent context.
-
-    Args:
-        code_structure (Dict[str, Any]): The extracted code structure.
-        file_path (str): Path to the source file.
-
-    Returns:
-        str: A formatted string containing critical context information.
-    """
+    """Extracts critical information from the code structure."""
     info_lines = [f"File: {file_path}"]
-    
-    # Extract function signatures
+
     functions = code_structure.get("functions", [])
     for func in functions:
-        if isinstance(func, dict):  # Check if func is a dictionary
-            signature = f"def {func.get('name', 'unknown')}({', '.join(func.get('args', []))}):"
+        if isinstance(func, dict):
+            # Extract argument names as strings
+            arg_names = [arg.get("name", "unknown") for arg in func.get("args", [])]
+            signature = f"def {func.get('name', 'unknown')}({', '.join(arg_names)}):"
             doc = func.get('docstring', '').split('\n')[0]
             info_lines.append(f"{signature}  # {doc}")
-    
-    # Extract class definitions
+
     classes = code_structure.get("classes", [])
     for cls in classes:
-        if isinstance(cls, dict):  # Check if cls is a dictionary
+        if isinstance(cls, dict):
             class_info = f"class {cls.get('name', 'unknown')}:"
             doc = cls.get('docstring', '').split('\n')[0]
             info_lines.append(f"{class_info}  # {doc}")
-            
-            # Include methods
+
             for method in cls.get('methods', []):
-                if isinstance(method, dict):  # Check if method is a dictionary
-                    method_signature = f"    def {method.get('name', 'unknown')}({', '.join(method.get('args', []))}):"
+                if isinstance(method, dict):
+                    # Extract argument names for methods
+                    method_arg_names = [arg.get("name", "unknown") for arg in method.get("args", [])]
+                    method_signature = f"    def {method.get('name', 'unknown')}({', '.join(method_arg_names)}):"
                     method_doc = method.get('docstring', '').split('\n')[0]
                     info_lines.append(f"{method_signature}  # {method_doc}")
-    
-    # Extract important variables
+
     variables = code_structure.get("variables", [])
     for var in variables:
-        if isinstance(var, dict):  # Check if var is a dictionary
+        if isinstance(var, dict):
             var_info = f"{var.get('name', 'unknown')} = "
             var_type = var.get('type', 'Unknown')
             var_desc = var.get('description', '').split('\n')[0]
             info_lines.append(f"{var_info}  # Type: {var_type}, {var_desc}")
-        elif isinstance(var, str):  # Handle string variables
-            info_lines.append(f"{var} = ")  # Just add the variable name if it's a string
-    
+
+
     critical_info = "\n".join(info_lines)
     return critical_info
 

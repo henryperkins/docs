@@ -1,9 +1,14 @@
-// js_ts_metrics.js
 const escomplex = require('typhonjs-escomplex');
 
-process.stdin.on('data', async (data) => {
+let inputData = '';
+
+process.stdin.on('data', (chunk) => {
+    inputData += chunk;
+});
+
+process.stdin.on('end', () => {
     try {
-        const input = JSON.parse(data.toString());
+        const input = JSON.parse(inputData);
         const code = input.code;
         const options = input.options;
 

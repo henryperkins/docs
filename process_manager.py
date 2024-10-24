@@ -5,6 +5,7 @@ import aiofiles
 import aiohttp
 import json
 import logging
+import sys
 import uuid
 from typing import List, Set, Dict, Any, Optional, Tuple
 from pathlib import Path
@@ -17,7 +18,12 @@ from pydantic import BaseModel
 from utils import load_function_schema, calculate_project_metrics, should_process_file
 from file_handlers import process_file
 from context_manager import ContextManager
-from write_documentation_report import write_documentation_report, generate_markdown_content, generate_documentation_prompt, sanitize_filename
+from write_documentation_report import (
+    write_documentation_report, 
+    generate_markdown_content, 
+    generate_documentation_prompt, 
+    sanitize_filename
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,20 @@ class DocumentationResponse(BaseModel):
 
 
 class DocumentationProcessManager:
+    """
+    Manages the documentation generation process for multiple files concurrently.
+
+    Attributes:
+        repo_root (Path): Root directory of the repository.
+        output_dir (Path): Directory where documentation will be saved.
+        azure_config (Dict[str, Any]): Configuration details for Azure OpenAI.
+        function_schema (Dict[str, Any]): Schema for function documentation.
+        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
+        context_manager (ContextManager): Manages contextual information.
+        active_tasks (Dict[str, Dict[str, Any]]): Tracks active documentation tasks.
+        safe_mode (bool): Indicates if safe mode is enabled.
+    """
+
     def __init__(
         self,
         repo_root: str,
@@ -47,14 +67,14 @@ class DocumentationProcessManager:
         function_schema: Dict[str, Any],
         max_concurrency: int = 5,
     ):
-        self.repo_root = Path(repo_root)
-        self.output_dir = Path(output_dir)
+        self.repo_root = Path(repo_root).resolve()
+        self.output_dir = Path(output_dir).resolve()
         self.azure_config = azure_config
         self.function_schema = function_schema
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.context_manager = ContextManager()
         self.active_tasks: Dict[str, Dict[str, Any]] = {}
-        self.safe_mode = False # Initialize safe_mode
+        self.safe_mode = False  # Initialize safe_mode
 
     async def process_files(
         self,
@@ -63,7 +83,7 @@ class DocumentationProcessManager:
         skip_types: Set[str],
         project_info: str,
         style_guidelines: str,
-        safe_mode: bool,  # Make sure safe_mode is passed here
+        safe_mode: bool,
     ) -> Dict[str, Any]:
         """Processes files, tracks progress, and updates frontend data."""
 
@@ -92,29 +112,30 @@ class DocumentationProcessManager:
                     if self._should_process(file_path, skip_types)
                 ]
 
-                for file_path in file_paths:
-                    if not self._should_process(file_path, skip_types):
-                        self.active_tasks[task_id]["results"]["skipped"].append(file_path)
-
+                # Handle skipped files
+                skipped_files = [
+                    file_path for file_path in file_paths
+                    if not self._should_process(file_path, skip_types)
+                ]
+                self.active_tasks[task_id]["results"]["skipped"].extend(skipped_files)
                 total_files = len(file_paths)
-                completed_files = 0
+                processed_files = 0  # Tracks processed files (successful + failed)
 
                 for future in asyncio.as_completed(tasks):
-                    completed_files += 1
                     try:
-                        result = await future
+                        result = await future  # Await the future
                         if result:
                             self.active_tasks[task_id]["results"]["successful"].append(result)
                         else:
-                            # Store the actual exception object for debugging
-                            self.active_tasks[task_id]["results"]["failed"].append(future.exception())  
+                            self.active_tasks[task_id]["results"]["failed"].append("Processing failed")
                     except Exception as e:
                         logger.error(f"Task failed: {e}", exc_info=True)
-                        self.active_tasks[task_id]["results"]["failed"].append(e)
+                        self.active_tasks[task_id]["results"]["failed"].append(str(e))
 
-                    progress = (completed_files / total_files) * 100 if total_files > 0 else 100
+                    processed_files += 1
+                    progress = (processed_files / total_files) * 100 if total_files > 0 else 100
                     self.active_tasks[task_id]["progress"] = progress
-                    await self._update_frontend_data(task_id, completed_files, total_files)
+                    await self._update_frontend_data(task_id, processed_files, total_files)
 
             self.active_tasks[task_id]["status"] = "completed"
             return self.active_tasks[task_id]["results"]
@@ -122,9 +143,8 @@ class DocumentationProcessManager:
         except Exception as e:
             logger.error(f"Error in process_files: {e}", exc_info=True)
             self.active_tasks[task_id]["status"] = "failed"
-            self.active_tasks[task_id]["results"]["failed"].append(e)
+            self.active_tasks[task_id]["results"]["failed"].append(str(e))
             return self.active_tasks[task_id]["results"]
-
 
     async def _process_single_file(
         self,
@@ -172,7 +192,6 @@ class DocumentationProcessManager:
             logger.error(f"Error processing {file_path}: {e}", exc_info=True)
             return None
 
-
     async def _update_frontend_data(self, task_id: str, completed: int, total: int):
         """Updates frontend data with progress and results."""
 
@@ -190,19 +209,29 @@ class DocumentationProcessManager:
             "skipped": len(self.active_tasks[task_id]["results"]["skipped"]),
         }
 
-        async with aiofiles.open(status_file, "w") as f:
-            await f.write(json.dumps(status_data, indent=2))
+        try:
+            async with aiofiles.open(status_file, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(status_data, indent=2))
+            logger.debug(f"Updated status file: {status_file}")
+        except Exception as e:
+            logger.error(f"Error writing status file: {e}", exc_info=True)
 
-        summary_file = output_dir / "summary.json"
-
+        # Aggregate successful documentation
         successful_docs = []
         for result in self.active_tasks[task_id]["results"]["successful"]:
-            try:
-                with open(self.output_dir / task_id / f"{sanitize_filename(Path(result).stem)}.json", "r") as f:
-                    successful_docs.append(json.load(f))
-            except Exception as e:
-                logger.error(f"Error loading successful documentation: {e}", exc_info=True)
+            doc_path = self.output_dir / task_id / f"{sanitize_filename(Path(result).stem)}.json"
+            if doc_path.exists():
+                try:
+                    async with aiofiles.open(doc_path, "r", encoding="utf-8") as f:
+                        content = await f.read()
+                        successful_docs.append(json.loads(content))
+                except Exception as e:
+                    logger.error(f"Error loading successful documentation from {doc_path}: {e}", exc_info=True)
+            else:
+                logger.warning(f"Documentation file does not exist: {doc_path}")
 
+        # Calculate project metrics based on successful documentation
+        metrics = calculate_project_metrics(successful_docs)
 
         summary_data = {
             "files": [
@@ -213,16 +242,23 @@ class DocumentationProcessManager:
                 }
                 for result in self.active_tasks[task_id]["results"]["successful"] + self.active_tasks[task_id]["results"]["failed"]
             ],
-            "metrics": calculate_project_metrics(successful_docs),
+            "metrics": metrics,
         }
 
-        async with aiofiles.open(summary_file, "w") as f:
-            await f.write(json.dumps(summary_data, indent=2))
+        summary_file = output_dir / "summary.json"
 
+        try:
+            async with aiofiles.open(summary_file, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(summary_data, indent=2))
+            logger.debug(f"Updated summary file: {summary_file}")
+        except Exception as e:
+            logger.error(f"Error writing summary file: {e}", exc_info=True)
 
     def _should_process(self, file_path: str, skip_types: Set[str]) -> bool:
         """Checks if a file should be processed."""
-        return should_process_file(file_path, skip_types)
+        should = should_process_file(file_path, skip_types)
+        logger.debug(f"Should process '{file_path}': {should}")
+        return should
 
 
 # FastAPI setup
@@ -236,24 +272,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize DocumentationProcessManager with environment variables
+repo_root_env = os.getenv("REPO_ROOT")
+output_dir_env = os.getenv("OUTPUT_DIR", "documentation")
+azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+api_version = os.getenv("API_VERSION")
+
+if not all([repo_root_env, azure_deployment, azure_api_key, azure_endpoint, api_version]):
+    logger.critical("Missing required environment variables. Please set REPO_ROOT, AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and API_VERSION.")
+    sys.exit(1)
+
+function_schema_path = os.getenv("FUNCTION_SCHEMA_PATH", "schemas/function_schema.json")
+function_schema = load_function_schema(function_schema_path)
+
 manager = DocumentationProcessManager(
-    repo_root=os.getenv("REPO_ROOT", ""),
-    output_dir=os.getenv("OUTPUT_DIR", "documentation"),
+    repo_root=repo_root_env,
+    output_dir=output_dir_env,
     azure_config={
-        "AZURE_OPENAI_DEPLOYMENT": os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-        "AZURE_OPENAI_API_KEY": os.getenv("AZURE_OPENAI_API_KEY"),
-        "AZURE_OPENAI_ENDPOINT": os.getenv("AZURE_OPENAI_ENDPOINT"),
-        "API_VERSION": os.getenv("API_VERSION"),
+        "AZURE_OPENAI_DEPLOYMENT": azure_deployment,
+        "AZURE_OPENAI_API_KEY": azure_api_key,
+        "AZURE_OPENAI_ENDPOINT": azure_endpoint,
+        "API_VERSION": api_version,
     },
-    function_schema=load_function_schema("schemas/function_schema.json"),
+    function_schema=function_schema,
+    max_concurrency=5,  # You can make this configurable if needed
 )
 
-@app.post("/api/documentation/generate")
+
+@app.post("/api/documentation/generate", response_model=DocumentationResponse)
 async def generate_documentation(
     request: DocumentationRequest, background_tasks: BackgroundTasks
 ) -> DocumentationResponse:
-    """Endpoint to trigger documentation generation."""
+    """
+    Endpoint to trigger documentation generation.
+
+    Args:
+        request (DocumentationRequest): The documentation generation request payload.
+        background_tasks (BackgroundTasks): FastAPI background tasks manager.
+
+    Returns:
+        DocumentationResponse: Response containing task ID, status, and progress.
+    """
     task_id = str(uuid.uuid4())
+    logger.info(f"Received documentation generation request. Task ID: {task_id}")
     background_tasks.add_task(
         manager.process_files,
         task_id=task_id,
@@ -261,14 +324,25 @@ async def generate_documentation(
         skip_types=request.skip_types,
         project_info=request.project_info,
         style_guidelines=request.style_guidelines,
+        safe_mode=request.safe_mode,
     )
     return DocumentationResponse(task_id=task_id, status="started", progress=0.0)
 
 
-@app.get("/api/documentation/status/{task_id}")
+@app.get("/api/documentation/status/{task_id}", response_model=DocumentationResponse)
 async def get_documentation_status(task_id: str) -> DocumentationResponse:
-    """Endpoint to check documentation generation status."""
-    if (task_info := manager.active_tasks.get(task_id)) is None:  # Use walrus operator for cleaner code
+    """
+    Endpoint to check documentation generation status.
+
+    Args:
+        task_id (str): The unique task ID.
+
+    Returns:
+        DocumentationResponse: Current status and progress of the task.
+    """
+    task_info = manager.active_tasks.get(task_id)
+    if not task_info:
+        logger.warning(f"Status request for unknown Task ID: {task_id}")
         raise HTTPException(status_code=404, detail="Task not found")
 
     return DocumentationResponse(
@@ -279,18 +353,30 @@ async def get_documentation_status(task_id: str) -> DocumentationResponse:
     )
 
 
-@app.get("/api/documentation/{project_id}")
+@app.get("/api/documentation/{project_id}", response_class=JSONResponse)
 async def get_documentation(project_id: str, file_path: Optional[str] = None):
-    """Endpoint to retrieve generated documentation."""
+    """
+    Endpoint to retrieve generated documentation.
+
+    Args:
+        project_id (str): The unique project ID.
+        file_path (Optional[str]): Specific file path to retrieve documentation for.
+
+    Returns:
+        JSONResponse: The requested documentation content.
+    """
     try:
-        output_dir = Path("documentation") / project_id
+        sanitized_project_id = sanitize_filename(project_id)
+        output_dir = Path("documentation") / sanitized_project_id
 
         if file_path:
-            doc_file = output_dir / f"{sanitize_filename(Path(file_path).stem)}.json"
+            sanitized_file_path = sanitize_filename(file_path)
+            doc_file = output_dir / f"{sanitized_file_path}.json"
         else:
             doc_file = output_dir / "summary.json"
 
         if not doc_file.exists():
+            logger.warning(f"Documentation file not found: {doc_file}")
             raise HTTPException(status_code=404, detail="Documentation not found")
 
         async with aiofiles.open(doc_file, "r", encoding="utf-8") as f:
@@ -304,21 +390,33 @@ async def get_documentation(project_id: str, file_path: Optional[str] = None):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/api/code/{project_id}/{file_path}") # Corrected path
+@app.get("/api/code/{project_id}/{file_path}", response_class=JSONResponse)
 async def get_code_content(project_id: str, file_path: str):
-    """Endpoint to retrieve code content for a given file."""
-    try:
-        # Construct the full file path - use REPO_ROOT from environment
-        base_dir = Path(os.getenv("REPO_ROOT", "")) / project_id
-        full_file_path = base_dir / file_path
+    """
+    Endpoint to retrieve code content for a given file.
 
-        if not full_file_path.exists() or not full_file_path.is_file():
+    Args:
+        project_id (str): The unique project ID.
+        file_path (str): The relative file path within the project.
+
+    Returns:
+        JSONResponse: The code content of the specified file.
+    """
+    try:
+        sanitized_project_id = sanitize_filename(project_id)
+        sanitized_file_path = sanitize_filename(file_path)
+        base_dir = Path(os.getenv("REPO_ROOT", "")).resolve() / sanitized_project_id
+        full_file_path = (base_dir / sanitized_file_path).resolve()
+
+        # Ensure the file is within the repo_root to prevent directory traversal
+        if not full_file_path.is_file() or not full_file_path.is_relative_to(self.repo_root):
+            logger.warning(f"Invalid code file request: {full_file_path}")
             raise HTTPException(status_code=404, detail="Code not found")
 
         async with aiofiles.open(full_file_path, "r", encoding="utf-8") as f:
             code_content = await f.read()
 
-        return JSONResponse(content={"code": code_content}) # Return as JSONResponse
+        return JSONResponse(content={"code": code_content})
 
     except HTTPException:
         raise

@@ -1,265 +1,152 @@
-"""
-metrics.py
-
-This module provides functions for calculating various code metrics, including:
-- Halstead complexity metrics
-- Cyclomatic complexity
-- Maintainability index
-- Raw metrics (lines of code, blank lines, comment lines, etc.)
-- Other code quality metrics (method length, argument count, etc.)
-"""
-
-import logging
-import math
-from typing import Dict, Any, Tuple, Optional
 import ast
+import logging
+from typing import Dict, Any, TypedDict
 
-from radon.complexity import cc_visit, SCORE
-from radon.metrics import h_visit, mi_visit  # Correct import
-from radon.raw import analyze
-from radon.visitors import Halstead  # Import Halstead for type hinting
+from radon.metrics import h_visit, mi_visit
+from radon.complexity import cc_visit, ComplexityVisitor
 
 logger = logging.getLogger(__name__)
 
-def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
+class HalsteadMetrics(TypedDict):
+    h1: int
+    h2: int
+    N1: int
+    N2: int
+    vocabulary: int
+    length: int
+    calculated_length: float
+    volume: float
+    difficulty: float
+    effort: float
+    time: float
+    bugs: float
+
+class CodeMetrics(TypedDict):
+    maintainability_index: float
+    cyclomatic: float
+    halstead: HalsteadMetrics
+    function_complexity: Dict[str, float]
+    raw: Any
+    quality: Any
+
+def calculate_halstead_metrics(code: str) -> HalsteadMetrics:
     """Calculates Halstead complexity metrics."""
+    logger.debug("Starting Halstead metrics calculation.")
+    default_halstead_metrics = HalsteadMetrics(
+        h1=0,
+        h2=0,
+        N1=0,
+        N2=0,
+        vocabulary=0,
+        length=0,
+        calculated_length=0.0,
+        volume=0.0,
+        difficulty=0.0,
+        effort=0.0,
+        time=0.0,
+        bugs=0.0,
+    )
+
     try:
         halstead_reports = h_visit(code)
-        metrics = {}
+        logger.debug(f"Halstead reports: {halstead_reports}")
+
+        if not halstead_reports:
+            logger.warning("No Halstead metrics found.")
+            return default_halstead_metrics
 
         if isinstance(halstead_reports, list):
-            for report in halstead_reports:
-                # Access operators and operands from report.total, NOT the accumulated object
-                total_metrics = report.total
-                h1 = len(total_metrics.operators)
-                h2 = len(total_metrics.operands)
-                N1 = sum(total_metrics.operators.values())
-                N2 = sum(total_metrics.operands.values())
-
-                vocabulary = h1 + h2
-                length = N1 + N2
-                volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
-                difficulty = (h1 * N2) / (2 * h2) if h2 > 0 else 0
-                effort = difficulty * volume
-
-                metrics[report.name] = {  # Use report.name for key
-                    "volume": round(volume, 2),
-                    "difficulty": round(difficulty, 2),
-                    "effort": round(effort, 2),
-                    # ... other Halstead metrics ...
-                }
-
-        elif isinstance(halstead_reports, Halstead):  # Single block (unlikely but handled)
-            total_metrics = halstead_reports
-            h1 = len(total_metrics.operators)
-            h2 = len(total_metrics.operands)
-            N1 = sum(total_metrics.operators.values())
-            N2 = sum(total_metrics.operands.values())
-
-            vocabulary = h1 + h2
-            length = N1 + N2
-            volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
-            difficulty = (h1 * N2) / (2 * h2) if h2 > 0 else 0
-            effort = difficulty * volume
-
-            metrics["total"] = {  # Use 'total' as key for single block
-                "volume": round(volume, 2),
-                "difficulty": round(difficulty, 2),
-                "effort": round(effort, 2),
-                # ... other Halstead metrics ...
-            }
-
+            metrics = halstead_reports[0]
         else:
-            logger.warning("Unexpected Halstead report format.")
-            return {}
+            metrics = halstead_reports
 
-        return metrics
+        halstead_metrics = HalsteadMetrics(
+            h1=metrics.h1,
+            h2=metrics.h2,
+            N1=metrics.N1,
+            N2=metrics.N2,
+            vocabulary=metrics.vocabulary,
+            length=metrics.length,
+            calculated_length=metrics.calculated_length,
+            volume=metrics.volume,
+            difficulty=metrics.difficulty,
+            effort=metrics.effort,
+            time=metrics.time,
+            bugs=metrics.bugs,
+        )
+        logger.debug(f"Calculated Halstead metrics: {halstead_metrics}")
+        return halstead_metrics
 
     except Exception as e:
         logger.error(f"Error calculating Halstead metrics: {e}", exc_info=True)
+        return default_halstead_metrics
+
+def calculate_maintainability_index(code: str) -> float:
+    """Calculates the Maintainability Index."""
+    logger.debug("Starting Maintainability Index calculation.")
+    try:
+        maintainability_index = mi_visit(code, False)
+        logger.debug(f"Calculated Maintainability Index: {maintainability_index}")
+        return maintainability_index
+    except Exception as e:
+        logger.error(f"Error calculating Maintainability Index: {e}")
+        return 0.0
+
+def calculate_complexity(code: str) -> Dict[str, float]:
+    """Calculates the Cyclomatic Complexity for each function in the code."""
+    logger.debug("Starting Cyclomatic Complexity calculation.")
+    try:
+        complexity_visitor = ComplexityVisitor.from_code(code)
+        function_complexity = {
+            block.name: block.complexity for block in complexity_visitor.functions + complexity_visitor.classes
+        }
+        logger.debug(f"Calculated Cyclomatic Complexity: {function_complexity}")
+
+        if not function_complexity:
+            logger.warning("No cyclomatic complexity metrics found.")
+
+        return function_complexity
+
+    except Exception as e:
+        logger.error(f"Error calculating Cyclomatic Complexity: {e}")
         return {}
 
-def calculate_cyclomatic_complexity(code: str) -> Tuple[Dict[str, int], int]:
-    """Calculates cyclomatic complexity."""
-    try:
-        complexity_scores = cc_visit(code)
-        function_complexity = {score.fullname: score.complexity for score in complexity_scores}
-        total_complexity = sum(score.complexity for score in complexity_scores)
-        return function_complexity, total_complexity
-    except Exception as e:
-        logger.error(f"Error calculating cyclomatic complexity: {e}")
-        return {}, 0
+def calculate_code_metrics(code: str) -> CodeMetrics:
+    """Calculates various code metrics."""
+    logger.debug("Starting code metrics calculation.")
+    if isinstance(code, bytes):  # Ensure code is a string
+        code = code.decode("utf-8")
 
-def calculate_maintainability_index(code: str) -> Optional[float]:
-    """Calculates maintainability index."""
-    try:
-        return mi_visit(code, True)
-    except Exception as e:
-        logger.error(f"Error calculating maintainability index: {e}")
-        return None
+    halstead_metrics = calculate_halstead_metrics(code)
+    maintainability_index = calculate_maintainability_index(code)
+    function_complexity = calculate_complexity(code)
 
+    code_metrics: CodeMetrics = {
+        "maintainability_index": maintainability_index,
+        "cyclomatic": sum(function_complexity.values()) / len(function_complexity) if function_complexity else 0.0,
+        "halstead": halstead_metrics,
+        "function_complexity": function_complexity,
+        "raw": None,  # Placeholder for any raw data if needed
+        "quality": None,  # Placeholder for quality metrics if needed
+    }
 
-def calculate_raw_metrics(code: str) -> Dict[str, int]:
-    """Calculates raw metrics (LOC, comments, blank lines, etc.)."""
-    try:
-        raw_metrics = analyze(code)
-        return {
-            "loc": raw_metrics.loc,
-            "lloc": raw_metrics.lloc,
-            "sloc": raw_metrics.sloc,
-            "comments": raw_metrics.comments,
-            "multi": raw_metrics.multi,
-            "blank": raw_metrics.blank,
-        }
-    except Exception as e:
-        logger.error(f"Error calculating raw metrics: {e}")
-        return {
-            "loc": 0,
-            "lloc": 0,
-            "sloc": 0,
-            "comments": 0,
-            "multi": 0,
-            "blank": 0,
-        }
+    logger.info(f"Aggregated Code Metrics: {code_metrics}")
+    return code_metrics
 
-def calculate_code_quality_metrics(code: str) -> Dict[str, Any]:
-    """Calculates code quality metrics."""
-    try:
-        tree = ast.parse(code)
-        metrics = {
-            "method_length": [],
-            "argument_count": [],
-            "nesting_level": [],
-            "function_complexity": {},  # Initialize here
-        }
+# Example usage for testing purposes
+if __name__ == "__main__":
+    sample_code = """
+def add(a, b):
+    return a + b
 
-        class QualityVisitor(ast.NodeVisitor):
+class Calculator:
+    def subtract(self, a, b):
+        if a > b:
+            return a - b
+        else:
+            return b - a
+    """
 
-            def __init__(self):
-                self.current_nesting = 0
-                self.max_nesting = 0
-                self.function_name = "" # Track current function name
-
-            def visit_FunctionDef(self, node):
-                self.current_nesting = 0
-                self.max_nesting = 0
-                self.function_name = node.name # Set current function name
-                self.generic_visit(node)
-                metrics["nesting_level"].append(self.max_nesting)
-                metrics["method_length"].append(node.end_lineno - node.lineno + 1)
-                metrics["argument_count"].append(len(node.args.args))
-                metrics["function_complexity"][self.function_name] = self.max_nesting # Assign complexity
-
-            def visit_AsyncFunctionDef(self, node):
-                self.visit_FunctionDef(node)  # Treat async functions the same
-
-            def visit_If(self, node):
-                self.current_nesting += 1
-                self.max_nesting = max(self.max_nesting, self.current_nesting)
-                self.generic_visit(node)
-                self.current_nesting -= 1
-
-            def visit_While(self, node):
-                self.current_nesting += 1
-                self.max_nesting = max(self.max_nesting, self.current_nesting)
-                self.generic_visit(node)
-                self.current_nesting -= 1
-
-            def visit_For(self, node):
-                self.current_nesting += 1
-                self.max_nesting = max(self.max_nesting, self.current_nesting)
-                self.generic_visit(node)
-                self.current_nesting -= 1
-
-            # ... (Add similar logic for other nesting structures: try, except, etc.)
-
-        QualityVisitor().visit(tree)
-
-        metrics["max_nesting_level"] = max(metrics["nesting_level"]) if metrics["nesting_level"] else 0
-        metrics["avg_nesting_level"] = sum(metrics["nesting_level"]) / len(metrics["nesting_level"]) if metrics["nesting_level"] else 0
-        metrics["avg_method_length"] = sum(metrics["method_length"]) / len(metrics["method_length"]) if metrics["method_length"] else 0
-        metrics["avg_argument_count"] = sum(metrics["argument_count"]) / len(metrics["argument_count"]) if metrics["argument_count"] else 0
-
-
-        return metrics
-
-    except Exception as e:
-        logger.error(f"Error calculating code quality metrics: {e}")
-        return {
-            "method_length": [],
-            "argument_count": [],
-            "nesting_level": [],
-            "avg_method_length": 0,
-            "avg_argument_count": 0,
-            "max_nesting_level": 0,
-            "avg_nesting_level": 0,
-            "function_complexity": {}, # Return empty dictionary on error
-        }
-
-
-def calculate_all_metrics(code: str) -> Dict[str, Any]:
-    """Calculates all available metrics."""
-    metrics = {}
-    try:
-        metrics["halstead"] = calculate_halstead_metrics(code)
-    except Exception as e:
-        logger.error(f"Error calculating Halstead metrics: {e}")
-        metrics["halstead"] = {  # Provide default values on error
-            "volume": 0,
-            "difficulty": 0,
-            "effort": 0,
-            "vocabulary": 0,
-            "length": 0,
-            "distinct_operators": 0,
-            "distinct_operands": 0,
-            "total_operators": 0,
-            "total_operands": 0,
-            "operator_counts": {},
-            "operand_counts": {},
-        }
-
-    try:
-        function_complexity, total_complexity = calculate_cyclomatic_complexity(code)
-        metrics["function_complexity"] = function_complexity  # Store function-specific complexity
-        metrics["cyclomatic"] = total_complexity  # Store total complexity
-    except Exception as e:
-        logger.error(f"Error calculating cyclomatic complexity: {e}")
-        metrics["function_complexity"] = {} # Default on error
-        metrics["cyclomatic"] = 0 # Default on error
-
-
-    try:
-        metrics["maintainability_index"] = calculate_maintainability_index(code)
-    except Exception as e:
-        logger.error(f"Error calculating maintainability index: {e}")
-        metrics["maintainability_index"] = 0 # Default on error
-
-    try:
-        metrics["raw"] = calculate_raw_metrics(code)
-    except Exception as e:
-        logger.error(f"Error calculating raw metrics: {e}")
-        metrics["raw"] = { # Default on error
-            "loc": 0,
-            "lloc": 0,
-            "sloc": 0,
-            "comments": 0,
-            "multi": 0,
-            "blank": 0,
-        }
-
-    try:
-        metrics["quality"] = calculate_code_quality_metrics(code)
-    except Exception as e:
-        logger.error(f"Error calculating code quality metrics: {e}")
-        metrics["quality"] = { # Default on error
-            "method_length": [],
-            "argument_count": [],
-            "nesting_level": [],
-            "avg_method_length": 0,
-            "avg_argument_count": 0,
-            "max_nesting_level": 0,
-            "avg_nesting_level": 0,
-            "function_complexity": {},
-        }
-
-    return metrics
+    metrics = calculate_code_metrics(sample_code)
+    import json
+    print(json.dumps(metrics, indent=2))
