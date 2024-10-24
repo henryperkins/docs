@@ -243,24 +243,24 @@ async def process_file(
     repo_root: str,
     project_info: str,
     style_guidelines: str,
-    safe_mode: bool,
+    safe_mode: bool,  # Ensure safe_mode is passed here
     azure_api_key: str,
     azure_endpoint: str,
     azure_api_version: str,
     output_dir: str,
     project_id: str,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[Dict[str, Any]]:  # Correct return type hint
     """Processes a single file through the documentation pipeline."""
 
-    if not should_process_file(file_path, skip_types):
+    if not should_process_file(file_path, skip_types):  # Use should_process_file from utils
         return None
 
     try:
-        content, language, handler = await prepare_file(file_path, function_schema, skip_types)
+        content, language, handler = await _prepare_file(file_path, function_schema, skip_types)
         if not all([content, language, handler]):
             return None
 
-        code_structure = await extract_code_structure(content, file_path, language, handler)
+        code_structure = await _extract_code_structure(content, file_path, language, handler)
         if not code_structure:
             return None
 
@@ -315,7 +315,64 @@ async def process_file(
     except Exception as e:
         logger.error(f"Error processing file {file_path}: {e}", exc_info=True)
         return None
+    
+async def _prepare_file(file_path: str, function_schema: Dict[str, Any], skip_types: Set[str]) -> Tuple[Optional[str], Optional[str], Optional[BaseHandler]]:
+    """Reads file content, gets language, and retrieves the appropriate handler."""
 
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return None, None, None
+
+    _, ext = os.path.splitext(file_path)
+
+    # Enhanced skip logic (moved from should_process_file)
+    if not should_process_file(file_path, skip_types):
+        return None, None, None
+
+    language = get_language(ext)
+    if language == "plaintext":
+        logger.debug(f"Skipping plaintext file: {file_path}")
+        return None, None, None
+
+    handler = get_handler(language, function_schema)
+    if not handler:
+        logger.debug(f"No handler available for language: {language}")
+        return None, None, None
+
+    try:
+        async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+            content = await f.read()
+        logger.debug(f"Successfully read content from {file_path}")
+        return content, language, handler
+    except UnicodeDecodeError:
+        logger.warning(f"Skipping file due to encoding issues: {file_path}")
+        return None, None, None
+    except Exception as e:
+        logger.error(f"Failed to read '{file_path}': {e}", exc_info=True)
+        return None, None, None
+
+
+async def _extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler) -> Optional[Dict[str, Any]]:
+    """Extracts code structure using the appropriate handler."""
+    try:
+        structure = await asyncio.to_thread(handler.extract_structure, content, file_path)
+        if not structure:
+            logger.warning(f"No structure extracted from '{file_path}'")
+            return None
+
+        try:
+            critical_info = extract_critical_info(structure, file_path)
+            context_manager.add_context(critical_info)
+        except Exception as e:
+            logger.error(f"Error extracting critical info: {e}", exc_info=True)
+            critical_info = f"File: {file_path}\n# Failed to extract detailed information"
+            context_manager.add_context(critical_info)
+
+        return structure
+
+    except Exception as e:
+        logger.error(f"Error extracting structure: {e}", exc_info=True)
+        return None
 
 async def process_all_files(
     session: aiohttp.ClientSession,
@@ -453,6 +510,7 @@ def extract_critical_info(code_structure: Dict[str, Any], file_path: str) -> str
     
     critical_info = "\n".join(info_lines)
     return critical_info
+
 
 
 async def _insert_and_validate_documentation(handler: BaseHandler, content: str, documentation: Dict[str, Any], file_path: str, language: str) -> None:

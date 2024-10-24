@@ -59,18 +59,31 @@ class PythonHandler(BaseHandler):
                 "decorators": [],
                 "context_managers": [],
                 "comprehensions": [],
-            }   
+            }
 
             # Calculate all metrics
             metrics = calculate_all_metrics(code)
-        
-            # Add metrics to code structure
-            code_structure.update({
-                "halstead": metrics["halstead"],
-                "complexity": metrics["complexity"],
-                "maintainability_index": metrics["maintainability_index"]
-            })
-        
+
+            # --- Changes here for Halstead metrics ---
+            halstead_metrics = metrics.get("halstead", {})
+            for func in code_structure["functions"]:
+                func_name = func["name"]
+                func["halstead"] = halstead_metrics.get(func_name, {})  # Assign Halstead metrics per function
+
+            for cls in code_structure["classes"]:
+                for method in cls["methods"]:
+                    method_name = f"{cls['name']}.{method['name']}"  # Construct full method name
+                    method["halstead"] = halstead_metrics.get(method_name, {})  # Assign Halstead metrics per method
+            # --- End of changes ---
+
+            code_structure["metrics"] = {  # Store top-level metrics
+                "halstead": halstead_metrics.get("total", {}),  # Total Halstead metrics if available
+                "complexity": metrics["cyclomatic"],
+                "maintainability_index": metrics["maintainability_index"],
+                "raw": metrics["raw"],
+                "quality": metrics["quality"],
+            }
+
             # Store function complexity for use in visitor
             function_complexity = metrics["function_complexity"]
 

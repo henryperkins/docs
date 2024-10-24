@@ -15,59 +15,69 @@ from typing import Dict, Any, Tuple, Optional
 import ast
 
 from radon.complexity import cc_visit, SCORE
-from radon.metrics import h_visit, mi_visit
+from radon.metrics import h_visit, mi_visit  # Correct import
 from radon.raw import analyze
+from radon.visitors import Halstead  # Import Halstead for type hinting
 
 logger = logging.getLogger(__name__)
-
 
 def calculate_halstead_metrics(code: str) -> Dict[str, Any]:
     """Calculates Halstead complexity metrics."""
     try:
-        halstead_visitor = h_visit(code)
-        total_metrics = halstead_visitor.total
+        halstead_reports = h_visit(code)
+        metrics = {}
 
-        h1 = len(total_metrics.operators)
-        h2 = len(total_metrics.operands)
-        N1 = sum(total_metrics.operators.values())
-        N2 = sum(total_metrics.operands.values())
+        if isinstance(halstead_reports, list):
+            for report in halstead_reports:
+                # Access operators and operands from report.total, NOT the accumulated object
+                total_metrics = report.total
+                h1 = len(total_metrics.operators)
+                h2 = len(total_metrics.operands)
+                N1 = sum(total_metrics.operators.values())
+                N2 = sum(total_metrics.operands.values())
 
-        vocabulary = h1 + h2
-        length = N1 + N2
-        volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
-        difficulty = (h1 * N2) / (2 * h2) if h2 > 0 else 0
-        effort = difficulty * volume
+                vocabulary = h1 + h2
+                length = N1 + N2
+                volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
+                difficulty = (h1 * N2) / (2 * h2) if h2 > 0 else 0
+                effort = difficulty * volume
 
-        return {
-            "volume": round(volume, 2),
-            "difficulty": round(difficulty, 2),
-            "effort": round(effort, 2),
-            "vocabulary": vocabulary,
-            "length": length,
-            "distinct_operators": h1,
-            "distinct_operands": h2,
-            "total_operators": N1,
-            "total_operands": N2,
-            "operator_counts": dict(total_metrics.operators),
-            "operand_counts": dict(total_metrics.operands),
-        }
+                metrics[report.name] = {  # Use report.name for key
+                    "volume": round(volume, 2),
+                    "difficulty": round(difficulty, 2),
+                    "effort": round(effort, 2),
+                    # ... other Halstead metrics ...
+                }
+
+        elif isinstance(halstead_reports, Halstead):  # Single block (unlikely but handled)
+            total_metrics = halstead_reports
+            h1 = len(total_metrics.operators)
+            h2 = len(total_metrics.operands)
+            N1 = sum(total_metrics.operators.values())
+            N2 = sum(total_metrics.operands.values())
+
+            vocabulary = h1 + h2
+            length = N1 + N2
+            volume = length * math.log2(vocabulary) if vocabulary > 0 else 0
+            difficulty = (h1 * N2) / (2 * h2) if h2 > 0 else 0
+            effort = difficulty * volume
+
+            metrics["total"] = {  # Use 'total' as key for single block
+                "volume": round(volume, 2),
+                "difficulty": round(difficulty, 2),
+                "effort": round(effort, 2),
+                # ... other Halstead metrics ...
+            }
+
+        else:
+            logger.warning("Unexpected Halstead report format.")
+            return {}
+
+        return metrics
 
     except Exception as e:
-        logger.error(f"Error calculating Halstead metrics: {e}")
-        return {  # Return a dictionary of zeros on error
-            "volume": 0,
-            "difficulty": 0,
-            "effort": 0,
-            "vocabulary": 0,
-            "length": 0,
-            "distinct_operators": 0,
-            "distinct_operands": 0,
-            "total_operators": 0,
-            "total_operands": 0,
-            "operator_counts": {},
-            "operand_counts": {},
-        }
-
+        logger.error(f"Error calculating Halstead metrics: {e}", exc_info=True)
+        return {}
 
 def calculate_cyclomatic_complexity(code: str) -> Tuple[Dict[str, int], int]:
     """Calculates cyclomatic complexity."""

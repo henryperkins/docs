@@ -115,7 +115,9 @@ async def main():
             skip_types=skip_types_set,
             project_info=project_info,
             style_guidelines=style_guidelines,
+            safe_mode=args.safe_mode,  # Pass safe_mode here
         )
+
 
         logger.info(f"Documentation generation completed. Results: {results}")
 

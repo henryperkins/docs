@@ -1,6 +1,7 @@
 # process_manager.py
 import os
 import asyncio
+import aiofiles
 import aiohttp
 import json
 import logging
@@ -27,6 +28,7 @@ class DocumentationRequest(BaseModel):
     skip_types: Set[str] = set()
     project_info: str
     style_guidelines: str
+    safe_mode: bool  # Add safe_mode to the request model
 
 
 class DocumentationResponse(BaseModel):
@@ -37,7 +39,6 @@ class DocumentationResponse(BaseModel):
 
 
 class DocumentationProcessManager:
-
     def __init__(
         self,
         repo_root: str,
@@ -53,6 +54,7 @@ class DocumentationProcessManager:
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.context_manager = ContextManager()
         self.active_tasks: Dict[str, Dict[str, Any]] = {}
+        self.safe_mode = False # Initialize safe_mode
 
     async def process_files(
         self,
@@ -61,8 +63,11 @@ class DocumentationProcessManager:
         skip_types: Set[str],
         project_info: str,
         style_guidelines: str,
+        safe_mode: bool,  # Make sure safe_mode is passed here
     ) -> Dict[str, Any]:
         """Processes files, tracks progress, and updates frontend data."""
+
+        self.safe_mode = safe_mode  # Store safe_mode in the instance
 
         self.active_tasks[task_id] = {
             "status": "running",
@@ -84,12 +89,11 @@ class DocumentationProcessManager:
                         )
                     )
                     for file_path in file_paths
-                    if should_process_file(file_path, skip_types)  # Call should_process_file from utils
+                    if self._should_process(file_path, skip_types)
                 ]
 
-                # Handle skipped files *before* awaiting tasks
                 for file_path in file_paths:
-                    if not should_process_file(file_path, skip_types):
+                    if not self._should_process(file_path, skip_types):
                         self.active_tasks[task_id]["results"]["skipped"].append(file_path)
 
                 total_files = len(file_paths)
@@ -102,7 +106,8 @@ class DocumentationProcessManager:
                         if result:
                             self.active_tasks[task_id]["results"]["successful"].append(result)
                         else:
-                            self.active_tasks[task_id]["results"]["failed"].append(future.exception())
+                            # Store the actual exception object for debugging
+                            self.active_tasks[task_id]["results"]["failed"].append(future.exception())  
                     except Exception as e:
                         logger.error(f"Task failed: {e}", exc_info=True)
                         self.active_tasks[task_id]["results"]["failed"].append(e)
@@ -120,6 +125,7 @@ class DocumentationProcessManager:
             self.active_tasks[task_id]["results"]["failed"].append(e)
             return self.active_tasks[task_id]["results"]
 
+
     async def _process_single_file(
         self,
         session: aiohttp.ClientSession,
@@ -129,7 +135,7 @@ class DocumentationProcessManager:
         style_guidelines: str,
         task_id: str,
     ) -> Optional[str]:
-        """Processes a single file."""
+        """Processes a single file and generates documentation."""
         try:
             async with self.semaphore:
                 file_context = self.context_manager.get_relevant_context(file_path) if self.context_manager.context_entries else ""
@@ -139,12 +145,13 @@ class DocumentationProcessManager:
                     session=session,
                     file_path=file_path,
                     skip_types=skip_types,
-                    semaphore=self.semaphore,
+                    semaphore=self.semaphore,  # Pass the semaphore
                     deployment_name=self.azure_config["AZURE_OPENAI_DEPLOYMENT"],
                     function_schema=self.function_schema,
                     repo_root=str(self.repo_root),
                     project_info=enhanced_project_info,
                     style_guidelines=style_guidelines,
+                    safe_mode=self.safe_mode,  # Pass safe_mode here
                     azure_api_key=self.azure_config["AZURE_OPENAI_API_KEY"],
                     azure_endpoint=self.azure_config["AZURE_OPENAI_ENDPOINT"],
                     azure_api_version=self.azure_config["API_VERSION"],
@@ -157,18 +164,9 @@ class DocumentationProcessManager:
                         f"File: {file_path}\nDocumentation Summary: {documentation.get('summary', '')}"
                     )
                     relative_filepath = Path(file_path).relative_to(self.repo_root)
+                    return str(relative_filepath)  # Return the relative file path
 
-                    await write_documentation_report( # Correct call to write_documentation_report
-                        documentation=documentation,
-                        language=documentation.get("language", ""),
-                        file_path=str(relative_filepath),  # Pass relative file path
-                        repo_root=str(self.repo_root),
-                        output_dir=str(self.output_dir / task_id),
-                        project_id=task_id,
-                    )
-                    return str(relative_filepath)
-
-            return None
+            return None  # Return None if processing fails
 
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}", exc_info=True)
