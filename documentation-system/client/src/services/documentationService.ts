@@ -59,10 +59,7 @@ export const documentationService = {
     }
   },
 
-  async searchDocumentation(
-    projectId: string,
-    query: string
-  ): Promise<DocumentationResponse[]> {
+  async searchDocumentation(projectId: string, query: string): Promise<DocumentationResponse[]> {
     try {
       const response = await axios.get<DocumentationResponse[]>(
         `${API_URL}/documentation/search`,
@@ -77,6 +74,20 @@ export const documentationService = {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         throw new Error(error.response?.data?.error || 'Failed to search documentation');
+      }
+      throw error;
+    }
+  },
+
+  async getCodeContent(projectId: string, filePath: string): Promise<string> {
+    try {
+      const response = await axios.get<string>(`${API_URL}/code`, {
+        params: { project_id: projectId, file_path: filePath }
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.error || 'Failed to fetch code content');
       }
       throw error;
     }

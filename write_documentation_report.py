@@ -25,6 +25,7 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
+
 def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], logo: str = None) -> str:
     """Generates a Markdown badge for a given metric."""
     low, medium, high = thresholds["low"], thresholds["medium"], thresholds["high"]
@@ -37,7 +38,7 @@ def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], l
 def generate_all_badges(metrics: Dict[str, Any]) -> str:
     """Generates badges for all metrics."""
 
-    complexity = metrics.get("cyclomatic")
+    complexity = metrics.get("complexity")
     halstead = metrics.get("halstead")
     mi = metrics.get("maintainability_index")
 
@@ -70,122 +71,96 @@ def format_table(headers: List[str], rows: List[List[Any]]) -> str:
 
 def truncate_description(description: str, max_length: int = 100) -> str:
     """Truncates a description to a maximum length."""
-    return (description[:max_length] + '...') if len(description) > max_length else description
+    if len(description) > max_length:
+        return description[:max_length] + "..."
+    return description
 
 
 def sanitize_text(text: str) -> str:
     """Sanitizes text for Markdown."""
-    markdown_special_chars = ['\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|']
-    for char in markdown_special_chars:
-        text = text.replace(char, f"\\{char}")
-    return text.replace('\n', ' ').strip()
+    escaped_text = re.escape(text)
+    return escaped_text.replace('\n', ' ').replace('\r', '').strip()
+
 
 
 def generate_table_of_contents(content: str) -> str:
     """Generates a table of contents from Markdown headers."""
+    headers = re.findall(r"^(#{1,6})\s+(.*)", content, re.MULTILINE)
     toc = []
-    for line in content.splitlines():
-        if line.startswith("#"):
-            level = line.count("#")
-            title = line.lstrip("#").strip()
-            anchor = re.sub(r'[^a-zA-Z0-9\s-]', '', title)
-            anchor = re.sub(r'\s+', '-', anchor).lower()
-            anchor = re.sub(r'-+', '-', anchor).strip('-')
-            toc.append(f"{'  ' * (level - 1)}- [{title}](#{anchor})")
+    for header in headers:
+        level = len(header[0])
+        title = header[1]
+        link = title.lower().replace(" ", "-").replace(".", "").replace(",", "")
+        toc.append(f"{'  ' * (level - 1)}- [{title}](#{link})")
     return "\n".join(toc)
 
 
 def format_methods(methods: List[Dict[str, Any]]) -> str:
     """Formats method information into a Markdown table."""
-    headers = ["Method Name", "Complexity", "Async", "Docstring"]
-    rows = [
-        [
-            method.get("name", "N/A"),
-            str(method.get("complexity", 0)),
-            str(method.get("async", False)),
-            truncate_description(sanitize_text(method.get("docstring", "")))
-        ]
-        for method in methods
-    ]
+    headers = ["Method", "Description", "Arguments", "Complexity"]
+    rows = []
+    for method in methods:
+        name = method.get("name", "unknown")
+        doc = truncate_description(method.get("docstring", ""))
+        args = ", ".join(method.get("args", []))
+        complexity = method.get("complexity", "N/A")
+        rows.append([name, doc, args, complexity])
     return format_table(headers, rows)
 
 
 def format_classes(classes: List[Dict[str, Any]]) -> str:
     """Formats class information into a Markdown table."""
-    headers = ["Class Name", "Docstring"]
-    rows = [
-        [
-            cls.get("name", "N/A"),
-            truncate_description(sanitize_text(cls.get("docstring", "")))
-        ]
-        for cls in classes
-    ]
-    class_table = format_table(headers, rows)
-
-    method_tables = []
+    headers = ["Class", "Description", "Methods"]
+    rows = []
     for cls in classes:
-        if cls.get("methods"):
-            method_tables.append(f"#### Methods for {cls.get('name')}\n")
-            method_tables.append(format_methods(cls.get("methods", [])))
-
-    return class_table + "\n\n" + "\n".join(method_tables)
+        name = cls.get("name", "unknown")
+        doc = truncate_description(cls.get("docstring", ""))
+        methods = format_methods(cls.get("methods", []))
+        rows.append([name, doc, methods])
+    return format_table(headers, rows)
 
 
 def format_functions(functions: List[Dict[str, Any]]) -> str:
     """Formats function information into a Markdown table."""
-
-    if not functions:
-        return "No functions found."
-
-    headers = ["Function Name", "Complexity", "Async", "Docstring"]
-    rows = [
-        [
-            func.get("name", "N/A"),
-            str(func.get("complexity", 0)),
-            str(func.get("async", False)),
-            truncate_description(sanitize_text(func.get("docstring", "")))
-        ]
-        for func in functions
-    ]
+    headers = ["Function", "Description", "Arguments", "Complexity"]
+    rows = []
+    for func in functions:
+        name = func.get("name", "unknown")
+        doc = truncate_description(func.get("docstring", ""))
+        args = ", ".join(func.get("args", []))
+        complexity = func.get("complexity", "N/A")
+        rows.append([name, doc, args, complexity])
     return format_table(headers, rows)
-
 
 
 def generate_summary(documentation: Dict[str, Any]) -> str:
     """Generates a summary with Markdown lists for variables and constants."""
+    summary = []
+
     variables = documentation.get("variables", [])
-    constants = documentation.get("constants", [])
-
-    summary_parts = []
     if variables:
-        summary_parts.append("**Variables:**")
-        summary_parts.extend([f"- {sanitize_text(var.get('name', 'N/A'))}: {sanitize_text(var.get('description', ''))}" for var in variables])
+        summary.append("## Variables")
+        for var in variables:
+            name = var.get("name", "unknown")
+            desc = truncate_description(var.get("description", ""))
+            summary.append(f"- **{name}**: {desc}")
 
+    constants = documentation.get("constants", [])
     if constants:
-        summary_parts.append("**Constants:**")
-        summary_parts.extend([f"- {sanitize_text(const.get('name', 'N/A'))}: {sanitize_text(const.get('description', ''))}" for const in constants])
+        summary.append("## Constants")
+        for const in constants:
+            name = const.get("name", "unknown")
+            desc = truncate_description(const.get("description", ""))
+            summary.append(f"- **{name}**: {desc}")
 
-    return "### **Summary**\n\n" + "\n".join(summary_parts) if summary_parts else "### **Summary**\n\nNo variables or constants found."
-
+    return "\n".join(summary)
 
 
 def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
-    """
-    Generates a prompt for documentation generation that is compatible with the provided schema.
+    """Generates a prompt for documentation generation."""
 
-    Args:
-        file_name (str): The name of the file.
-        code_structure (dict): The code structure.
-        project_info (str): Information about the project.
-        style_guidelines (str): The style guidelines.
-        language (str): The programming language.
-        function_schema (dict): The function schema.
-
-    Returns:
-        str: The generated prompt.
-    """
     docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
-    
+
     prompt = f"""
     You are a code documentation generator. Your task is to generate documentation for the following {language} file: '{file_name}'.
     
@@ -278,100 +253,50 @@ def generate_documentation_prompt(file_name, code_structure, project_info, style
     return textwrap.dedent(prompt).strip()
 
 
+
 async def write_documentation_report(
     documentation: Optional[Dict[str, Any]],
     language: str,
     file_path: str,
     repo_root: str,
-    output_dir: str
+    output_dir: str,
+    project_id: str,  # Added project_id
 ) -> Optional[Dict[str, Any]]:
-    """
-    Generates documentation in both frontend-compatible JSON and Markdown formats.
+    """Writes documentation to JSON and Markdown files."""
 
-    Args:
-        documentation: The documentation data.
-        language: The programming language.
-        file_path: Path to the source file.
-        repo_root: Root directory of the repository.
-        output_dir: Output directory for documentation.
-
-    Returns:
-        Optional[Dict[str, Any]]: The formatted documentation data, or None if generation fails.
-    """
     if not documentation:
         logger.warning(f"No documentation to write for '{file_path}'")
         return None
 
     try:
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
+        # Construct the project-specific output path
+        project_output_dir = Path(output_dir) / project_id
+        project_output_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+
         relative_path = os.path.relpath(file_path, repo_root)
-
-        # Generate frontend-compatible JSON structure
-        frontend_docs = {
-            "summary": documentation.get("summary", ""),
-            "classes": [
-                {
-                    "name": cls["name"],
-                    "docstring": cls["docstring"],
-                    "methods": [
-                        {
-                            "name": method["name"],
-                            "docstring": method["docstring"],
-                            "args": method.get("args", []),
-                            "async": method.get("async", False),
-                            "complexity": method.get("complexity", 0),
-                            "type": method.get("type", "instance")
-                        }
-                        for method in cls.get("methods", [])
-                    ]
-                }
-                for cls in documentation.get("classes", [])
-            ],
-            "functions": [
-                {
-                    "name": func["name"],
-                    "docstring": func["docstring"],
-                    "args": func.get("args", []),
-                    "async": func.get("async", False),
-                    "complexity": func.get("complexity", 0)
-                }
-                for func in documentation.get("functions", [])
-            ],
-            "metrics": {
-                "maintainability_index": documentation.get("maintainability_index", 0),
-                "complexity": documentation.get("complexity", 0),
-                "halstead": documentation.get("halstead", {
-                    "volume": 0,
-                    "difficulty": 0,
-                    "effort": 0
-                })
-            }
-        }
-
-        # Also generate Markdown content for reference
-        markdown_content = await generate_markdown_content(documentation, language, file_path, relative_path)
-
-        # Write both formats
         safe_filename = sanitize_filename(os.path.basename(file_path))
-        base_path = Path(output_dir) / safe_filename
+        base_path = project_output_dir / safe_filename  # Use project_output_dir
 
-        # Write JSON for frontend
-        json_path = base_path.with_suffix('.json')
-        async with aiofiles.open(json_path, 'w', encoding='utf-8') as f:
-            await f.write(json.dumps(frontend_docs, indent=2))
+        # Frontend-compatible JSON
+        json_path = base_path.with_suffix(".json")
+        async with aiofiles.open(json_path, "w", encoding="utf-8") as f:
+            await f.write(json.dumps(documentation, indent=2))  # Write the full documentation
 
-        # Write Markdown for reference
-        md_path = base_path.with_suffix('.md')
-        async with aiofiles.open(md_path, 'w', encoding='utf-8') as f:
-            await f.write(markdown_content)
+        # Markdown for reference (optional - check if needed)
+        if documentation.get("generate_markdown", True):  # Add a flag to control Markdown generation
+            markdown_content = await generate_markdown_content(documentation, language, file_path, relative_path)
+            md_path = base_path.with_suffix(".md")
+            async with aiofiles.open(md_path, "w", encoding="utf-8") as f:
+                await f.write(markdown_content)
 
-        logger.info(f"Documentation written to {json_path} and {md_path}")
-        return frontend_docs
+        logger.info(f"Documentation written to {json_path}")
+        return documentation  # Return the documentation
 
     except Exception as e:
         logger.error(f"Error writing documentation report: {e}", exc_info=True)
         return None
+
+
 
 async def generate_markdown_content(
     documentation: Dict[str, Any],
@@ -380,108 +305,41 @@ async def generate_markdown_content(
     relative_path: str
 ) -> str:
     """Generates enhanced markdown content with collapsible sections and better formatting."""
-    
-    # Generate table of contents
-    toc = [
-        "# Table of Contents\n",
-        "1. [Overview](#overview)",
-        "2. [Code Structure](#code-structure)",
-        "3. [Dependencies](#dependencies)",
-        "4. [Metrics](#metrics)",
-        "\n---\n"
-    ]
 
-    # Generate Overview section
-    overview = [
-        "# Overview\n",
-        f"**File:** `{os.path.basename(file_path)}`  ",
-        f"**Language:** {language}  ",
-        f"**Path:** `{relative_path}`  \n",
-        "## Summary\n",
-        f"{documentation.get('summary', 'No summary available.')}\n",
-        "## Recent Changes\n",
-        "\n".join(f"- {change}" for change in documentation.get('changes_made', ['No recent changes.'])),
-        "\n"
-    ]
-
-    # Generate Code Structure section
-    code_structure = ["# Code Structure\n"]
-    
-    if documentation.get("classes"):
-        code_structure.append("## Classes\n")
-        code_structure.append(format_classes(documentation["classes"]))
-
-    if documentation.get("functions"):
-        code_structure.append("## Functions\n")
-        code_structure.append(format_functions(documentation["functions"]))
-
-    # Generate Dependencies section
-    dependencies = [
-        "# Dependencies\n",
-        "```mermaid",
-        "graph TD;",
-    ]
-    
-    # Create dependency graph
-    dep_map = {}
-    for dep in documentation.get('variables', []) + documentation.get('constants', []):
-        if dep.get('type') == 'import':
-            dep_name = dep['name']
-            dep_refs = dep.get('references', [])
-            dep_map[dep_name] = dep_refs
-            dependencies.append(f"    {dep_name}[{dep_name}];")
-    
-    for dep, refs in dep_map.items():
-        for ref in refs:
-            if ref in dep_map:
-                dependencies.append(f"    {dep} --> {ref};")
-    
-    dependencies.extend(["```\n"])
-
-    # Generate Metrics section
-    metrics = [
-        "# Metrics\n",
-        "## Code Quality\n",
-        generate_all_badges(
-            complexity=documentation.get("complexity"),
-            halstead=documentation.get("halstead"),
-            mi=documentation.get("maintainability_index")
-        ),
-        "\n"
-    ]
-
-    if "halstead" in documentation:
-        halstead = documentation["halstead"]
-        metrics.extend([
-            "## Halstead Metrics\n",
-            "| Metric | Value |",
-            "|--------|--------|",
-            f"| Volume | {halstead.get('volume', 0):.1f} |",
-            f"| Difficulty | {halstead.get('difficulty', 0):.1f} |",
-            f"| Effort | {halstead.get('effort', 0):.1f} |",
-        ])
-
-    # Combine all sections
-    content = "\n".join([
-        *toc,
-        *overview,
-        *code_structure,
-        *dependencies,
-        *metrics
-    ])
-
-    return content
+    badges = generate_all_badges(documentation.get("metrics", {}))
+    summary = generate_summary(documentation)
+    functions = format_functions(documentation.get("functions", []))
+    classes = format_classes(documentation.get("classes", []))
 
 
-def get_metric_status(value: float) -> str:
-    """Returns a status indicator based on metric value."""
-    if value >= 80:
-        return "✅ Good"
-    elif value >= 60:
-        return "⚠️ Warning"
-    return "❌ Needs Improvement"
+    content = f"""
+# Documentation for {os.path.basename(file_path)}
+
+{badges}
+
+{summary}
+
+## Functions
+{functions}
+
+## Classes
+{classes}
+    """.strip()
+
+    toc = generate_table_of_contents(content) # Generate TOC last
+    return f"# Table of Contents\n\n{toc}\n\n{content}"
+
+
+def get_metric_status(value: float, thresholds: Dict[str, int]) -> str:
+    """Returns a status indicator based on metric value and thresholds."""
+    if value <= thresholds["low"]:
+        return "Low"
+    elif value <= thresholds["medium"]:
+        return "Medium"
+    else:
+        return "High"
 
 
 def sanitize_filename(filename: str) -> str:
     """Sanitizes filename by removing invalid characters."""
-    return re.sub(r'[<>:"/\\|?*]', '_', filename)
+    return re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
