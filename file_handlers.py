@@ -19,6 +19,8 @@ from utils import (
     clean_unused_imports_async,
     format_with_black_async,
     should_process_file,
+    chunk_code,
+    ChunkTooLargeError,
 )
 from write_documentation_report import generate_documentation_prompt, write_documentation_report
 from context_manager import ContextManager
