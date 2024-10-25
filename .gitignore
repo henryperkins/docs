@@ -97,6 +97,10 @@ env/
 .Trashes
 ehthumbs.db
 Thumbs.db
+pyproject.toml
+SECURITY.md
+.flake8
+README.md
 
 # Documentation generation
 /docs/_build/
