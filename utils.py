@@ -1,7 +1,9 @@
 """
 utils.py
 
-This module provides utility functions for handling language and file operations, configuration management, code formatting, and cleanup. It includes functions for loading JSON schemas, managing file paths, and running code formatters like autoflake, black, and flake8.
+Utility functions for code processing, file handling, metrics calculations,
+and token management. Provides core functionality for the documentation 
+generation system.
 """
 
 import os
@@ -9,51 +11,36 @@ import sys
 import json
 import logging
 import asyncio
-import subprocess
-import pathspec
-from dotenv import load_dotenv
-from typing import Any, Set, List, Optional, Dict, Tuple
-from jsonschema import Draft7Validator, ValidationError, SchemaError
-import aiohttp # Import aiohttp
 import tiktoken
-from dataclasses import replace
-from code_chunk import CodeChunk
-# Load environment variables
-load_dotenv()
+import pathspec
+import subprocess
+from pathlib import Path
+from typing import List, Tuple, Dict, Set, Any, Optional, Union
+from dataclasses import dataclass
+from datetime import datetime
 
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-API_VERSION = os.getenv("API_VERSION")
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.FileHandler("documentation_generation.log"),
-        logging.StreamHandler(sys.stdout)
-    ],
-)
 logger = logging.getLogger(__name__)
 
-# ----------------------------
-# Constants
-# ----------------------------
-
+# Default configurations
 DEFAULT_COMPLEXITY_THRESHOLDS = {"low": 10, "medium": 20, "high": 30}
-
 DEFAULT_HALSTEAD_THRESHOLDS = {
     "volume": {"low": 100, "medium": 500, "high": 1000},
     "difficulty": {"low": 10, "medium": 20, "high": 30},
     "effort": {"low": 500, "medium": 1000, "high": 2000}
 }
-
 DEFAULT_MAINTAINABILITY_THRESHOLDS = {"low": 50, "medium": 70, "high": 85}
 
-DEFAULT_EXCLUDED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', '.idea', 'scripts'}
-DEFAULT_EXCLUDED_FILES = {".DS_Store"}
-DEFAULT_SKIP_TYPES = {".json", ".md", ".txt", ".csv", ".lock"}
+DEFAULT_EXCLUDED_DIRS = {
+    '.git', '__pycache__', 'node_modules', '.venv', 
+    '.idea', 'build', 'dist', '.bin', 'venv'
+}
+DEFAULT_EXCLUDED_FILES = {'.DS_Store', '.gitignore', '.env'}
+DEFAULT_SKIP_TYPES = {
+    '.json', '.md', '.txt', '.csv', '.lock', 
+    '.pyc', '.pyo', '.pyd', '.git'
+}
 
+# Language mappings
 LANGUAGE_MAPPING = {
     ".py": "python",
     ".js": "javascript",
@@ -69,66 +56,130 @@ LANGUAGE_MAPPING = {
     ".java": "java",
 }
 
-# ----------------------------
-# Language and File Utilities
-# ----------------------------
+@dataclass
+class TokenizationResult:
+    """
+    Stores the result of tokenizing text.
+    
+    Attributes:
+        tokens: List of token strings
+        token_count: Number of tokens
+        encoding_name: Name of the encoding used
+    """
+    tokens: List[str]
+    token_count: int
+    encoding_name: str
 
-def get_language(ext: str) -> str:
+class TokenManager:
+    """Manages token counting and text encoding."""
+    
+    _instance = None
+    _encoder = None
+    
+    def __new__(cls):
+        """Ensures singleton instance."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    @classmethod
+    def get_encoder(cls) -> tiktoken.Encoding:
+        """Gets the tiktoken encoder, with caching."""
+        if cls._encoder is None:
+            cls._encoder = tiktoken.get_encoding("cl100k_base")
+        return cls._encoder
+    
+    @classmethod
+    def count_tokens(cls, text: str) -> TokenizationResult:
+        """
+        Counts tokens in text using tiktoken.
+        
+        Args:
+            text: Text to tokenize
+            
+        Returns:
+            TokenizationResult with token information
+        """
+        encoder = cls.get_encoder()
+        token_ints = encoder.encode(text)
+        token_strings = [encoder.decode([t]) for t in token_ints]
+        return TokenizationResult(
+            tokens=token_strings,
+            token_count=len(token_ints),
+            encoding_name=encoder.name
+        )
+
+    @classmethod
+    def decode_tokens(cls, tokens: List[int]) -> str:
+        """
+        Decodes tokens back to text.
+        
+        Args:
+            tokens: List of token integers
+            
+        Returns:
+            str: Decoded text
+        """
+        return cls.get_encoder().decode(tokens)
+
+def get_language(file_path: Union[str, Path]) -> Optional[str]:
     """
     Determines the programming language based on file extension.
-
+    
     Args:
-        ext (str): File extension.
-
+        file_path: Path to the file
+        
     Returns:
-        str: Corresponding programming language.
+        Optional[str]: Language name or None if unknown
     """
-    language = LANGUAGE_MAPPING.get(ext.lower(), "plaintext")
-    logger.debug(f"Detected language for extension '{ext}': {language}")
+    ext = str(Path(file_path).suffix).lower()
+    language = LANGUAGE_MAPPING.get(ext)
+    logger.debug(f"Detected language for '{file_path}': {language}")
     return language
 
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """
-    Checks if a file extension is valid (not in the skip list).
-
+    Checks if a file extension is valid (not in skip list).
+    
     Args:
-        ext (str): File extension.
-        skip_types (Set[str]): Set of file extensions to skip.
-
+        ext: File extension
+        skip_types: Set of extensions to skip
+        
     Returns:
-        bool: True if valid, False otherwise.
+        bool: True if valid, False otherwise
     """
-    is_valid = ext.lower() not in skip_types
-    logger.debug(f"Extension '{ext}' is valid: {is_valid}")
-    return is_valid
+    return ext.lower() not in skip_types
 
 def get_threshold(metric: str, key: str, default: int) -> int:
     """
-    Retrieves the threshold value for a given metric and key from environment variables.
-
+    Gets threshold value from environment or defaults.
+    
     Args:
-        metric (str): The metric name.
-        key (str): The threshold key (e.g., 'low', 'medium', 'high').
-        default (int): The default value if the environment variable is not set or invalid.
-
+        metric: Metric name
+        key: Threshold key (low/medium/high)
+        default: Default value
+        
     Returns:
-        int: The threshold value.
+        int: Threshold value
     """
     try:
         return int(os.getenv(f"{metric.upper()}_{key.upper()}_THRESHOLD", default))
     except ValueError:
-        logger.error(f"Invalid environment variable for {metric.upper()}_{key.upper()}_THRESHOLD")
+        logger.error(
+            f"Invalid environment variable for "
+            f"{metric.upper()}_{key.upper()}_THRESHOLD"
+        )
         return default
-    
-def is_binary(file_path: str) -> bool:
+
+def is_binary(file_path: Union[str, Path]) -> bool:
     """
     Checks if a file is binary.
-
+    
     Args:
-        file_path (str): Path to the file.
-
+        file_path: Path to check
+        
     Returns:
-        bool: True if binary, False otherwise.
+        bool: True if file is binary
     """
     try:
         with open(file_path, "rb") as file:
@@ -137,41 +188,62 @@ def is_binary(file_path: str) -> bool:
         logger.error(f"Error checking if file is binary '{file_path}': {e}")
         return True
 
-def should_process_file(file_path: str, skip_types: Set[str]) -> bool:  # Add skip_types argument
-    """Determines if a file should be processed."""
+def should_process_file(file_path: Union[str, Path], skip_types: Set[str]) -> bool:
+    """
+    Determines if a file should be processed.
+    
+    Args:
+        file_path: Path to the file
+        skip_types: File extensions to skip
+        
+    Returns:
+        bool: True if file should be processed
+    """
+    file_path = Path(file_path)
+    
+    if not file_path.exists():
+        return False
 
-    if not os.path.exists(file_path):
-        return False  # Don't process non-existent files
+    # Check if it's a symlink
+    if file_path.is_symlink():
+        return False
 
-    _, ext = os.path.splitext(file_path)
+    # Check common excluded directories
+    excluded_parts = {
+        'node_modules', '.bin', '.git', '__pycache__', 
+        'build', 'dist', 'venv', '.venv'
+    }
+    if any(part in excluded_parts for part in file_path.parts):
+        return False
 
-    # Combine all skip conditions
-    if (
-        os.path.islink(file_path) or
-        any(part in file_path for part in ['node_modules', '.bin', '.git',  '__pycache__', 'build', 'dist']) or # Add .git and other common directories
-        file_path.endswith('.d.ts') or
-        ext in {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git', '.d.ts'} or
-        ext in skip_types or not ext or is_binary(file_path)
-    ):
-        logger.debug(f"Skipping file '{file_path}'")
+    # Check extension
+    ext = file_path.suffix.lower()
+    if (not ext or 
+        ext in skip_types or 
+        ext in {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git'} or
+        ext.endswith('.d.ts')):
+        return False
+
+    # Check if binary
+    if is_binary(file_path):
         return False
 
     return True
 
-def load_gitignore(repo_path: str) -> pathspec.PathSpec:
+def load_gitignore(repo_path: Union[str, Path]) -> pathspec.PathSpec:
     """
-    Loads .gitignore patterns into a PathSpec object.
+    Loads .gitignore patterns.
     
     Args:
-        repo_path (str): Path to the repository root
+        repo_path: Repository root path
         
     Returns:
         pathspec.PathSpec: Compiled gitignore patterns
     """
-    gitignore_path = os.path.join(repo_path, '.gitignore')
+    gitignore_path = Path(repo_path) / '.gitignore'
     patterns = []
     
-    if os.path.exists(gitignore_path):
+    if gitignore_path.exists():
         with open(gitignore_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
@@ -179,26 +251,35 @@ def load_gitignore(repo_path: str) -> pathspec.PathSpec:
                     patterns.append(line)
     
     return pathspec.PathSpec.from_lines(
-        pathspec.patterns.GitWildMatchPattern, patterns
+        pathspec.patterns.GitWildMatchPattern, 
+        patterns
     )
 
-def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> List[str]:
+def get_all_file_paths(
+    repo_path: Union[str, Path],
+    excluded_dirs: Set[str],
+    excluded_files: Set[str],
+    skip_types: Set[str]
+) -> List[str]:
     """
-    Retrieves all file paths in the repository, excluding specified directories and files.
-
-    Args:
-        repo_path (str): Path to the repository.
-        excluded_dirs (Set[str]): Set of directories to exclude.
-        excluded_files (Set[str]): Set of files to exclude.
-        skip_types (Set[str]): Set of file extensions to skip.
-
-    Returns:
-        List[str]: List of file paths.
-    """
-    file_paths = []
-    normalized_excluded_dirs = {os.path.normpath(os.path.join(repo_path, d)) for d in excluded_dirs}
+    Gets all processable file paths in repository.
     
-    # Add common node_modules patterns to excluded dirs
+    Args:
+        repo_path: Repository root
+        excluded_dirs: Directories to exclude
+        excluded_files: Files to exclude
+        skip_types: Extensions to skip
+        
+    Returns:
+        List[str]: List of file paths
+    """
+    repo_path = Path(repo_path)
+    file_paths = []
+    normalized_excluded_dirs = {
+        os.path.normpath(repo_path / d) for d in excluded_dirs
+    }
+
+    # Add common node_modules patterns
     node_modules_patterns = {
         'node_modules',
         '.bin',
@@ -206,19 +287,23 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
         '**/node_modules/**/.bin',
         '**/node_modules/**/node_modules'
     }
-    normalized_excluded_dirs.update({os.path.normpath(os.path.join(repo_path, d)) for d in node_modules_patterns})
+    normalized_excluded_dirs.update({
+        os.path.normpath(repo_path / d) for d in node_modules_patterns
+    })
+
+    gitignore = load_gitignore(repo_path)
 
     for root, dirs, files in os.walk(repo_path, topdown=True):
-        # Skip node_modules and other excluded directories
+        # Skip excluded directories
         if any(excluded in root for excluded in ['node_modules', '.bin']):
-            dirs[:] = []  # Skip processing subdirectories
+            dirs[:] = []
             continue
 
-        # Exclude directories
+        # Filter directories
         dirs[:] = [
             d for d in dirs 
-            if os.path.normpath(os.path.join(root, d)) not in normalized_excluded_dirs
-            and not any(excluded in d for excluded in ['node_modules', '.bin'])
+            if (os.path.normpath(Path(root) / d) not in normalized_excluded_dirs and
+                not any(excluded in d for excluded in ['node_modules', '.bin']))
         ]
 
         for file in files:
@@ -226,415 +311,37 @@ def get_all_file_paths(repo_path: str, excluded_dirs: Set[str], excluded_files: 
             if file in excluded_files:
                 continue
                 
-            # Skip specified file types
-            file_ext = os.path.splitext(file)[1]
-            if file_ext in skip_types:
-                continue
-
-            # Skip symlinks
-            full_path = os.path.join(root, file)
-            if os.path.islink(full_path):
-                continue
-
-            file_paths.append(full_path)
+            # Get full path
+            full_path = Path(root) / file
             
+            # Check if file should be processed
+            if should_process_file(full_path, skip_types):
+                # Check gitignore
+                relative_path = full_path.relative_to(repo_path)
+                if not gitignore.match_file(str(relative_path)):
+                    file_paths.append(str(full_path))
+
     logger.debug(f"Collected {len(file_paths)} files from '{repo_path}'.")
     return file_paths
 
-# ----------------------------
-# Configuration Management
-# ----------------------------
-
-def load_json_schema(schema_path: str) -> Optional[dict]:
-    """
-    Loads a JSON schema from the specified path.
-
-    Args:
-        schema_path (str): Path to the JSON schema file.
-
-    Returns:
-        Optional[dict]: Loaded JSON schema or None if failed.
-    """
-    try:
-        with open(schema_path, "r", encoding="utf-8") as f:
-            schema = json.load(f)
-        logger.debug(f"Successfully loaded JSON schema from '{schema_path}'.")
-        return schema
-    except FileNotFoundError:
-        logger.error(f"JSON schema file '{schema_path}' not found.")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from '{schema_path}': {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error loading JSON schema from '{schema_path}': {e}")
-        return None
-
-def load_function_schema(schema_path: str) -> Dict[str, Any]:
-    """Loads and validates the function schema."""
-    # Removed redundant call to validate_schema
-    schema = load_json_schema(schema_path) # Load the schema
-    if schema is None:
-        raise ValueError("Invalid or missing schema file.")
-    if "functions" not in schema:
-        raise ValueError("Schema missing 'functions' key.")
-    Draft7Validator.check_schema(schema) # Validate the schema
-    return schema
-
-def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[str], skip_types: Set[str]) -> Tuple[str, str]:
-    """
-    Loads additional configurations from a config.json file.
-
-    Args:
-        config_path (str): Path to the config.json file.
-        excluded_dirs (Set[str]): Set to update with excluded directories.
-        excluded_files (Set[str]): Set to update with excluded files.
-        skip_types (Set[str]): Set to update with file types to skip.
-
-    Returns:
-        Tuple[str, str]: Project information and style guidelines.
-    """
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        project_info = config.get("project_info", "")
-        style_guidelines = config.get("style_guidelines", "")
-        excluded_dirs.update(config.get("excluded_dirs", []))
-        excluded_files.update(config.get("excluded_files", []))
-        skip_types.update(config.get("skip_types", []))
-        logger.debug(f"Loaded configuration from '{config_path}'.")
-        return project_info, style_guidelines
-    except FileNotFoundError:
-        logger.error(f"Config file '{config_path}' not found.")
-        return "", ""
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from '{config_path}': {e}")
-        return "", ""
-    except Exception as e:
-        logger.error(f"Unexpected error loading config file '{config_path}': {e}")
-        return "", ""
-
-
-class ChunkTooLargeError(Exception):
-    """Raised when a code chunk exceeds the maximum token limit even after splitting."""
-    pass
-
-def count_tokens(text: str, encoder: tiktoken.Encoding) -> Tuple[List[str], int]:
-    """
-    Count tokens in a text string using the specified encoder.
-    
-    Args:
-        text (str): The text to tokenize
-        encoder (tiktoken.Encoding): The tiktoken encoder to use
-        
-    Returns:
-        Tuple[List[str], int]: A tuple containing the list of token strings and total token count
-    """
-    token_ints = encoder.encode(text)
-    token_strings = [encoder.decode([t]) for t in token_ints]
-    return token_strings, len(token_ints)
-
-def split_code_block(code: str, start_line: int, encoder: tiktoken.Encoding, 
-                    max_tokens: int, overlap_tokens: int) -> List[Tuple[str, List[str], int, int]]:
-    """
-    Split a block of code into chunks that respect the token limit.
-    
-    Args:
-        code (str): The code block to split
-        start_line (int): The starting line number
-        encoder (tiktoken.Encoding): The tiktoken encoder
-        max_tokens (int): Maximum tokens per chunk
-        overlap_tokens (int): Number of tokens to overlap between chunks
-        
-    Returns:
-        List[Tuple[str, List[str], int, int]]: List of tuples containing:
-            (chunk_content, tokens, chunk_start_line, chunk_end_line)
-    """
-    lines = code.splitlines()
-    chunks = []
-    current_chunk = []
-    current_line = start_line
-    
-    for i, line in enumerate(lines):
-        current_chunk.append(line)
-        chunk_text = '\n'.join(current_chunk)
-        tokens, token_count = count_tokens(chunk_text, encoder)
-        
-        if token_count >= max_tokens:
-            # Back up to the last complete statement if possible
-            split_point = len(current_chunk)
-            for j in range(len(current_chunk) - 1, 0, -1):
-                if current_chunk[j].rstrip().endswith((':', ';', '}')):
-                    split_point = j + 1
-                    break
-            
-            chunk_content = '\n'.join(current_chunk[:split_point])
-            chunk_tokens, chunk_token_count = count_tokens(chunk_content, encoder)
-            chunks.append((
-                chunk_content,
-                chunk_tokens,
-                current_line,
-                current_line + split_point - 1
-            ))
-            
-            # Keep overlap_tokens worth of content for the next chunk
-            if overlap_tokens > 0:
-                overlap_text = chunk_content
-                overlap_tokens_list, _ = count_tokens(overlap_text, encoder)
-                overlap_tokens_list = overlap_tokens_list[-overlap_tokens:]
-                current_chunk = [encoder.decode(encoder.encode(''.join(overlap_tokens_list)))]
-            else:
-                current_chunk = []
-            
-            current_chunk.extend(current_chunk[split_point:])
-            current_line += split_point
-            
-    if current_chunk:
-        chunk_content = '\n'.join(current_chunk)
-        chunk_tokens, _ = count_tokens(chunk_content, encoder)
-        chunks.append((
-            chunk_content,
-            chunk_tokens,
-            current_line,
-            current_line + len(current_chunk) - 1
-        ))
-    
-    return chunks
-
-def chunk_code(
-    code: str, 
-    file_path: str, 
-    language: str, 
-    max_tokens: int = 512, 
-    overlap_tokens: int = 10,
-    preserve_decorators: bool = True,
-    preserve_docstrings: bool = True,
-    split_strategy: str = 'smart'  # 'smart', 'simple', or 'aggressive'
-) -> List[CodeChunk]:
-    """
-    Split code into chunks while respecting syntax and token limits.
-    
-    This function chunks code based on function and class definitions, ensuring that
-    logical units stay together when possible. If a unit is too large, it will be
-    split at statement boundaries with appropriate overlapping tokens.
-    
-    Args:
-        code (str): The source code to chunk
-        file_path (str): Path to the source file
-        language (str): Programming language of the code
-        max_tokens (int, optional): Maximum tokens per chunk. Defaults to 512.
-        overlap_tokens (int, optional): Number of tokens to overlap between chunks. 
-            Defaults to 10.
-            
-    Returns:
-        List[CodeChunk]: List of CodeChunk objects representing the chunked code
-        
-    Raises:
-        NotImplementedError: If language is not Python
-        ChunkTooLargeError: If a chunk exceeds max_tokens even after splitting
-        SyntaxError: If the code cannot be parsed
-        ValueError: If invalid arguments are provided
-    """
-    if language.lower() != "python":
-        raise NotImplementedError(
-            f"Chunking is currently only implemented for Python. Got: {language}"
-        )
-    
-    if max_tokens <= 0:
-        raise ValueError("max_tokens must be positive")
-    if overlap_tokens < 0:
-        raise ValueError("overlap_tokens must be non-negative")
-    if overlap_tokens >= max_tokens:
-        raise ValueError("overlap_tokens must be less than max_tokens")
-        
-    try:
-        # Initialize tiktoken encoder
-        encoder = tiktoken.get_encoding("cl100k_base")
-        chunks: List[CodeChunk] = []
-        
-        # Parse the AST
-        tree = ast.parse(code)
-        
-        # Track line numbers and code outside functions/classes
-        current_line = 1
-        last_node_end = 0
-        
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                # Handle code before this node
-                if node.lineno > last_node_end + 1:
-                    before_code = '\n'.join(code.splitlines()[last_node_end:node.lineno-1])
-                    if before_code.strip():
-                        before_chunks = split_code_block(
-                            before_code, last_node_end + 1, encoder, 
-                            max_tokens, overlap_tokens
-                        )
-                        for content, tokens, start, end in before_chunks:
-                            chunk = CodeChunk(
-                                file_path=file_path,
-                                start_line=start,
-                                end_line=end,
-                                function_name=None,
-                                class_name=None,
-                                chunk_content=content,
-                                tokens=tokens,
-                                token_count=len(tokens),
-                                language=language
-                            )
-                            logger.debug(f"Created chunk: {chunk.get_context_string()}")
-                            chunks.append(chunk)
-                
-                # Get the node's source code
-                node_code = ast.get_source_segment(code, node)
-                if not node_code:
-                    continue
-                
-                # Count tokens for this node
-                tokens, token_count = count_tokens(node_code, encoder)
-                
-                if token_count <= max_tokens:
-                    # Node fits in one chunk
-                    chunk = CodeChunk(
-                        file_path=file_path,
-                        start_line=node.lineno,
-                        end_line=node.end_lineno,
-                        function_name=node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else None,
-                        class_name=node.name if isinstance(node, ast.ClassDef) else None,
-                        chunk_content=node_code,
-                        tokens=tokens,
-                        token_count=token_count,
-                        language=language
-                    )
-                    logger.debug(f"Created chunk: {chunk.get_context_string()}")
-                    chunks.append(chunk)
-                else:
-                    # Split the node into multiple chunks
-                    node_chunks = split_code_block(
-                        node_code, node.lineno, encoder, 
-                        max_tokens, overlap_tokens
-                    )
-                    
-                    for i, (content, tokens, start, end) in enumerate(node_chunks, 1):
-                        # Add part suffix for split chunks
-                        suffix = f"_part{i}" if len(node_chunks) > 1 else ""
-                        chunk = CodeChunk(
-                            file_path=file_path,
-                            start_line=start,
-                            end_line=end,
-                            function_name=f"{node.name}{suffix}" if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else None,
-                            class_name=f"{node.name}{suffix}" if isinstance(node, ast.ClassDef) else None,
-                            chunk_content=content,
-                            tokens=tokens,
-                            token_count=len(tokens),
-                            language=language
-                        )
-                        
-                        if len(tokens) > max_tokens:
-                            msg = f"Chunk too large after splitting: {chunk.get_context_string()}"
-                            logger.error(msg)
-                            raise ChunkTooLargeError(msg)
-                            
-                        logger.debug(f"Created chunk: {chunk.get_context_string()}")
-                        chunks.append(chunk)
-                
-                last_node_end = node.end_lineno
-                
-    class EnhancedASTVisitor(ast.NodeVisitor):
-        """Enhanced AST visitor with better handling of nested structures"""
-        def __init__(self):
-            self.scope_stack = []
-            self.decorators = {}
-            self.docstrings = {}
-            self.imports = []
-            self.module_vars = []
-
-        def visit_ClassDef(self, node):
-            """Handle nested classes properly"""
-            self.scope_stack.append(('class', node))
-            if preserve_decorators:
-                self.decorators[node] = node.decorator_list
-            if preserve_docstrings:
-                docstring = ast.get_docstring(node)
-                if docstring:
-                    self.docstrings[node] = docstring
-            self.generic_visit(node)
-            self.scope_stack.pop()
-
-        def visit_FunctionDef(self, node):
-            """Handle methods and nested functions"""
-            self.scope_stack.append(('function', node))
-            if preserve_decorators:
-                self.decorators[node] = node.decorator_list
-            if preserve_docstrings:
-                docstring = ast.get_docstring(node)
-                if docstring:
-                    self.docstrings[node] = docstring
-            self.generic_visit(node)
-            self.scope_stack.pop()
-
-        def visit_Import(self, node):
-            """Track imports"""
-            self.imports.append(node)
-
-        def visit_ImportFrom(self, node):
-            """Track from imports"""
-            self.imports.append(node)
-
-        def visit_Assign(self, node):
-            """Track module-level assignments"""
-            if not self.scope_stack:  # At module level
-                self.module_vars.append(node)
-                
-        # Handle any remaining code
-        if last_node_end < len(code.splitlines()):
-            remaining_code = '\n'.join(code.splitlines()[last_node_end:])
-            if remaining_code.strip():
-                remaining_chunks = split_code_block(
-                    remaining_code, last_node_end + 1, encoder, 
-                    max_tokens, overlap_tokens
-                )
-                for content, tokens, start, end in remaining_chunks:
-                    chunk = CodeChunk(
-                        file_path=file_path,
-                        start_line=start,
-                        end_line=end,
-                        function_name=None,
-                        class_name=None,
-                        chunk_content=content,
-                        tokens=tokens,
-                        token_count=len(tokens),
-                        language=language
-                    )
-                    logger.debug(f"Created chunk: {chunk.get_context_string()}")
-                    chunks.append(chunk)
-        
-        return chunks
-        
-    except SyntaxError as e:
-        logger.error(f"Syntax error in {file_path}: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(f"Error chunking {file_path}: {str(e)}")
-        raise
-
-# ----------------------------
-# Code Formatting and Cleanup
-# ----------------------------
-
 async def clean_unused_imports_async(code: str, file_path: str) -> str:
     """
-    Asynchronously removes unused imports and variables from the provided code using autoflake.
-
+    Removes unused imports using autoflake.
+    
     Args:
-        code (str): The source code to clean.
-        file_path (str): The file path used for display purposes in autoflake.
-
+        code: Source code
+        file_path: Path for display
+        
     Returns:
-        str: The cleaned code with unused imports and variables removed.
+        str: Code with unused imports removed
     """
     try:
         process = await asyncio.create_subprocess_exec(
-            'autoflake', '--remove-all-unused-imports', '--remove-unused-variables', '--stdin-display-name', file_path, '-',
+            'autoflake',
+            '--remove-all-unused-imports',
+            '--remove-unused-variables',
+            '--stdin-display-name', file_path,
+            '-',
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
@@ -646,46 +353,56 @@ async def clean_unused_imports_async(code: str, file_path: str) -> str:
             return code
         
         return stdout.decode()
+        
     except Exception as e:
         logger.error(f'Error running Autoflake: {e}')
         return code
 
 async def format_with_black_async(code: str) -> str:
     """
-    Asynchronously formats the provided code using Black.
-
+    Formats code using Black.
+    
     Args:
-        code (str): The source code to format.
-
+        code: Source code
+        
     Returns:
-        str: The formatted code.
-    """
-    process = await asyncio.create_subprocess_exec(
-        'black', '--quiet', '-',
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate(input=code.encode())
-    if process.returncode == 0:
-        return stdout.decode()
-    else:
-        logger.error(f"Black formatting failed: {stderr.decode()}")
-        return code
-
-async def run_flake8_async(file_path: str) -> Optional[str]:
-    """
-    Asynchronously runs Flake8 on the specified file to check for style violations.
-
-    Args:
-        file_path (str): The path to the file to be checked.
-
-    Returns:
-        Optional[str]: The output from Flake8 if there are violations, otherwise None.
+        str: Formatted code
     """
     try:
         process = await asyncio.create_subprocess_exec(
-            'flake8', file_path,
+            'black',
+            '--quiet',
+            '-',
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate(input=code.encode())
+        
+        if process.returncode != 0:
+            logger.error(f"Black formatting failed: {stderr.decode()}")
+            return code
+            
+        return stdout.decode()
+        
+    except Exception as e:
+        logger.error(f'Error running Black: {e}')
+        return code
+
+async def run_flake8_async(file_path: Union[str, Path]) -> Optional[str]:
+    """
+    Runs Flake8 on a file.
+    
+    Args:
+        file_path: Path to check
+        
+    Returns:
+        Optional[str]: Flake8 output if errors found
+    """
+    try:
+        process = await asyncio.create_subprocess_exec(
+            'flake8',
+            str(file_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -693,155 +410,433 @@ async def run_flake8_async(file_path: str) -> Optional[str]:
         
         if process.returncode != 0:
             return stdout.decode() + stderr.decode()
-        
+            
         return None
+        
     except Exception as e:
         logger.error(f'Error running Flake8: {e}')
         return None
 
-# ----------------------------
-# JavaScript/TypeScript Utilities
-# ----------------------------
-
-async def run_node_script_async(script_path: str, input_json: str) -> Optional[str]:
+def load_json_schema(schema_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
     """
-    Runs a Node.js script asynchronously.
-
-    Args:
-        script_path (str): Path to the Node.js script.
-        input_json (str): JSON string to pass as input to the script.
-
-    Returns:
-        Optional[str]: The output from the script if successful, None otherwise.
-    """
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            'node', script_path,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate(input=input_json.encode())
-
-        if proc.returncode != 0:
-            logger.error(f"Node.js script '{script_path}' failed: {stderr.decode()}")
-            return None
-
-        return stdout.decode()
-    except FileNotFoundError:
-        logger.error("Node.js is not installed or not in PATH. Please install Node.js.")
-        return None
-    except Exception as e:
-        logger.error(f"An unexpected error occurred while running Node.js script '{script_path}': {e}")
-        return None
-        
-async def run_node_insert_docstrings(script_name: str, input_data: dict) -> Optional[str]:
-    """Runs a Node.js script to insert docstrings asynchronously."""
-    try:
-        script_path = os.path.join(os.path.dirname(__file__), 'scripts', script_name)
-        logger.debug(f"Running Node.js script: {script_path}")
-
-        input_json = json.dumps(input_data)
-
-        proc = await asyncio.create_subprocess_exec(
-            'node', script_path,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await proc.communicate(input=input_json.encode())
-
-        if proc.returncode != 0:
-            logger.error(f"Error running {script_name}: {stderr.decode()}")
-            return None
-
-        logger.debug(f"Successfully ran {script_path}")
-        return stdout.decode()
-
-    except FileNotFoundError:
-        logger.error(f"Node.js script {script_name} not found.")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error running {script_name}: {e}")
-        return None
-
-
-# ----------------------------
-# Documentation Generation
-# ----------------------------
-
-def calculate_project_metrics(successful_results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Calculates aggregate project metrics."""
-
-    if not successful_results:
-        logger.warning("No successful results to calculate project metrics.")  # Add warning
-        return {  # Return default metrics
-            "maintainability_index": 0,
-            "complexity": 0,
-            "halstead": {
-                "volume": 0,
-                "difficulty": 0,
-                "effort": 0,
-            },
-        }
-
-    total_files = len(successful_results)
-    metric_sums = {  # Use a dictionary to store sums
-        "maintainability_index": 0,
-        "complexity": 0,
-        "halstead_volume": 0,
-        "halstead_difficulty": 0,
-        "halstead_effort": 0,
-    }
-
-    for result in successful_results:
-        metrics = result.get("metrics", {selectedText})
-        for metric_name in metric_sums:
-            try:
-                value = float(metrics.get(metric_name.replace("halstead_", "halstead."))) # Handle nested Halstead metrics
-                metric_sums[metric_name] += value
-            except (TypeError, ValueError):
-                logger.warning(f"Invalid value for {metric_name} in file {result.get('file_path', 'unknown')}: {metrics.get(metric_name)}")
-
-    # Calculate averages and aggregate metrics
-    avg_maintainability = metric_sums["maintainability_index"] / total_files if total_files else 0
+    Loads and validates a JSON schema file.
     
-    return {
-        "maintainability_index": avg_maintainability,
-        "complexity": metric_sums["complexity"],
-        "halstead": {
-            "volume": metric_sums["halstead_volume"],
-            "difficulty": metric_sums["halstead_difficulty"] / total_files if total_files else 0,
-            "effort": metric_sums["halstead_effort"],
-        },
-        # ... (Add other aggregate metrics here)
-    }
-
-def validate_schema(schema_path: str) -> Optional[Dict[str, Any]]:
-    """
-    Validates a JSON schema and loads it if valid.
-
     Args:
-        schema_path (str): Path to the JSON schema file.
-
+        schema_path: Path to schema file
+        
     Returns:
-        Optional[Dict[str, Any]]: The loaded schema if valid, None otherwise.
+        Optional[Dict[str, Any]]: Loaded schema or None if invalid
     """
     try:
         with open(schema_path, "r", encoding="utf-8") as f:
             schema = json.load(f)
-        try:
-            Draft7Validator.check_schema(schema)
-            logger.debug("Schema is valid.")
-            return schema
-        except (SchemaError, ValidationError) as e:
-            logger.error(f"Invalid schema: {e}")
-            return None
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logger.error(f"Error loading schema file: {e}")
+        logger.debug(f"Loaded JSON schema from '{schema_path}'")
+        return schema
+    except FileNotFoundError:
+        logger.error(f"Schema file not found: '{schema_path}'")
         return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in schema file: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error loading schema: {e}")
+        return None
+
+def load_function_schema(schema_path: Union[str, Path]) -> Dict[str, Any]:
+    """
+    Loads and validates function schema file.
     
-# ----------------------------
-# EOF
-# ----------------------------
+    Args:
+        schema_path: Path to schema file
+        
+    Returns:
+        Dict[str, Any]: Validated schema
+        
+    Raises:
+        ValueError: If schema is invalid
+    """
+    schema = load_json_schema(schema_path)
+    if schema is None:
+        raise ValueError("Failed to load schema file")
+        
+    if "functions" not in schema:
+        raise ValueError("Schema missing 'functions' key")
+        
+    try:
+        from jsonschema import Draft7Validator
+        Draft7Validator.check_schema(schema)
+    except Exception as e:
+        raise ValueError(f"Invalid schema format: {e}")
+        
+    return schema
+
+def load_config(
+    config_path: Union[str, Path],
+    excluded_dirs: Set[str],
+    excluded_files: Set[str],
+    skip_types: Set[str]
+) -> Tuple[str, str]:
+    """
+    Loads configuration file and updates exclusion sets.
+    
+    Args:
+        config_path: Path to config file
+        excluded_dirs: Directories to exclude
+        excluded_files: Files to exclude
+        skip_types: Extensions to skip
+        
+    Returns:
+        Tuple[str, str]: Project info and style guidelines
+    """
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            
+        project_info = config.get("project_info", "")
+        style_guidelines = config.get("style_guidelines", "")
+        
+        excluded_dirs.update(config.get("excluded_dirs", []))
+        excluded_files.update(config.get("excluded_files", []))
+        skip_types.update(config.get("skip_types", []))
+        
+        logger.debug(f"Loaded configuration from '{config_path}'")
+        return project_info, style_guidelines
+        
+    except FileNotFoundError:
+        logger.error(f"Config file not found: '{config_path}'")
+        return "", ""
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in config file: {e}")
+        return "", ""
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+        return "", ""
+
+async def run_node_script_async(
+    script_path: Union[str, Path], 
+    input_json: str
+) -> Optional[str]:
+    """
+    Runs a Node.js script asynchronously.
+    
+    Args:
+        script_path: Path to Node.js script
+        input_json: JSON input for script
+        
+    Returns:
+        Optional[str]: Script output or None if failed
+    """
+    try:
+        process = await asyncio.create_subprocess_exec(
+            'node',
+            str(script_path),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate(input=input_json.encode())
+
+        if process.returncode != 0:
+            logger.error(
+                f"Node.js script '{script_path}' failed: {stderr.decode()}"
+            )
+            return None
+
+        return stdout.decode()
+        
+    except FileNotFoundError:
+        logger.error("Node.js is not installed or not in PATH")
+        return None
+    except Exception as e:
+        logger.error(f"Error running Node.js script: {e}")
+        return None
+
+async def run_node_insert_docstrings(
+    script_name: str,
+    input_data: Dict[str, Any],
+    scripts_dir: Union[str, Path]
+) -> Optional[str]:
+    """
+    Runs Node.js docstring insertion script.
+    
+    Args:
+        script_name: Name of script file
+        input_data: Data for script
+        scripts_dir: Directory containing scripts
+        
+    Returns:
+        Optional[str]: Modified code or None if failed
+    """
+    try:
+        script_path = Path(scripts_dir) / script_name
+        logger.debug(f"Running Node.js script: {script_path}")
+
+        input_json = json.dumps(input_data)
+        result = await run_node_script_async(script_path, input_json)
+        
+        if result:
+            try:
+                # Check if result is JSON
+                parsed = json.loads(result)
+                return parsed.get("code")
+            except json.JSONDecodeError:
+                # Return as plain text if not JSON
+                return result
+                
+        return None
+
+    except Exception as e:
+        logger.error(f"Error running {script_name}: {e}")
+        return None
+
+@dataclass
+class CodeMetrics:
+    """
+    Stores code metrics for a file or chunk.
+    
+    Attributes:
+        complexity: Cyclomatic complexity
+        maintainability: Maintainability index
+        halstead: Halstead complexity metrics
+        loc: Lines of code metrics
+        documentation_coverage: Documentation coverage percentage
+        test_coverage: Test coverage percentage if available
+    """
+    complexity: float
+    maintainability: float
+    halstead: Dict[str, float]
+    loc: Dict[str, int]
+    documentation_coverage: float
+    test_coverage: Optional[float] = None
+
+def calculate_metrics(
+    code: str,
+    file_path: Optional[Union[str, Path]] = None
+) -> Optional[CodeMetrics]:
+    """
+    Calculates various code metrics.
+    
+    Args:
+        code: Source code to analyze
+        file_path: Optional file path for context
+        
+    Returns:
+        Optional[CodeMetrics]: Calculated metrics or None if failed
+    """
+    try:
+        from radon.complexity import cc_visit
+        from radon.metrics import h_visit, mi_visit
+        
+        # Calculate complexity
+        complexity = 0
+        for block in cc_visit(code):
+            complexity += block.complexity
+            
+        # Calculate maintainability
+        maintainability = mi_visit(code, multi=False)
+        
+        # Calculate Halstead metrics
+        h_visit_result = h_visit(code)
+        if not h_visit_result:
+            logger.warning("No Halstead metrics found")
+            halstead = {
+                "volume": 0,
+                "difficulty": 0,
+                "effort": 0,
+                "time": 0,
+                "bugs": 0
+            }
+        else:
+            metrics = h_visit_result[0]
+            halstead = {
+                "volume": metrics.volume,
+                "difficulty": metrics.difficulty,
+                "effort": metrics.effort,
+                "time": metrics.time,
+                "bugs": metrics.bugs
+            }
+            
+        # Calculate LOC metrics
+        lines = code.splitlines()
+        code_lines = [l for l in lines if l.strip() and not l.strip().startswith('#')]
+        doc_lines = [l for l in lines if l.strip().startswith('"""') or 
+                    l.strip().startswith("'''")]
+        
+        loc = {
+            "total": len(lines),
+            "code": len(code_lines),
+            "docs": len(doc_lines),
+            "empty": len(lines) - len(code_lines) - len(doc_lines)
+        }
+        
+        # Calculate documentation coverage
+        doc_coverage = (len(doc_lines) / len(code_lines)) * 100 if code_lines else 0
+        
+        # Try to get test coverage if file path provided
+        test_coverage = None
+        if file_path:
+            try:
+                coverage_data = get_test_coverage(file_path)
+                if coverage_data:
+                    test_coverage = coverage_data.get("line_rate", 0) * 100
+            except Exception as e:
+                logger.debug(f"Could not get test coverage: {e}")
+        
+        return CodeMetrics(
+            complexity=complexity,
+            maintainability=maintainability,
+            halstead=halstead,
+            loc=loc,
+            documentation_coverage=doc_coverage,
+            test_coverage=test_coverage
+        )
+        
+    except Exception as e:
+        logger.error(f"Error calculating metrics: {e}")
+        return None
+
+def get_test_coverage(file_path: Union[str, Path]) -> Optional[Dict[str, float]]:
+    """
+    Gets test coverage data for a file.
+    
+    Args:
+        file_path: Path to source file
+        
+    Returns:
+        Optional[Dict[str, float]]: Coverage metrics if available
+    """
+    try:
+        # Look for coverage data in common locations
+        coverage_paths = [
+            Path.cwd() / '.coverage',
+            Path.cwd() / 'coverage' / 'coverage.json',
+            Path.cwd() / 'htmlcov' / 'coverage.json'
+        ]
+        
+        for cov_path in coverage_paths:
+            if cov_path.exists():
+                with open(cov_path) as f:
+                    coverage_data = json.load(f)
+                    
+                # Find data for this file
+                rel_path = Path(file_path).relative_to(Path.cwd())
+                file_data = coverage_data.get("files", {}).get(str(rel_path))
+                if file_data:
+                    return {
+                        "line_rate": file_data.get("line_rate", 0),
+                        "branch_rate": file_data.get("branch_rate", 0)
+                    }
+                    
+        return None
+        
+    except Exception as e:
+        logger.debug(f"Error getting coverage data: {e}")
+        return None
+
+def format_metrics(metrics: CodeMetrics) -> Dict[str, Any]:
+    """
+    Formats metrics for output.
+    
+    Args:
+        metrics: CodeMetrics object
+        
+    Returns:
+        Dict[str, Any]: Formatted metrics
+    """
+    return {
+        "complexity": {
+            "value": metrics.complexity,
+            "severity": get_complexity_severity(metrics.complexity),
+        },
+        "maintainability": {
+            "value": metrics.maintainability,
+            "severity": get_maintainability_severity(metrics.maintainability),
+        },
+        "halstead": {
+            metric: {
+                "value": value,
+                "severity": get_halstead_severity(metric, value)
+            }
+            for metric, value in metrics.halstead.items()
+        },
+        "lines_of_code": metrics.loc,
+        "documentation": {
+            "coverage": metrics.documentation_coverage,
+            "severity": get_doc_coverage_severity(metrics.documentation_coverage)
+        },
+        "test_coverage": {
+            "value": metrics.test_coverage,
+            "severity": get_test_coverage_severity(metrics.test_coverage)
+        } if metrics.test_coverage is not None else None
+    }
+
+def get_complexity_severity(value: float) -> str:
+    """Gets severity level for complexity metric."""
+    thresholds = DEFAULT_COMPLEXITY_THRESHOLDS
+    if value <= thresholds["low"]:
+        return "low"
+    elif value <= thresholds["medium"]:
+        return "medium"
+    return "high"
+
+def get_maintainability_severity(value: float) -> str:
+    """Gets severity level for maintainability metric."""
+    thresholds = DEFAULT_MAINTAINABILITY_THRESHOLDS
+    if value >= thresholds["high"]:
+        return "low"
+    elif value >= thresholds["medium"]:
+        return "medium"
+    return "high"
+
+def get_halstead_severity(metric: str, value: float) -> str:
+    """Gets severity level for Halstead metrics."""
+    thresholds = DEFAULT_HALSTEAD_THRESHOLDS.get(metric, {})
+    if not thresholds:
+        return "unknown"
+    
+    if value <= thresholds["low"]:
+        return "low"
+    elif value <= thresholds["medium"]:
+        return "medium"
+    return "high"
+
+def get_doc_coverage_severity(value: float) -> str:
+    """Gets severity level for documentation coverage."""
+    if value >= 80:
+        return "low"
+    elif value >= 50:
+        return "medium"
+    return "high"
+
+def get_test_coverage_severity(value: Optional[float]) -> str:
+    """Gets severity level for test coverage."""
+    if value is None:
+        return "unknown"
+    
+    if value >= 80:
+        return "low"
+    elif value >= 60:
+        return "medium"
+    return "high"
+
+def setup_logging(
+    log_file: Optional[Union[str, Path]] = None,
+    log_level: str = "INFO"
+) -> None:
+    """
+    Sets up logging configuration.
+    
+    Args:
+        log_file: Optional path to log file
+        log_level: Logging level to use
+    """
+    handlers = [logging.StreamHandler(sys.stdout)]
+    
+    if log_file:
+        handlers.append(logging.FileHandler(log_file))
+    
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper()),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=handlers
+    )
