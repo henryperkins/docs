@@ -156,77 +156,120 @@ def generate_summary(documentation: Dict[str, Any]) -> str:
     return "\n".join(summary)
 
 
-def generate_documentation_prompt(
-    chunk: CodeChunk,
-    chunk_history: List[CodeChunk],
-    project_info: str,
-    style_guidelines: str,
-    function_schema: Dict[str, Any]
-) -> List[Dict[str, str]]:
+def calculate_prompt_tokens(
+    base_info: str,
+    context: str,
+    chunk_content: str,
+    schema: str
+) -> int:
     """
-    Generates a prompt for documentation generation for a specific code chunk.
+    Calculates total tokens needed for the prompt.
     
     Args:
-        chunk (CodeChunk): The current code chunk to document
-        chunk_history (List[CodeChunk]): List of previously processed chunks from the same file
-        project_info (str): Information about the project
-        style_guidelines (str): Documentation style guidelines
-        function_schema (Dict[str, Any]): The schema defining functions and their documentation
+        base_info: Project and style infogi
+        context: Context from other chunks
+        chunk_content: Current chunk content
+        schema: JSON schema
         
     Returns:
-        List[Dict[str, str]]: List of messages forming the prompt for the AI
+        int: Total token count
     """
-    # Build context from chunk history
-    context = ""
-    if chunk_history:
-        context_chunks = [
-            c for c in chunk_history 
-            if c.class_name == chunk.class_name  # Related by class
-            or c.function_name == chunk.function_name  # Related by function
-            or (not c.class_name and not c.function_name 
-                and not chunk.class_name and not chunk.function_name)  # Both in module scope
-        ]
-        if context_chunks:
-            context = "\nPreviously processed related code:\n"
-            for c in context_chunks[-3:]:  # Limit to last 3 related chunks
-                context += f"\n# From lines {c.start_line}-{c.end_line}:\n{c.chunk_content}\n"
+    encoder = get_tiktoken_encoder()
+    total = 0
+    for text in [base_info, context, chunk_content, schema]:
+        total += len(encoder.encode(text))
+    return total
 
-    docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
+def generate_documentation_prompt(
+    chunk: CodeChunk,
+    context_manager: HierarchicalContextManager,
+    project_info: str,
+    style_guidelines: str,
+    function_schema: Dict[str, Any],
+    max_total_tokens: int = 4096,
+    max_completion_tokens: int = 1024
+) -> List[Dict[str, str]]:
+    """Enhanced prompt generation with better token management."""
     
-    messages = [
-        {"role": "system", "content": "You are a code documentation generator."},
-        {
-            "role": "user",
-            "content": f"""
-Generate documentation for the following {chunk.language} code chunk from file '{chunk.file_path}':
-
+    # Calculate tokens for fixed content
+    base_info = f"""
 Project Info:
 {project_info}
 
 Style Guidelines:
 {style_guidelines}
-
-Context Information:
-- Lines: {chunk.start_line}-{chunk.end_line}
-- {'Class: ' + chunk.class_name if chunk.class_name else ''}
-- {'Function: ' + chunk.function_name if chunk.function_name else ''}
-{context}
-
-Code to document:
-{chunk.chunk_content}
-
-Use the {docstring_format} style for docstrings. Ensure all fields in the schema are present, even if empty.
-If a field is not applicable, set its value to null. Use concise and informative descriptions.
-
-Schema:
-{json.dumps(function_schema, indent=2)}
-
-Think step by step about what should go in each field of the schema. Then, call the `generate_documentation`
-function with the appropriate JSON arguments based on the schema.
 """
-        }
-    ]
-    return messages
+    schema_str = json.dumps(function_schema, indent=2)
+    fixed_tokens = calculate_prompt_tokens(
+        base_info=base_info,
+        context="",
+        chunk_content=chunk.chunk_content,
+        schema=schema_str
+    )
+    
+    # Calculate available tokens for context
+    available_context_tokens = max_total_tokens - fixed_tokens - max_completion_tokens
+    if available_context_tokens <= 0:
+        logger.warning(f"No tokens available for context in chunk {chunk.chunk_id}")
+        available_context_tokens = 0
+
+    # Get and prioritize context
+    context_chunks = []
+    if chunk.function_name:
+        context_chunks = context_manager.get_context_for_function(
+            module_path=chunk.file_path,
+            function_name=chunk.function_name,
+            language=chunk.language,
+            max_tokens=available_context_tokens
+        )
+    elif chunk.class_name:
+        context_chunks = context_manager.get_context_for_class(
+            module_path=chunk.file_path,
+            class_name=chunk.class_name,
+            language=chunk.language,
+            max_tokens=available_context_tokens
+        )
+    else:
+        context_chunks = context_manager.get_context_for_module(
+            module_path=chunk.file_path,
+            language=chunk.language,
+            max_tokens=available_context_tokens
+        )
+
+    # Build context string with token tracking
+    context = "Related code and documentation:\n\n"
+    current_tokens = 0
+    for ctx_chunk in context_chunks:
+        if ctx_chunk.chunk_id == chunk.chunk_id:
+            continue
+            
+        # Calculate tokens for this context addition
+        context_addition = f"""
+# From {ctx_chunk.get_context_string()}:
+{ctx_chunk.chunk_content}
+"""
+        doc = context_manager.get_documentation_for_chunk(ctx_chunk.chunk_id)
+        if doc:
+            context_addition += f"""
+Existing documentation:
+{json.dumps(doc, indent=2)}
+"""
+        
+        addition_tokens = len(get_tiktoken_encoder().encode(context_addition))
+        if current_tokens + addition_tokens > available_context_tokens:
+            break
+            
+        context += context_addition
+        current_tokens += addition_tokens
+
+    # Create final prompt
+    return create_prompt_messages(
+        chunk=chunk,
+        context=context,
+        base_info=base_info,
+        schema=schema_str,
+        docstring_format=function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
+    )
 
 
 async def write_documentation_report(
