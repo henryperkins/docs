@@ -150,7 +150,7 @@ class JSTsHandler(BaseHandler):
                 input_data=input_data,
                 error_message="Metrics calculation failed"
             )
-            logger.debug(f"Metrics calculation result: {result}")  # Added logging
+            logger.debug(f"Metrics calculation result: {result}")
 
             if result is None:
                 logger.error("Metrics calculation returned None.")
@@ -166,7 +166,6 @@ class JSTsHandler(BaseHandler):
                 logger.error(f"Metrics result is missing keys: {missing_keys}")
                 return None
 
-            # Ensure all necessary fields are of correct type
             if not isinstance(result["halstead"], dict):
                 logger.error("Halstead metrics should be a dictionary.")
                 return None
@@ -284,13 +283,23 @@ class JSTsHandler(BaseHandler):
         if isinstance(result, str):
             return result
         elif isinstance(result, dict):
-            # Assuming js_ts_inserter.js returns the modified code as JSON with a 'code' key
             return result.get("code")
         else:
             logger.error("Inserter script did not return code string.")
             return None
 
     def _run_script(self, script_name: str, input_data: Dict[str, Any], error_message: str) -> Any:
+        """
+        Runs a Node.js script with improved error handling and encoding management.
+        
+        Args:
+            script_name (str): Name of the script to run
+            input_data (Dict[str, Any]): Data to pass to the script
+            error_message (str): Error message prefix for logging
+            
+        Returns:
+            Any: The script's output, parsed from JSON if possible
+        """
         try:
             script_path = os.path.join(self.script_dir, script_name)
             if not os.path.isfile(script_path):
@@ -299,20 +308,29 @@ class JSTsHandler(BaseHandler):
 
             logger.debug(f"Running script: {script_path} with input data: {input_data}")
 
+            # Convert input data to JSON string with proper encoding handling
+            try:
+                input_json = json.dumps(input_data, ensure_ascii=False)
+                input_bytes = input_json.encode('utf-8', errors='surrogateescape')
+            except UnicodeEncodeError as e:
+                logger.error(f"Unicode encoding error in input data: {e}", exc_info=True)
+                return None
+
             process = subprocess.run(
                 ['node', script_path],
-                input=json.dumps(input_data, ensure_ascii=False).encode('utf-8'),
+                input=input_bytes,
                 capture_output=True,
                 text=True,
                 check=True,
                 timeout=60
             )
+
             if process.returncode != 0:
                 logger.error(f"{error_message}: {process.stderr}")
                 return None
 
             output = process.stdout.strip()
-            logger.debug(f"Script Output ({script_name}): {output}")  # Added logging
+            logger.debug(f"Script Output ({script_name}): {output}")
 
             try:
                 return json.loads(output)
@@ -324,11 +342,11 @@ class JSTsHandler(BaseHandler):
                 return None
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"{error_message}: {e.stderr}")
+            logger.error(f"{error_message}: Process error: {e.stderr}")
             return None
         except subprocess.TimeoutExpired:
-            logger.error(f"{error_message}: Script timed out.")
+            logger.error(f"{error_message}: Script timed out after 60 seconds")
             return None
         except Exception as e:
-            logger.error(f"{error_message}: {e}")
+            logger.error(f"{error_message}: Unexpected error: {e}", exc_info=True)
             return None
