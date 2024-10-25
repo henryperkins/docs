@@ -15,7 +15,9 @@ from dotenv import load_dotenv
 from typing import Any, Set, List, Optional, Dict, Tuple
 from jsonschema import Draft7Validator, ValidationError, SchemaError
 import aiohttp # Import aiohttp
-
+import tiktoken
+from dataclasses import replace
+from code_chunk import CodeChunk
 # Load environment variables
 load_dotenv()
 
@@ -311,6 +313,271 @@ def load_config(config_path: str, excluded_dirs: Set[str], excluded_files: Set[s
     except Exception as e:
         logger.error(f"Unexpected error loading config file '{config_path}': {e}")
         return "", ""
+
+
+class ChunkTooLargeError(Exception):
+    """Raised when a code chunk exceeds the maximum token limit even after splitting."""
+    pass
+
+def count_tokens(text: str, encoder: tiktoken.Encoding) -> Tuple[List[str], int]:
+    """
+    Count tokens in a text string using the specified encoder.
+    
+    Args:
+        text (str): The text to tokenize
+        encoder (tiktoken.Encoding): The tiktoken encoder to use
+        
+    Returns:
+        Tuple[List[str], int]: A tuple containing the list of token strings and total token count
+    """
+    token_ints = encoder.encode(text)
+    token_strings = [encoder.decode([t]) for t in token_ints]
+    return token_strings, len(token_ints)
+
+def split_code_block(code: str, start_line: int, encoder: tiktoken.Encoding, 
+                    max_tokens: int, overlap_tokens: int) -> List[Tuple[str, List[str], int, int]]:
+    """
+    Split a block of code into chunks that respect the token limit.
+    
+    Args:
+        code (str): The code block to split
+        start_line (int): The starting line number
+        encoder (tiktoken.Encoding): The tiktoken encoder
+        max_tokens (int): Maximum tokens per chunk
+        overlap_tokens (int): Number of tokens to overlap between chunks
+        
+    Returns:
+        List[Tuple[str, List[str], int, int]]: List of tuples containing:
+            (chunk_content, tokens, chunk_start_line, chunk_end_line)
+    """
+    lines = code.splitlines()
+    chunks = []
+    current_chunk = []
+    current_line = start_line
+    
+    for i, line in enumerate(lines):
+        current_chunk.append(line)
+        chunk_text = '\n'.join(current_chunk)
+        tokens, token_count = count_tokens(chunk_text, encoder)
+        
+        if token_count >= max_tokens:
+            # Back up to the last complete statement if possible
+            split_point = len(current_chunk)
+            for j in range(len(current_chunk) - 1, 0, -1):
+                if current_chunk[j].rstrip().endswith((':', ';', '}')):
+                    split_point = j + 1
+                    break
+            
+            chunk_content = '\n'.join(current_chunk[:split_point])
+            chunk_tokens, chunk_token_count = count_tokens(chunk_content, encoder)
+            chunks.append((
+                chunk_content,
+                chunk_tokens,
+                current_line,
+                current_line + split_point - 1
+            ))
+            
+            # Keep overlap_tokens worth of content for the next chunk
+            if overlap_tokens > 0:
+                overlap_text = chunk_content
+                overlap_tokens_list, _ = count_tokens(overlap_text, encoder)
+                overlap_tokens_list = overlap_tokens_list[-overlap_tokens:]
+                current_chunk = [encoder.decode(encoder.encode(''.join(overlap_tokens_list)))]
+            else:
+                current_chunk = []
+            
+            current_chunk.extend(current_chunk[split_point:])
+            current_line += split_point
+            
+    if current_chunk:
+        chunk_content = '\n'.join(current_chunk)
+        chunk_tokens, _ = count_tokens(chunk_content, encoder)
+        chunks.append((
+            chunk_content,
+            chunk_tokens,
+            current_line,
+            current_line + len(current_chunk) - 1
+        ))
+    
+    return chunks
+
+def chunk_code(code: str, file_path: str, language: str, 
+               max_tokens: int = 512, overlap_tokens: int = 10) -> List[CodeChunk]:
+    """
+    Split code into chunks while respecting syntax and token limits.
+    
+    This function chunks code based on function and class definitions, ensuring that
+    logical units stay together when possible. If a unit is too large, it will be
+    split at statement boundaries with appropriate overlapping tokens.
+    
+    Args:
+        code (str): The source code to chunk
+        file_path (str): Path to the source file
+        language (str): Programming language of the code
+        max_tokens (int, optional): Maximum tokens per chunk. Defaults to 512.
+        overlap_tokens (int, optional): Number of tokens to overlap between chunks. 
+            Defaults to 10.
+            
+    Returns:
+        List[CodeChunk]: List of CodeChunk objects representing the chunked code
+        
+    Raises:
+        NotImplementedError: If language is not Python
+        ChunkTooLargeError: If a chunk exceeds max_tokens even after splitting
+        SyntaxError: If the code cannot be parsed
+        ValueError: If invalid arguments are provided
+    """
+    if language.lower() != "python":
+        raise NotImplementedError(
+            f"Chunking is currently only implemented for Python. Got: {language}"
+        )
+    
+    if max_tokens <= 0:
+        raise ValueError("max_tokens must be positive")
+    if overlap_tokens < 0:
+        raise ValueError("overlap_tokens must be non-negative")
+    if overlap_tokens >= max_tokens:
+        raise ValueError("overlap_tokens must be less than max_tokens")
+        
+    try:
+        # Initialize tiktoken encoder
+        encoder = tiktoken.get_encoding("cl100k_base")
+        chunks: List[CodeChunk] = []
+        
+        # Parse the AST
+        tree = ast.parse(code)
+        
+        # Track line numbers and code outside functions/classes
+        current_line = 1
+        last_node_end = 0
+        
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                # Handle code before this node
+                if node.lineno > last_node_end + 1:
+                    before_code = '\n'.join(code.splitlines()[last_node_end:node.lineno-1])
+                    if before_code.strip():
+                        before_chunks = split_code_block(
+                            before_code, last_node_end + 1, encoder, 
+                            max_tokens, overlap_tokens
+                        )
+                        for content, tokens, start, end in before_chunks:
+                            chunk = CodeChunk(
+                                file_path=file_path,
+                                start_line=start,
+                                end_line=end,
+                                function_name=None,
+                                class_name=None,
+                                chunk_content=content,
+                                tokens=tokens,
+                                token_count=len(tokens),
+                                language=language
+                            )
+                            logger.debug(f"Created chunk: {chunk.get_context_string()}")
+                            chunks.append(chunk)
+                
+                # Get the node's source code
+                node_code = ast.get_source_segment(code, node)
+                if not node_code:
+                    continue
+                
+                # Count tokens for this node
+                tokens, token_count = count_tokens(node_code, encoder)
+                
+                if token_count <= max_tokens:
+                    # Node fits in one chunk
+                    chunk = CodeChunk(
+                        file_path=file_path,
+                        start_line=node.lineno,
+                        end_line=node.end_lineno,
+                        function_name=node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else None,
+                        class_name=node.name if isinstance(node, ast.ClassDef) else None,
+                        chunk_content=node_code,
+                        tokens=tokens,
+                        token_count=token_count,
+                        language=language
+                    )
+                    logger.debug(f"Created chunk: {chunk.get_context_string()}")
+                    chunks.append(chunk)
+                else:
+                    # Split the node into multiple chunks
+                    node_chunks = split_code_block(
+                        node_code, node.lineno, encoder, 
+                        max_tokens, overlap_tokens
+                    )
+                    
+                    for i, (content, tokens, start, end) in enumerate(node_chunks, 1):
+                        # Add part suffix for split chunks
+                        suffix = f"_part{i}" if len(node_chunks) > 1 else ""
+                        chunk = CodeChunk(
+                            file_path=file_path,
+                            start_line=start,
+                            end_line=end,
+                            function_name=f"{node.name}{suffix}" if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else None,
+                            class_name=f"{node.name}{suffix}" if isinstance(node, ast.ClassDef) else None,
+                            chunk_content=content,
+                            tokens=tokens,
+                            token_count=len(tokens),
+                            language=language
+                        )
+                        
+                        if len(tokens) > max_tokens:
+                            msg = f"Chunk too large after splitting: {chunk.get_context_string()}"
+                            logger.error(msg)
+                            raise ChunkTooLargeError(msg)
+                            
+                        logger.debug(f"Created chunk: {chunk.get_context_string()}")
+                        chunks.append(chunk)
+                
+                last_node_end = node.end_lineno
+        
+        # Handle any remaining code
+        if last_node_end < len(code.splitlines()):
+            remaining_code = '\n'.join(code.splitlines()[last_node_end:])
+            if remaining_code.strip():
+                remaining_chunks = split_code_block(
+                    remaining_code, last_node_end + 1, encoder, 
+                    max_tokens, overlap_tokens
+                )
+                for content, tokens, start, end in remaining_chunks:
+                    chunk = CodeChunk(
+                        file_path=file_path,
+                        start_line=start,
+                        end_line=end,
+                        function_name=None,
+                        class_name=None,
+                        chunk_content=content,
+                        tokens=tokens,
+                        token_count=len(tokens),
+                        language=language
+                    )
+                    logger.debug(f"Created chunk: {chunk.get_context_string()}")
+                    chunks.append(chunk)
+        
+        return chunks
+        
+    except SyntaxError as e:
+        logger.error(f"Syntax error in {file_path}: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error chunking {file_path}: {str(e)}")
+        raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ----------------------------
 # Code Formatting and Cleanup

@@ -156,16 +156,49 @@ def generate_summary(documentation: Dict[str, Any]) -> str:
     return "\n".join(summary)
 
 
-def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
-    """Generates a prompt that encourages a function call."""
+def generate_documentation_prompt(
+    chunk: CodeChunk,
+    chunk_history: List[CodeChunk],
+    project_info: str,
+    style_guidelines: str,
+    function_schema: Dict[str, Any]
+) -> List[Dict[str, str]]:
+    """
+    Generates a prompt for documentation generation for a specific code chunk.
+    
+    Args:
+        chunk (CodeChunk): The current code chunk to document
+        chunk_history (List[CodeChunk]): List of previously processed chunks from the same file
+        project_info (str): Information about the project
+        style_guidelines (str): Documentation style guidelines
+        function_schema (Dict[str, Any]): The schema defining functions and their documentation
+        
+    Returns:
+        List[Dict[str, str]]: List of messages forming the prompt for the AI
+    """
+    # Build context from chunk history
+    context = ""
+    if chunk_history:
+        context_chunks = [
+            c for c in chunk_history 
+            if c.class_name == chunk.class_name  # Related by class
+            or c.function_name == chunk.function_name  # Related by function
+            or (not c.class_name and not c.function_name 
+                and not chunk.class_name and not chunk.function_name)  # Both in module scope
+        ]
+        if context_chunks:
+            context = "\nPreviously processed related code:\n"
+            for c in context_chunks[-3:]:  # Limit to last 3 related chunks
+                context += f"\n# From lines {c.start_line}-{c.end_line}:\n{c.chunk_content}\n"
 
     docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
+    
     messages = [
         {"role": "system", "content": "You are a code documentation generator."},
         {
             "role": "user",
             "content": f"""
-Generate documentation for the following {language} file: '{file_name}'
+Generate documentation for the following {chunk.language} code chunk from file '{chunk.file_path}':
 
 Project Info:
 {project_info}
@@ -173,21 +206,27 @@ Project Info:
 Style Guidelines:
 {style_guidelines}
 
-Use the {docstring_format} style for docstrings. Ensure all fields in the schema are present, even if empty. If a field is not applicable, set its value to null. Use concise and informative descriptions.
+Context Information:
+- Lines: {chunk.start_line}-{chunk.end_line}
+- {'Class: ' + chunk.class_name if chunk.class_name else ''}
+- {'Function: ' + chunk.function_name if chunk.function_name else ''}
+{context}
 
-Code Structure:
-{json.dumps(code_structure, indent=2)}
+Code to document:
+{chunk.chunk_content}
+
+Use the {docstring_format} style for docstrings. Ensure all fields in the schema are present, even if empty.
+If a field is not applicable, set its value to null. Use concise and informative descriptions.
 
 Schema:
 {json.dumps(function_schema, indent=2)}
 
-Think step by step, and determine what should go in each field of the schema.  Then, call the `generate_documentation` function with the appropriate JSON arguments based on the schema.  Do *not* return the documentation directly; make the function call instead.
+Think step by step about what should go in each field of the schema. Then, call the `generate_documentation`
+function with the appropriate JSON arguments based on the schema.
 """
         }
     ]
     return messages
-
-
 
 
 async def write_documentation_report(
