@@ -19,6 +19,8 @@ from utils import (
     clean_unused_imports_async,
     format_with_black_async,
     should_process_file,
+    chunk_code,
+    ChunkTooLargeError,
 )
 from write_documentation_report import generate_documentation_prompt, write_documentation_report
 from context_manager import ContextManager
@@ -27,6 +29,8 @@ from datetime import datetime
 from time import perf_counter
 from metrics import MetricsAnalyzer, MetricsResult, calculate_code_metrics
 from metrics_utils import MetricsThresholds, get_metric_severity
+from dataclasses import dataclass
+from code_chunk import CodeChunk
 
 logger = logging.getLogger(__name__)
 
@@ -121,86 +125,246 @@ async def fetch_documentation_rest(
         "Authorization": f"Bearer {azure_api_key}",
     }
 
-    for attempt in range(retry):
+@dataclass
+class ChunkDocumentation:
+    """Stores documentation for a specific code chunk."""
+    chunk_id: str
+    documentation: Dict[str, Any]
+    success: bool
+    error: Optional[str] = None
+
+@dataclass
+class FileProcessingResult:
+    """Stores the result of processing a file."""
+    file_path: str
+    success: bool
+    error: Optional[str] = None
+    documentation: Optional[Dict[str, Any]] = None
+    metrics_result: Optional[Dict[str, Any]] = None
+
+async def process_file(
+    session: aiohttp.ClientSession,
+    file_path: str,
+    skip_types: Set[str],
+    semaphore: asyncio.Semaphore,
+    deployment_name: str,
+    function_schema: Dict[str, Any],
+    repo_root: str,
+    project_info: str,
+    style_guidelines: str,
+    safe_mode: bool,
+    azure_api_key: str,
+    azure_endpoint: str,
+    azure_api_version: str,
+    output_dir: str,
+    project_id: str,
+) -> FileProcessingResult:
+    """
+    Process a single file, generating documentation using code chunking.
+    
+    This function now processes files in chunks to handle large files and maintain
+    context across documentation generation. It uses the chunk_code function to split
+    the code into manageable pieces while preserving code structure.
+    
+    Args:
+        session: aiohttp session for API calls
+        file_path: Path to the file to process
+        ... (other arguments remain the same)
+        
+    Returns:
+        FileProcessingResult: The result of processing the file
+    """
+    try:
+        # Read file content and determine language
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            content = await f.read()
+        
+        language = get_language(file_path)
+        if not language:
+            return FileProcessingResult(
+                file_path=file_path,
+                success=False,
+                error="Unsupported file type"
+            )
+        
+        # Split code into chunks
         try:
-            async with semaphore:
-                payload = {
-                    "messages": prompt,
-                    "max_tokens": 1500,
-                    "temperature": 0.7,  # Adjust as needed
-                    "top_p": 0.9,       # Adjust as needed
-                    "n": 1,
-                    "stop": None,
-                    "functions": function_schema["functions"],
-                    "function_call": {"name": "generate_documentation"}
-                }
+            chunks = chunk_code(content, file_path, language)
+            logger.info(f"Split {file_path} into {len(chunks)} chunks")
+        except ChunkTooLargeError as e:
+            logger.warning(f"File {file_path} contains chunks that are too large: {str(e)}")
+            return FileProcessingResult(
+                file_path=file_path,
+                success=False,
+                error=f"Chunk too large: {str(e)}"
+            )
+        
+        # Process each chunk
+        chunk_history: List[CodeChunk] = []
+        chunk_docs: List[ChunkDocumentation] = []
+        
+        for chunk in chunks:
+            try:
+                # Generate prompt with context from chunk history
+                prompt = generate_documentation_prompt(
+                    chunk=chunk,
+                    chunk_history=chunk_history,
+                    project_info=project_info,
+                    style_guidelines=style_guidelines,
+                    function_schema=function_schema
+                )
+                
+                # Get documentation from Azure OpenAI
+                documentation = await fetch_documentation_rest(
+                    session=session,
+                    prompt=prompt,
+                    semaphore=semaphore,
+                    deployment_name=deployment_name,
+                    function_schema=function_schema,
+                    azure_api_key=azure_api_key,
+                    azure_endpoint=azure_endpoint,
+                    azure_api_version=azure_api_version
+                )
+                
+                chunk_docs.append(ChunkDocumentation(
+                    chunk_id=chunk.chunk_id,
+                    documentation=documentation,
+                    success=True
+                ))
+                
+                # Add to history for context in future chunks
+                chunk_history.append(chunk)
+                
+            except Exception as e:
+                logger.error(f"Error processing chunk in {file_path}: {str(e)}")
+                chunk_docs.append(ChunkDocumentation(
+                    chunk_id=chunk.chunk_id,
+                    documentation={},
+                    success=False,
+                    error=str(e)
+                ))
+        
+        # Combine documentation from all chunks
+        if not any(doc.success for doc in chunk_docs):
+            return FileProcessingResult(
+                file_path=file_path,
+                success=False,
+                error="Failed to process any chunks successfully"
+            )
+        
+        combined_documentation = combine_chunk_documentation(chunk_docs, chunks)
+        
+        # Write documentation report
+        result = await write_documentation_report(
+            documentation=combined_documentation,
+            language=language,
+            file_path=file_path,
+            repo_root=repo_root,
+            output_dir=output_dir,
+            project_id=project_id
+        )
+        
+        return FileProcessingResult(
+            file_path=file_path,
+            success=True,
+            documentation=result
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing file {file_path}: {str(e)}", exc_info=True)
+        return FileProcessingResult(
+            file_path=file_path,
+            success=False,
+            error=str(e)
+        )
 
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        logger.debug(f"API Response: {data}")
-
-                        choice = data.get("choices", [{}])[0]
-                        message = choice.get("message", {})
-
-                        if "function_call" in message:
-                            function_call = message["function_call"]
-                            arguments = function_call.get("arguments", "{}")
-                            try:
-                                function_args = json.loads(arguments)
-                                validated_args = validate_ai_response(
-                                    function_args,
-                                    function_schema["functions"][0]["parameters"]
-                                )
-                                if validated_args:
-                                    logger.debug("Function call successful")
-                                    return validated_args
-                                else:
-                                    raise ValueError("AI response validation failed")
-                            except (json.JSONDecodeError, ValueError) as e:
-                                logger.error(f"Error processing function call arguments: {e}")
-                                if attempt < retry - 1:
-                                    prompt[-1]["content"] += "\n\nPlease ensure the `generate_documentation` function call arguments are valid JSON and match the provided schema."
-                                    await asyncio.sleep(2**attempt)  # Exponential backoff
-                                    continue
-                                else:
-                                    raise  # Re-raise after retries
-                        else:
-                            logger.error("Model did not make the expected function call. Returning the raw response (if any) for debugging.")
-                            return message.get("content")  # Return content for debugging
-
-                    elif response.status == 429:  # Rate limit hit
-                        retry_after = int(response.headers.get("Retry-After", 1)) * (attempt +1) # Increase backoff with attempts
-                        logger.warning(f"Rate limited (Attempt {attempt+1}). Retrying after {retry_after} seconds...")
-                        await asyncio.sleep(retry_after)
-                        continue
-                    elif response.status == 401:
-                        raise HTTPException(status_code=401, detail="Unauthorized. Check your API key and endpoint.")
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Azure OpenAI API request failed with status {response.status}: {error_text}")
-                        raise HTTPException(status_code=response.status, detail=error_text)
-
-        except aiohttp.ClientError as e:
-            logger.error(f"Network error during API request (Attempt {attempt+1}): {e}", exc_info=True)
-            if attempt < retry - 1:
-                await asyncio.sleep(2**attempt) # Exponential backoff
-                continue
-            else:
-                raise  # Re-raise after retries
-
-        except Exception as e:
-            logger.error(f"Unexpected error during API request (Attempt {attempt+1}): {e}", exc_info=True)
-            if attempt < retry - 1:
-                await asyncio.sleep(2**attempt) # Exponential backoff
-                continue
-            else:
-                raise # Re-raise after retries
-
-
-    logger.error("All retry attempts to fetch documentation failed.")
-    return None
-
+def combine_chunk_documentation(
+    chunk_docs: List[ChunkDocumentation],
+    chunks: List[CodeChunk]
+) -> Dict[str, Any]:
+    """
+    Combines documentation from multiple chunks into a single documentation object.
+    
+    Args:
+        chunk_docs: List of documentation for each chunk
+        chunks: List of code chunks
+        
+    Returns:
+        Dict[str, Any]: Combined documentation
+    """
+    combined: Dict[str, Any] = {
+        "functions": [],
+        "classes": [],
+        "variables": [],
+        "constants": [],
+        "summary": "",
+        "metrics": {}
+    }
+    
+    # Group chunks by class
+    class_chunks: Dict[str, List[CodeChunk]] = {}
+    for chunk in chunks:
+        if chunk.class_name:
+            key = chunk.class_name.split('_part')[0]  # Remove _partX suffix
+            class_chunks.setdefault(key, []).append(chunk)
+    
+    # Combine documentation
+    for doc in chunk_docs:
+        if not doc.success:
+            continue
+            
+        # Add functions that aren't part of a class
+        chunk = next(c for c in chunks if c.chunk_id == doc.chunk_id)
+        if chunk.function_name and not chunk.class_name:
+            combined["functions"].extend(doc.documentation.get("functions", []))
+        
+        # Add variables and constants
+        combined["variables"].extend(doc.documentation.get("variables", []))
+        combined["constants"].extend(doc.documentation.get("constants", []))
+        
+        # Update metrics
+        for key, value in doc.documentation.get("metrics", {}).items():
+            if key not in combined["metrics"]:
+                combined["metrics"][key] = value
+            elif isinstance(value, (int, float)):
+                combined["metrics"][key] = max(combined["metrics"][key], value)
+    
+    # Combine class documentation
+    for class_name, class_chunks in class_chunks.items():
+        class_docs = [
+            doc for doc in chunk_docs
+            if doc.success and next(
+                (c for c in chunks if c.chunk_id == doc.chunk_id and c.class_name == class_name),
+                None
+            )
+        ]
+        if not class_docs:
+            continue
+            
+        # Combine method documentation for the class
+        methods = []
+        for doc in class_docs:
+            if "classes" in doc.documentation:
+                for cls in doc.documentation["classes"]:
+                    methods.extend(cls.get("methods", []))
+        
+        # Create combined class documentation
+        combined["classes"].append({
+            "name": class_name,
+            "docstring": class_docs[0].documentation.get("classes", [{}])[0].get("docstring", ""),
+            "methods": methods
+        })
+    
+    # Generate overall summary
+    summaries = [
+        doc.documentation.get("summary", "")
+        for doc in chunk_docs
+        if doc.success
+    ]
+    combined["summary"] = "\n".join(s for s in summaries if s)
+    
+    return combined
+    
 async def handle_api_error(response: aiohttp.ClientResponse):
     """Handles errors from the Azure OpenAI API."""
     try:
@@ -234,45 +398,6 @@ def validate_documentation(documentation: Dict[str, Any], schema: Dict[str, Any]
         return None
 
 
-class FileProcessingResult:
-    """Class to store file processing results"""
-    def __init__(self, 
-                 file_path: str, 
-                 success: bool, 
-                 metrics_result: Optional[MetricsResult] = None,
-                 error: Optional[str] = None,
-                 documentation: Optional[Dict[str, Any]] = None):
-        self.file_path = file_path
-        self.success = success
-        self.metrics_result = metrics_result
-        self.error = error
-        self.documentation = documentation
-        self.timestamp = datetime.now()
-        
-async def process_file(
-    session: aiohttp.ClientSession,
-    file_path: str,
-    skip_types: Set[str],
-    semaphore: asyncio.Semaphore,
-    deployment_name: str,
-    function_schema: Dict[str, Any],
-    repo_root: str,
-    project_info: str,
-    style_guidelines: str,
-    safe_mode: bool,
-    azure_api_key: str,
-    azure_endpoint: str,
-    azure_api_version: str,
-    output_dir: str,
-    project_id: str,
-) -> Optional[FileProcessingResult]:
-    """Enhanced process_file with better metrics handling and error tracking"""
-    
-    start_time = perf_counter()
-    metrics_analyzer = MetricsAnalyzer()
-    
-    if not should_process_file(file_path, skip_types):
-        return None
 
     try:
         # Prepare file and get initial content
