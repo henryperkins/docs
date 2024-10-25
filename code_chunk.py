@@ -41,7 +41,58 @@ class CodeChunk:
     token_count: int
     language: str
     chunk_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    is_async: bool = False
+    chunk_type: str = field(init=False)
 
+    def __post_init__(self):
+        """Validate chunk data and set chunk type"""
+        if self.start_line > self.end_line:
+            raise ValueError(f"start_line ({self.start_line}) must be <= end_line ({self.end_line})")
+        if not self.tokens:
+            raise ValueError("tokens list cannot be empty")
+        if self.token_count != len(self.tokens):
+            raise ValueError(f"token_count ({self.token_count}) does not match length of tokens ({len(self.tokens)})")
+
+        # Set chunk type
+        object.__setattr__(self, 'chunk_type', self._determine_chunk_type())
+
+    def _determine_chunk_type(self) -> str:
+        """Determines the type of this chunk based on its properties"""
+        if self.class_name and self.function_name:
+            return 'method'
+        elif self.class_name:
+            return 'class'
+        elif self.function_name:
+            return 'function'
+        return 'module'
+
+    def can_merge_with(self, other: 'CodeChunk') -> bool:
+        """Determines if this chunk can be merged with another"""
+        return (
+            self.file_path == other.file_path
+            and self.class_name == other.class_name
+            and self.function_name == other.function_name
+            and self.end_line + 1 == other.start_line
+        )
+
+    def merge(self, other: 'CodeChunk') -> 'CodeChunk':
+        """Merges this chunk with another, if possible"""
+        if not self.can_merge_with(other):
+            raise ValueError("Chunks cannot be merged")
+        
+        return CodeChunk(
+            file_path=self.file_path,
+            start_line=self.start_line,
+            end_line=other.end_line,
+            function_name=self.function_name,
+            class_name=self.class_name,
+            chunk_content=f"{self.chunk_content}\n{other.chunk_content}",
+            tokens=self.tokens + other.tokens,
+            token_count=self.token_count + other.token_count,
+            language=self.language,
+            is_async=self.is_async
+        )
+    
     def get_context_string(self) -> str:
         """
         Returns a concise string representation of the chunk's context.
