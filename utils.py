@@ -401,8 +401,16 @@ def split_code_block(code: str, start_line: int, encoder: tiktoken.Encoding,
     
     return chunks
 
-def chunk_code(code: str, file_path: str, language: str, 
-               max_tokens: int = 512, overlap_tokens: int = 10) -> List[CodeChunk]:
+def chunk_code(
+    code: str, 
+    file_path: str, 
+    language: str, 
+    max_tokens: int = 512, 
+    overlap_tokens: int = 10,
+    preserve_decorators: bool = True,
+    preserve_docstrings: bool = True,
+    split_strategy: str = 'smart'  # 'smart', 'simple', or 'aggressive'
+) -> List[CodeChunk]:
     """
     Split code into chunks while respecting syntax and token limits.
     
@@ -530,7 +538,53 @@ def chunk_code(code: str, file_path: str, language: str,
                         chunks.append(chunk)
                 
                 last_node_end = node.end_lineno
-        
+                
+    class EnhancedASTVisitor(ast.NodeVisitor):
+        """Enhanced AST visitor with better handling of nested structures"""
+        def __init__(self):
+            self.scope_stack = []
+            self.decorators = {}
+            self.docstrings = {}
+            self.imports = []
+            self.module_vars = []
+
+        def visit_ClassDef(self, node):
+            """Handle nested classes properly"""
+            self.scope_stack.append(('class', node))
+            if preserve_decorators:
+                self.decorators[node] = node.decorator_list
+            if preserve_docstrings:
+                docstring = ast.get_docstring(node)
+                if docstring:
+                    self.docstrings[node] = docstring
+            self.generic_visit(node)
+            self.scope_stack.pop()
+
+        def visit_FunctionDef(self, node):
+            """Handle methods and nested functions"""
+            self.scope_stack.append(('function', node))
+            if preserve_decorators:
+                self.decorators[node] = node.decorator_list
+            if preserve_docstrings:
+                docstring = ast.get_docstring(node)
+                if docstring:
+                    self.docstrings[node] = docstring
+            self.generic_visit(node)
+            self.scope_stack.pop()
+
+        def visit_Import(self, node):
+            """Track imports"""
+            self.imports.append(node)
+
+        def visit_ImportFrom(self, node):
+            """Track from imports"""
+            self.imports.append(node)
+
+        def visit_Assign(self, node):
+            """Track module-level assignments"""
+            if not self.scope_stack:  # At module level
+                self.module_vars.append(node)
+                
         # Handle any remaining code
         if last_node_end < len(code.splitlines()):
             remaining_code = '\n'.join(code.splitlines()[last_node_end:])
@@ -562,22 +616,6 @@ def chunk_code(code: str, file_path: str, language: str,
     except Exception as e:
         logger.error(f"Error chunking {file_path}: {str(e)}")
         raise
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # ----------------------------
 # Code Formatting and Cleanup
