@@ -1,4 +1,3 @@
-# process_manager.py
 import os
 import asyncio
 import aiofiles
@@ -9,11 +8,16 @@ import sys
 import uuid
 from typing import List, Set, Dict, Any, Optional, Tuple
 from pathlib import Path
-
+from dataclasses import dataclass, field
+from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from time import perf_counter
+import statistics
+from collections import defaultdict
+from contextlib import contextmanager
 
 from utils import load_function_schema, calculate_project_metrics, should_process_file
 from file_handlers import process_file
@@ -24,6 +28,7 @@ from write_documentation_report import (
     generate_documentation_prompt, 
     sanitize_filename
 )
+from metrics import MetricsResult, MetricsAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +48,19 @@ class DocumentationResponse(BaseModel):
     progress: float
     results: Optional[Dict[str, Any]] = None
 
+@dataclass
+class FileProcessingResult:
+    """Class to store file processing results and metrics."""
+    file_path: str
+    success: bool
+    metrics_result: Optional[MetricsResult] = None
+    error: Optional[str] = None
+    documentation: Optional[Dict[str, Any]] = None
+    timestamp: datetime = field(default_factory=datetime.now)
 
 class DocumentationProcessManager:
-    """
-    Manages the documentation generation process for multiple files concurrently.
-
-    Attributes:
-        repo_root (Path): Root directory of the repository.
-        output_dir (Path): Directory where documentation will be saved.
-        azure_config (Dict[str, Any]): Configuration details for Azure OpenAI.
-        function_schema (Dict[str, Any]): Schema for function documentation.
-        semaphore (asyncio.Semaphore): Semaphore to control concurrency.
-        context_manager (ContextManager): Manages contextual information.
-        active_tasks (Dict[str, Dict[str, Any]]): Tracks active documentation tasks.
-        safe_mode (bool): Indicates if safe mode is enabled.
-    """
-
+    """Enhanced DocumentationProcessManager with better metrics handling"""
+    
     def __init__(
         self,
         repo_root: str,
@@ -74,7 +76,10 @@ class DocumentationProcessManager:
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.context_manager = ContextManager()
         self.active_tasks: Dict[str, Dict[str, Any]] = {}
-        self.safe_mode = False  # Initialize safe_mode
+        self.safe_mode = False
+        self.metrics_analyzer = MetricsAnalyzer()
+        self.performance_monitor = PerformanceMonitor()
+        self.metrics_aggregator = MetricsAggregator()  # Added MetricsAggregator initialization
 
     async def process_files(
         self,
@@ -85,65 +90,63 @@ class DocumentationProcessManager:
         style_guidelines: str,
         safe_mode: bool,
     ) -> Dict[str, Any]:
-        """Processes files, tracks progress, and updates frontend data."""
-
-        self.safe_mode = safe_mode  # Store safe_mode in the instance
-
+        """Enhanced process_files with metrics aggregation"""
+        
+        start_time = perf_counter()
+        self.safe_mode = safe_mode
         self.active_tasks[task_id] = {
             "status": "running",
             "progress": 0.0,
-            "results": {"successful": [], "failed": [], "skipped": []},
+            "results": {
+                "successful": [],
+                "failed": [],
+                "skipped": []
+            },
+            "metrics": {
+                "total_files": len(file_paths),
+                "processed": 0,
+                "success_rate": 0.0,
+                "execution_time": 0.0,
+                "warnings": 0,
+                "errors": 0
+            }
         }
-
         try:
             async with aiohttp.ClientSession() as session:
                 tasks = [
-                    asyncio.create_task(
-                        self._process_single_file(
-                            session=session,
-                            file_path=file_path,
-                            skip_types=skip_types,
-                            project_info=project_info,
-                            style_guidelines=style_guidelines,
-                            task_id=task_id,
-                        )
+                    self._process_single_file(
+                        session=session,
+                        file_path=file_path,
+                        skip_types=skip_types,
+                        project_info=project_info,
+                        style_guidelines=style_guidelines,
+                        task_id=task_id,
                     )
                     for file_path in file_paths
                     if self._should_process(file_path, skip_types)
                 ]
-
                 # Handle skipped files
                 skipped_files = [
                     file_path for file_path in file_paths
                     if not self._should_process(file_path, skip_types)
                 ]
                 self.active_tasks[task_id]["results"]["skipped"].extend(skipped_files)
-                total_files = len(file_paths)
-                processed_files = 0  # Tracks processed files (successful + failed)
-
+                # Process files and collect results
                 for future in asyncio.as_completed(tasks):
                     try:
-                        result = await future  # Await the future
-                        if result:
-                            self.active_tasks[task_id]["results"]["successful"].append(result)
-                        else:
-                            self.active_tasks[task_id]["results"]["failed"].append("Processing failed")
+                        result = await future
+                        self._handle_processing_result(result, task_id)
+                        await self._update_frontend_data(task_id)
                     except Exception as e:
                         logger.error(f"Task failed: {e}", exc_info=True)
-                        self.active_tasks[task_id]["results"]["failed"].append(str(e))
-
-                    processed_files += 1
-                    progress = (processed_files / total_files) * 100 if total_files > 0 else 100
-                    self.active_tasks[task_id]["progress"] = progress
-                    await self._update_frontend_data(task_id, processed_files, total_files)
-
-            self.active_tasks[task_id]["status"] = "completed"
-            return self.active_tasks[task_id]["results"]
-
+                        self.metrics_analyzer.error_count += 1
+                # Calculate final metrics and update task status
+                await self._finalize_task(task_id, start_time)
+                return self.active_tasks[task_id]["results"]
         except Exception as e:
             logger.error(f"Error in process_files: {e}", exc_info=True)
             self.active_tasks[task_id]["status"] = "failed"
-            self.active_tasks[task_id]["results"]["failed"].append(str(e))
+            self.active_tasks[task_id]["error"] = str(e)
             return self.active_tasks[task_id]["results"]
 
     async def _process_single_file(
@@ -154,111 +157,315 @@ class DocumentationProcessManager:
         project_info: str,
         style_guidelines: str,
         task_id: str,
-    ) -> Optional[str]:
-        """Processes a single file and generates documentation."""
+    ) -> FileProcessingResult:
+        """Enhanced single file processing with performance monitoring"""
+        
+        start_time = perf_counter()
+        
         try:
-            async with self.semaphore:
-                file_context = self.context_manager.get_relevant_context(file_path) if self.context_manager.context_entries else ""
-                enhanced_project_info = f"{project_info}\n\nFile Context:\n{file_context}"
-
-                documentation = await process_file(
+            with self.performance_monitor.measure(f"process_file_{Path(file_path).suffix}"):
+                result = await process_file(
                     session=session,
                     file_path=file_path,
                     skip_types=skip_types,
-                    semaphore=self.semaphore,  # Pass the semaphore
+                    semaphore=self.semaphore,
                     deployment_name=self.azure_config["AZURE_OPENAI_DEPLOYMENT"],
                     function_schema=self.function_schema,
                     repo_root=str(self.repo_root),
-                    project_info=enhanced_project_info,
+                    project_info=project_info,
                     style_guidelines=style_guidelines,
-                    safe_mode=self.safe_mode,  # Pass safe_mode here
+                    safe_mode=self.safe_mode,
                     azure_api_key=self.azure_config["AZURE_OPENAI_API_KEY"],
                     azure_endpoint=self.azure_config["AZURE_OPENAI_ENDPOINT"],
                     azure_api_version=self.azure_config["API_VERSION"],
                     output_dir=str(self.output_dir / task_id),
                     project_id=task_id,
                 )
-
-                if documentation:
-                    self.context_manager.add_context(
-                        f"File: {file_path}\nDocumentation Summary: {documentation.get('summary', '')}"
-                    )
-                    relative_filepath = Path(file_path).relative_to(self.repo_root)
-                    return str(relative_filepath)  # Return the relative file path
-
-            return None  # Return None if processing fails
-
+                if result and result.metrics_result:
+                    await self.metrics_aggregator.add_metrics(result.metrics_result)  # Updated to use MetricsAggregator
+                return result
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}", exc_info=True)
-            return None
+            return FileProcessingResult(
+                file_path=file_path,
+                success=False,
+                error=str(e)
+            )
 
-    async def _update_frontend_data(self, task_id: str, completed: int, total: int):
-        """Updates frontend data with progress and results."""
+    def _handle_processing_result(self, result: FileProcessingResult, task_id: str):
+        """Handles the result of file processing"""
+        if not result:
+            return
 
+        task_results = self.active_tasks[task_id]["results"]
+        task_metrics = self.active_tasks[task_id]["metrics"]
+
+        if result.success:
+            task_results["successful"].append(result.file_path)
+        else:
+            task_results["failed"].append({
+                "file": result.file_path,
+                "error": result.error
+            })
+            task_metrics["errors"] += 1
+
+        task_metrics["processed"] += 1
+        task_metrics["success_rate"] = (
+            len(task_results["successful"]) / task_metrics["total_files"] * 100
+            if task_metrics["total_files"] > 0 else 0
+        )
+
+    async def _update_frontend_data(self, task_id: str):
+        """Updates frontend data with enhanced metrics"""
+        task_info = self.active_tasks[task_id]
         output_dir = self.output_dir / task_id
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        status_file = output_dir / "status.json"
+        metrics_summary = self.metrics_aggregator.get_summary()  # Updated to use MetricsAggregator
+        problematic_files = self.metrics_aggregator.get_problematic_files()  # Updated to use MetricsAggregator
+        performance_summary = self.performance_monitor.get_summary()
+        
         status_data = {
-            "progress": (completed / total) * 100 if total > 0 else 100,
-            "status": self.active_tasks[task_id]["status"],
-            "completed": completed,
-            "total": total,
-            "successful": len(self.active_tasks[task_id]["results"]["successful"]),
-            "failed": len(self.active_tasks[task_id]["results"]["failed"]),
-            "skipped": len(self.active_tasks[task_id]["results"]["skipped"]),
+            "progress": (
+                task_info["metrics"]["processed"] / 
+                task_info["metrics"]["total_files"] * 100
+                if task_info["metrics"]["total_files"] > 0 else 100
+            ),
+            "status": task_info["status"],
+            "metrics": {
+                "processed_files": task_info["metrics"]["processed"],
+                "total_files": task_info["metrics"]["total_files"],
+                "success_rate": task_info["metrics"]["success_rate"],
+                "errors": task_info["metrics"]["errors"],
+                "warnings": task_info["metrics"]["warnings"],
+                "execution_metrics": metrics_summary,
+                "performance_metrics": performance_summary
+            },
+            "results": {
+                "successful": len(task_info["results"]["successful"]),
+                "failed": len(task_info["results"]["failed"]),
+                "skipped": len(task_info["results"]["skipped"])
+            },
+            "metrics_summary": metrics_summary,  # Added metrics summary
+            "problematic_files": problematic_files,  # Added problematic files
+            "performance_metrics": performance_summary
         }
-
         try:
+            status_file = output_dir / "status.json"
             async with aiofiles.open(status_file, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(status_data, indent=2))
-            logger.debug(f"Updated status file: {status_file}")
         except Exception as e:
             logger.error(f"Error writing status file: {e}", exc_info=True)
 
-        # Aggregate successful documentation
-        successful_docs = []
-        for result in self.active_tasks[task_id]["results"]["successful"]:
-            doc_path = self.output_dir / task_id / f"{sanitize_filename(Path(result).stem)}.json"
-            if doc_path.exists():
-                try:
-                    async with aiofiles.open(doc_path, "r", encoding="utf-8") as f:
-                        content = await f.read()
-                        successful_docs.append(json.loads(content))
-                except Exception as e:
-                    logger.error(f"Error loading successful documentation from {doc_path}: {e}", exc_info=True)
-            else:
-                logger.warning(f"Documentation file does not exist: {doc_path}")
-
-        # Calculate project metrics based on successful documentation
-        metrics = calculate_project_metrics(successful_docs)
-
+    async def _finalize_task(self, task_id: str, start_time: float):
+        """Finalizes task processing and generates summary"""
+        task_info = self.active_tasks[task_id]
+        task_info["status"] = "completed"
+        task_info["metrics"]["execution_time"] = perf_counter() - start_time
+        # Generate final metrics summary
+        metrics_summary = self.metrics_analyzer.get_summary()
+        performance_summary = self.performance_monitor.get_summary()
         summary_data = {
-            "files": [
-                {
-                    "path": result if isinstance(result, str) else "unknown",
-                    "status": "success" if isinstance(result, str) else "failed",
-                    "documentation": next((doc for doc in successful_docs if doc.get("file_path") == result), None) if isinstance(result, str) else None,
-                }
-                for result in self.active_tasks[task_id]["results"]["successful"] + self.active_tasks[task_id]["results"]["failed"]
-            ],
-            "metrics": metrics,
+            "task_id": task_id,
+            "completion_time": datetime.now().isoformat(),
+            "execution_time": task_info["metrics"]["execution_time"],
+            "files": {
+                "total": task_info["metrics"]["total_files"],
+                "processed": task_info["metrics"]["processed"],
+                "successful": len(task_info["results"]["successful"]),
+                "failed": len(task_info["results"]["failed"]),
+                "skipped": len(task_info["results"]["skipped"])
+            },
+            "metrics_summary": metrics_summary,
+            "performance_summary": performance_summary,
+            "warnings": task_info["metrics"]["warnings"],
+            "errors": task_info["metrics"]["errors"]
         }
-
-        summary_file = output_dir / "summary.json"
-
         try:
+            summary_file = self.output_dir / task_id / "summary.json"
             async with aiofiles.open(summary_file, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(summary_data, indent=2))
-            logger.debug(f"Updated summary file: {summary_file}")
         except Exception as e:
             logger.error(f"Error writing summary file: {e}", exc_info=True)
-
+            
     def _should_process(self, file_path: str, skip_types: Set[str]) -> bool:
-        """Checks if a file should be processed."""
-        should = should_process_file(file_path, skip_types)
-        logger.debug(f"Should process '{file_path}': {should}")
-        return should
+        """
+        Determines if a file should be processed based on file type and path.
+
+        Args:
+            file_path (str): Path to the file to check
+            skip_types (Set[str]): Set of file extensions to skip
+
+        Returns:
+            bool: True if the file should be processed, False otherwise
+        """
+        try:
+            # Use the utility function from utils.py
+            should_process = should_process_file(file_path, skip_types)
+            logger.debug(f"Should process '{file_path}': {should_process}")
+            
+            # Additional project-specific checks
+            if should_process:
+                file_path = Path(file_path)
+                
+                # Check if file is within repo_root
+                try:
+                    file_path.relative_to(self.repo_root)
+                except ValueError:
+                    logger.warning(f"File '{file_path}' is outside repository root")
+                    return False
+                
+                # Check file size (optional)
+                if file_path.stat().st_size > 1_000_000:  # 1MB limit
+                    logger.warning(f"File '{file_path}' exceeds size limit")
+                    return False
+                
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking if should process '{file_path}': {e}")
+            return False
+
+class PerformanceMonitor:
+    """Monitors performance metrics for different operations"""
+    
+    def __init__(self):
+        self.metrics = defaultdict(list)
+        self._start_times = {}
+        self._lock = asyncio.Lock()
+
+    @contextmanager
+    def measure(self, operation: str):
+        """Context manager to measure operation execution time"""
+        try:
+            start_time = perf_counter()
+            yield
+        finally:
+            duration = perf_counter() - start_time
+            asyncio.create_task(self._record_metric(operation, duration))
+
+    async def _record_metric(self, operation: str, duration: float):
+        """Records a metric measurement with thread safety"""
+        async with self._lock:
+            self.metrics[operation].append(duration)
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Generates a summary of all recorded metrics"""
+        summary = {}
+        for operation, durations in self.metrics.items():
+            if durations:
+                summary[operation] = {
+                    'count': len(durations),
+                    'avg_duration': statistics.mean(durations),
+                    'min_duration': min(durations),
+                    'max_duration': max(durations),
+                    'total_duration': sum(durations),
+                    'std_dev': statistics.stdev(durations) if len(durations) > 1 else 0
+                }
+        return summary
+
+    async def reset(self):
+        """Resets all metrics"""
+        async with self._lock:
+            self.metrics.clear()
+            self._start_times.clear()
+
+class MetricsAggregator:
+    """Aggregates and analyzes metrics across multiple files"""
+
+    def __init__(self):
+        self.file_metrics: Dict[str, MetricsResult] = {}
+        self.global_metrics = {
+            'total_complexity': 0,
+            'total_maintainability': 0,
+            'total_files': 0,
+            'processed_files': 0,
+            'error_count': 0,
+            'warning_count': 0
+        }
+        self._lock = asyncio.Lock()
+
+    async def add_metrics(self, metrics_result: MetricsResult):
+        """Adds metrics for a file to the aggregator"""
+        async with self._lock:
+            self.file_metrics[metrics_result.file_path] = metrics_result
+            self.global_metrics['total_files'] += 1
+            
+            if metrics_result.success:
+                self.global_metrics['processed_files'] += 1
+                if metrics_result.metrics:
+                    self._update_global_metrics(metrics_result.metrics)
+            else:
+                self.global_metrics['error_count'] += 1
+
+    def _update_global_metrics(self, metrics: Dict[str, Any]):
+        """Updates global metrics with file metrics"""
+        self.global_metrics['total_complexity'] += metrics.get('complexity', 0)
+        self.global_metrics['total_maintainability'] += metrics.get('maintainability_index', 0)
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Generates a comprehensive metrics summary"""
+        processed = self.global_metrics['processed_files']
+        return {
+            'overall_metrics': {
+                'avg_complexity': (
+                    self.global_metrics['total_complexity'] / processed 
+                    if processed > 0 else 0
+                ),
+                'avg_maintainability': (
+                    self.global_metrics['total_maintainability'] / processed 
+                    if processed > 0 else 0
+                ),
+                'success_rate': (
+                    (processed / self.global_metrics['total_files']) * 100 
+                    if self.global_metrics['total_files'] > 0 else 0
+                )
+            },
+            'file_counts': {
+                'total': self.global_metrics['total_files'],
+                'processed': processed,
+                'failed': self.global_metrics['error_count']
+            },
+            'issues': {
+                'errors': self.global_metrics['error_count'],
+                'warnings': self.global_metrics['warning_count']
+            }
+        }
+
+    def get_problematic_files(self) -> List[Dict[str, Any]]:
+        """Identifies files with concerning metrics"""
+        problematic_files = []
+        for file_path, result in self.file_metrics.items():
+            if not (result.success and result.metrics):
+                continue
+
+            issues = []
+            metrics = result.metrics
+
+            # Check maintainability
+            if metrics.get('maintainability_index', 100) < 20:
+                issues.append({
+                    'type': 'maintainability',
+                    'value': metrics['maintainability_index'],
+                    'threshold': 20
+                })
+
+            # Check complexity
+            if metrics.get('complexity', 0) > 15:
+                issues.append({
+                    'type': 'complexity',
+                    'value': metrics['complexity'],
+                    'threshold': 15
+                })
+
+            if issues:
+                problematic_files.append({
+                    'file_path': file_path,
+                    'issues': issues
+                })
+
+        return problematic_files
 
 
 # FastAPI setup

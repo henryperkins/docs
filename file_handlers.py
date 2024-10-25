@@ -22,6 +22,11 @@ from utils import (
 )
 from write_documentation_report import generate_documentation_prompt, write_documentation_report
 from context_manager import ContextManager
+from fastapi import HTTPException
+from datetime import datetime
+from time import perf_counter
+from metrics import MetricsAnalyzer, MetricsResult, calculate_code_metrics
+from metrics_utils import MetricsThresholds, get_metric_severity
 
 logger = logging.getLogger(__name__)
 
@@ -106,112 +111,108 @@ def validate_ai_response(response: Dict[str, Any], schema: Dict[str, Any]) -> Di
 
 
 async def fetch_documentation_rest(
-    session: aiohttp.ClientSession,
-    prompt: str,
-    semaphore: asyncio.Semaphore,
-    deployment_name: str,
-    function_schema: Dict[str, Any],
-    azure_api_key: str,
-    azure_endpoint: str,
-    azure_api_version: str,
-    retry: int = 3,
-) -> Optional[Dict[str, Any]]:
-    """
-    Fetches documentation from the Azure OpenAI API.
-
-    Args:
-        session (aiohttp.ClientSession): The aiohttp session.
-        prompt (str): The prompt to send to the API.
-        semaphore (asyncio.Semaphore): The semaphore to limit concurrency.
-        deployment_name (str): The deployment name.
-        function_schema (Dict[str, Any]): The function schema.
-        azure_api_key (str): The Azure API key.
-        azure_endpoint (str): The Azure endpoint.
-        azure_api_version (str): The Azure API version.
-        retry (int): The number of retry attempts.
-
-    Returns:
-        Optional[Dict[str, Any]]: The documentation response or None if it fails.
-    """
-    url = f"{azure_endpoint}/openai/deployments/{deployment_name}/completions?api-version={azure_api_version}"
+    session, prompt, semaphore, deployment_name, function_schema,
+    azure_api_key, azure_endpoint, azure_api_version, retry=3
+):
+    """Fetches documentation, correctly handling function calls and retries."""
+    url = f"{azure_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version={azure_api_version}"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {azure_api_key}",
-    }
-    payload = {
-        "prompt": prompt,
-        "max_tokens": 1500,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "n": 1,
-        "stop": None,
     }
 
     for attempt in range(retry):
         try:
             async with semaphore:
+                payload = {
+                    "messages": prompt,
+                    "max_tokens": 1500,
+                    "temperature": 0.7,  # Adjust as needed
+                    "top_p": 0.9,       # Adjust as needed
+                    "n": 1,
+                    "stop": None,
+                    "functions": function_schema["functions"],
+                    "function_call": {"name": "generate_documentation"}
+                }
+
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status == 200:
                         data = await response.json()
                         logger.debug(f"API Response: {data}")
 
-                        if "choices" in data and data["choices"]:
-                            choice = data["choices"][0]
-                            message = choice.get("message")
-                            
-                            if message and "function_call" in message:
-                                function_call = message["function_call"]
-                                if function_call.get("name") == "generate_documentation":
-                                    arguments = function_call.get("arguments")
-                                    try:
-                                        documentation = json.loads(arguments)
-                                        # Validate the AI's response against the schema
-                                        validated_documentation = validate_ai_response(
-                                            documentation, 
-                                            function_schema["functions"][0]["parameters"]
-                                        )
-                                        if validated_documentation:
-                                            logger.debug("Successfully validated documentation response")
-                                            return validated_documentation
-                                        else:
-                                            logger.error("AI response validation failed")
-                                            # Add more context to the prompt for retry
-                                            payload["messages"][0]["content"] = (
-                                                prompt + "\n\nPlease ensure your response exactly matches "
-                                                "the provided schema and includes all required fields."
-                                            )
-                                            continue
-                                    except json.JSONDecodeError as e:
-                                        logger.error(f"Error decoding JSON: {e}")
-                                        logger.error(f"Arguments Content: {arguments}")
+                        choice = data.get("choices", [{}])[0]
+                        message = choice.get("message", {})
+
+                        if "function_call" in message:
+                            function_call = message["function_call"]
+                            arguments = function_call.get("arguments", "{}")
+                            try:
+                                function_args = json.loads(arguments)
+                                validated_args = validate_ai_response(
+                                    function_args,
+                                    function_schema["functions"][0]["parameters"]
+                                )
+                                if validated_args:
+                                    logger.debug("Function call successful")
+                                    return validated_args
                                 else:
-                                    logger.error(f"Unexpected function called: {function_call.get('name')}")
-                            else:
-                                logger.error("No function_call found in the response.")
+                                    raise ValueError("AI response validation failed")
+                            except (json.JSONDecodeError, ValueError) as e:
+                                logger.error(f"Error processing function call arguments: {e}")
+                                if attempt < retry - 1:
+                                    prompt[-1]["content"] += "\n\nPlease ensure the `generate_documentation` function call arguments are valid JSON and match the provided schema."
+                                    await asyncio.sleep(2**attempt)  # Exponential backoff
+                                    continue
+                                else:
+                                    raise  # Re-raise after retries
                         else:
-                            logger.error("No choices found in the API response.")
+                            logger.error("Model did not make the expected function call. Returning the raw response (if any) for debugging.")
+                            return message.get("content")  # Return content for debugging
+
                     elif response.status == 429:  # Rate limit hit
-                        retry_after = response.headers.get("Retry-After", str(2 ** attempt))
-                        wait_time = int(retry_after)
-                        logger.warning(f"Rate limited. Retrying after {wait_time} seconds...")
-                        await asyncio.sleep(wait_time)
+                        retry_after = int(response.headers.get("Retry-After", 1)) * (attempt +1) # Increase backoff with attempts
+                        logger.warning(f"Rate limited (Attempt {attempt+1}). Retrying after {retry_after} seconds...")
+                        await asyncio.sleep(retry_after)
                         continue
+                    elif response.status == 401:
+                        raise HTTPException(status_code=401, detail="Unauthorized. Check your API key and endpoint.")
                     else:
-                        await handle_api_error(response)
+                        error_text = await response.text()
+                        logger.error(f"Azure OpenAI API request failed with status {response.status}: {error_text}")
+                        raise HTTPException(status_code=response.status, detail=error_text)
 
         except aiohttp.ClientError as e:
-            logger.error(f"Network error during API request: {e}", exc_info=True)
-        except Exception as e:
-            logger.error(f"Unexpected error during API request: {e}", exc_info=True)
+            logger.error(f"Network error during API request (Attempt {attempt+1}): {e}", exc_info=True)
+            if attempt < retry - 1:
+                await asyncio.sleep(2**attempt) # Exponential backoff
+                continue
+            else:
+                raise  # Re-raise after retries
 
-        if attempt < retry - 1:
-            wait_time = 2 ** attempt
-            logger.warning(f"Retrying after {wait_time} seconds... (Attempt {attempt + 1}/{retry})")
-            await asyncio.sleep(wait_time)
+        except Exception as e:
+            logger.error(f"Unexpected error during API request (Attempt {attempt+1}): {e}", exc_info=True)
+            if attempt < retry - 1:
+                await asyncio.sleep(2**attempt) # Exponential backoff
+                continue
+            else:
+                raise # Re-raise after retries
+
 
     logger.error("All retry attempts to fetch documentation failed.")
     return None
 
+async def handle_api_error(response: aiohttp.ClientResponse):
+    """Handles errors from the Azure OpenAI API."""
+    try:
+        response_text = await response.text()
+        logger.error(f"Azure OpenAI API request failed with status {response.status}: {response_text}")
+
+        # More specific error handling can be added here based on response.status
+        raise HTTPException(status_code=response.status, detail=response_text)
+
+    except Exception as e:
+        logger.error(f"Error handling API error: {e}", exc_info=True)
+        raise # Re-raise the exception after logging
 
 def validate_documentation(documentation: Dict[str, Any], schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
@@ -233,6 +234,21 @@ def validate_documentation(documentation: Dict[str, Any], schema: Dict[str, Any]
         return None
 
 
+class FileProcessingResult:
+    """Class to store file processing results"""
+    def __init__(self, 
+                 file_path: str, 
+                 success: bool, 
+                 metrics_result: Optional[MetricsResult] = None,
+                 error: Optional[str] = None,
+                 documentation: Optional[Dict[str, Any]] = None):
+        self.file_path = file_path
+        self.success = success
+        self.metrics_result = metrics_result
+        self.error = error
+        self.documentation = documentation
+        self.timestamp = datetime.now()
+        
 async def process_file(
     session: aiohttp.ClientSession,
     file_path: str,
@@ -243,29 +259,68 @@ async def process_file(
     repo_root: str,
     project_info: str,
     style_guidelines: str,
-    safe_mode: bool,  # Ensure safe_mode is passed here
+    safe_mode: bool,
     azure_api_key: str,
     azure_endpoint: str,
     azure_api_version: str,
     output_dir: str,
     project_id: str,
-) -> Optional[Dict[str, Any]]:  # Correct return type hint
-    """Processes a single file through the documentation pipeline."""
-
-    if not should_process_file(file_path, skip_types):  # Use should_process_file from utils
+) -> Optional[FileProcessingResult]:
+    """Enhanced process_file with better metrics handling and error tracking"""
+    
+    start_time = perf_counter()
+    metrics_analyzer = MetricsAnalyzer()
+    
+    if not should_process_file(file_path, skip_types):
         return None
 
     try:
+        # Prepare file and get initial content
         content, language, handler = await _prepare_file(file_path, function_schema, skip_types)
         if not all([content, language, handler]):
-            return None
+            return FileProcessingResult(
+                file_path=file_path,
+                success=False,
+                error="Failed to prepare file"
+            )
 
-        code_structure = await _extract_code_structure(content, file_path, language, handler)
+        # Calculate metrics with enhanced error handling
+        try:
+            metrics_result = await calculate_code_metrics(content, file_path, language)
+            metrics_analyzer.add_result(metrics_result)
+            
+            if not metrics_result.success:
+                logger.warning(f"Metrics calculation partial failure for {file_path}: {metrics_result.error}")
+            
+        except Exception as e:
+            logger.error(f"Metrics calculation failed for {file_path}: {e}", exc_info=True)
+            metrics_result = MetricsResult(
+                file_path=file_path,
+                timestamp=datetime.now(),
+                execution_time=perf_counter() - start_time,
+                success=False,
+                error=str(e)
+            )
+
+        # Extract code structure with metrics
+        code_structure = await _extract_code_structure(
+            content=content,
+            file_path=file_path,
+            language=language,
+            handler=handler,
+            metrics=metrics_result.metrics if metrics_result and metrics_result.success else None
+        )
+
         if not code_structure:
-            return None
+            return FileProcessingResult(
+                file_path=file_path,
+                success=False,
+                metrics_result=metrics_result,
+                error="Failed to extract code structure"
+            )
 
-        # Generate documentation prompt
-        context = context_manager.get_relevant_context(file_path) if context_manager.context_entries else ""
+        # Generate documentation with metrics information
+        context = context_manager.get_relevant_context(file_path)
         prompt = generate_documentation_prompt(
             file_name=Path(file_path).name,
             code_structure=code_structure,
@@ -287,20 +342,31 @@ async def process_file(
         )
 
         if not documentation:
-            logger.error(f"Failed to generate documentation for {file_path}")
-            return None
+            return FileProcessingResult(
+                file_path=file_path,
+                success=False,
+                metrics_result=metrics_result,
+                error="Failed to generate documentation"
+            )
 
-        # Update documentation with metrics and structure
-        documentation.update(
-            {
-                "file_path": str(Path(file_path).relative_to(repo_root)),
-                "language": language,
-                "metrics": code_structure.get("metrics", {}),
-                "structure": code_structure,
-            }
-        )
+        # Enhance documentation with metrics
+        documentation.update({
+            "file_path": str(Path(file_path).relative_to(repo_root)),
+            "language": language,
+            "metrics": metrics_result.metrics if metrics_result and metrics_result.success else {},
+            "metrics_summary": metrics_analyzer.get_summary(),
+            "metrics_analysis": {
+                "problematic_files": metrics_analyzer.get_problematic_files(),
+                "execution_time": perf_counter() - start_time,
+                "severity_levels": {
+                    metric: get_metric_severity(metric, value, MetricsThresholds())
+                    for metric, value in (metrics_result.metrics or {}).items()
+                }
+            },
+            "structure": code_structure,
+        })
 
-        # Write documentation to files (add project_id)
+        # Write documentation
         result = await write_documentation_report(
             documentation=documentation,
             language=language,
@@ -310,11 +376,21 @@ async def process_file(
             project_id=project_id,
         )
 
-        return result
+        return FileProcessingResult(
+            file_path=file_path,
+            success=True,
+            metrics_result=metrics_result,
+            documentation=result
+        )
 
     except Exception as e:
         logger.error(f"Error processing file {file_path}: {e}", exc_info=True)
-        return None
+        return FileProcessingResult(
+            file_path=file_path,
+            success=False,
+            metrics_result=metrics_result if 'metrics_result' in locals() else None,
+            error=str(e)
+        )
     
 async def _prepare_file(file_path: str, function_schema: Dict[str, Any], skip_types: Set[str]) -> Tuple[Optional[str], Optional[str], Optional[BaseHandler]]:
     """Reads file content, gets language, and retrieves the appropriate handler."""
@@ -352,10 +428,9 @@ async def _prepare_file(file_path: str, function_schema: Dict[str, Any], skip_ty
         return None, None, None
 
 
-async def _extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler) -> Optional[Dict[str, Any]]:
-    """Extracts code structure using the appropriate handler."""
+async def _extract_code_structure(content: str, file_path: str, language: str, handler: BaseHandler, metrics: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     try:
-        structure = await asyncio.to_thread(handler.extract_structure, content, file_path)
+        structure = await asyncio.to_thread(handler.extract_structure, content, file_path, metrics) 
         if not structure:
             logger.warning(f"No structure extracted from '{file_path}'")
             return None

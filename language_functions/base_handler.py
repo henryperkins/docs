@@ -25,7 +25,7 @@ class BaseHandler(abc.ABC):
     """
 
     @abc.abstractmethod
-    def extract_structure(self, code: str, file_path: str) -> Dict[str, Any]:
+    def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Extracts the structure of the code (classes, functions, etc.).
 

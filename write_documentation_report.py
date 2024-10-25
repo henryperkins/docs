@@ -157,100 +157,36 @@ def generate_summary(documentation: Dict[str, Any]) -> str:
 
 
 def generate_documentation_prompt(file_name, code_structure, project_info, style_guidelines, language, function_schema):
-    """Generates a prompt for documentation generation."""
+    """Generates a prompt that encourages a function call."""
 
     docstring_format = function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
+    messages = [
+        {"role": "system", "content": "You are a code documentation generator."},
+        {
+            "role": "user",
+            "content": f"""
+Generate documentation for the following {language} file: '{file_name}'
 
-    prompt = f"""
-    You are a code documentation generator. Your task is to generate documentation for the following {language} file: '{file_name}'.
-    
-    Project Info:
-    {project_info}
+Project Info:
+{project_info}
 
-    Style Guidelines:
-    {style_guidelines}
+Style Guidelines:
+{style_guidelines}
 
-    Use the {docstring_format} style for docstrings.
+Use the {docstring_format} style for docstrings. Ensure all fields in the schema are present, even if empty. If a field is not applicable, set its value to null. Use concise and informative descriptions.
 
-    The documentation should strictly follow this schema:
-    {{
-        "docstring_format": "{docstring_format}",
-        "summary": "A detailed summary of the file.",
-        "changes_made": ["List of changes made"],
-        "functions": [
-            {{
-                "name": "Function name",
-                "docstring": "Detailed description in {docstring_format} style",
-                "args": ["List of argument names"],
-                "async": true/false,
-                "complexity": integer
-            }}
-        ],
-        "classes": [
-            {{
-                "name": "Class name",
-                "docstring": "Detailed description in {docstring_format} style",
-                "methods": [
-                    {{
-                        "name": "Method name",
-                        "docstring": "Detailed description in {docstring_format} style",
-                        "args": ["List of argument names"],
-                        "async": true/false,
-                        "type": "instance/class/static",
-                        "complexity": integer
-                    }}
-                ]
-            }}
-        ],
-        "halstead": {{
-            "volume": number,
-            "difficulty": number,
-            "effort": number
-        }},
-        "maintainability_index": number,
-        "variables": [
-            {{
-                "name": "Variable name",
-                "type": "Inferred data type",
-                "description": "Description of the variable",
-                "file": "File name",
-                "line": integer,
-                "link": "Link to definition",
-                "example": "Example usage",
-                "references": "References to the variable"
-            }}
-        ],
-        "constants": [
-            {{
-                "name": "Constant name",
-                "type": "Inferred data type",
-                "description": "Description of the constant",
-                "file": "File name",
-                "line": integer,
-                "link": "Link to definition",
-                "example": "Example usage",
-                "references": "References to the constant"
-            }}
-        ]
-    }}
+Code Structure:
+{json.dumps(code_structure, indent=2)}
 
-    Ensure that all required fields are included and properly formatted according to the schema.
+Schema:
+{json.dumps(function_schema, indent=2)}
 
-    Given the following code structure:
-    {json.dumps(code_structure, indent=2)}
+Think step by step, and determine what should go in each field of the schema.  Then, call the `generate_documentation` function with the appropriate JSON arguments based on the schema.  Do *not* return the documentation directly; make the function call instead.
+"""
+        }
+    ]
+    return messages
 
-    Generate detailed documentation that strictly follows the provided schema. Include the following:
-    1. A comprehensive summary of the file's purpose and functionality.
-    2. A list of recent changes or modifications made to the file.
-    3. Detailed documentation for all functions, including their arguments, return types, and whether they are asynchronous.
-    4. Comprehensive documentation for all classes and their methods, including inheritance information if applicable.
-    5. Information about all variables and constants, including their types, descriptions, and usage examples.
-    6. Accurate Halstead metrics (volume, difficulty, and effort) for the entire file.
-    7. The maintainability index of the file.
-
-    Ensure that all docstrings follow the {docstring_format} format and provide clear, concise, and informative descriptions.
-    """
-    return textwrap.dedent(prompt).strip()
 
 
 
@@ -304,20 +240,51 @@ async def generate_markdown_content(
     file_path: str,
     relative_path: str
 ) -> str:
-    """Generates enhanced markdown content with collapsible sections and better formatting."""
-
+    """Generates enhanced markdown content with metrics analysis."""
+    
+    # Generate badges and basic content
     badges = generate_all_badges(documentation.get("metrics", {}))
     summary = generate_summary(documentation)
     functions = format_functions(documentation.get("functions", []))
     classes = format_classes(documentation.get("classes", []))
+    
+    # Add metrics analysis section
+    metrics_summary = documentation.get("metrics_summary", {})
+    problematic_files = documentation.get("problematic_files", [])
+    
+    metrics_content = f"""
+## Metrics Analysis
 
+### Overall Metrics
+- Maintainability Index: {metrics_summary.get('maintainability_index', 0):.2f}
+- Average Complexity: {metrics_summary.get('average_complexity', 0):.2f}
+- Total Files Analyzed: {metrics_summary.get('processed_files', 0)}
+- Success Rate: {metrics_summary.get('success_rate', 0):.1f}%
 
+### Warnings and Issues
+- Error Count: {metrics_summary.get('error_count', 0)}
+- Warning Count: {metrics_summary.get('warning_count', 0)}
+
+### Problematic Files
+"""
+    
+    if problematic_files:
+        metrics_content += "\n".join(
+            f"- {file['file_path']}: {', '.join(issue['type'] for issue in file['issues'])}"
+            for file in problematic_files
+        )
+    else:
+        metrics_content += "No problematic files found."
+
+    # Combine with existing content
     content = f"""
 # Documentation for {os.path.basename(file_path)}
 
 {badges}
 
 {summary}
+
+{metrics_content}
 
 ## Functions
 {functions}
@@ -326,7 +293,8 @@ async def generate_markdown_content(
 {classes}
     """.strip()
 
-    toc = generate_table_of_contents(content) # Generate TOC last
+    # Generate table of contents
+    toc = generate_table_of_contents(content)
     return f"# Table of Contents\n\n{toc}\n\n{content}"
 
 

@@ -68,29 +68,53 @@ def get_all_files(directory, spec=None, exclude_dirs=None):
     logging.info(f"Retrieved {len(files_list)} files using os.walk.")
     return files_list
 
-def write_markdown(files_list, output_file, repo_dir):
-    logging.debug(f"Writing {len(files_list)} files to {output_file}")
-    with open(output_file, 'w', encoding='utf-8') as md_file:
-        for filepath in files_list:
-            relative_path = os.path.relpath(filepath, repo_dir)
-            logging.debug(f"Processing file: {relative_path}")
-            md_file.write(f'## {relative_path}\n\n')
-            
-            # Determine language for syntax highlighting
-            file_extension = os.path.splitext(filepath)[1][1:]
-            language = language_from_extension(file_extension)
-            logging.debug(f"Detected language for {relative_path}: {language}")
-            md_file.write(f'```{language}\n')
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                md_file.write(content)
-            except (UnicodeDecodeError, FileNotFoundError) as e:
-                logging.error(f"Failed to read file {filepath}: {e}")
-                content = '[Binary file content not displayed or file not found]'
-                md_file.write(content)
-            md_file.write('\n```\n\n')
-    logging.info(f"Exported code to {output_file}")
+def write_markdown_by_directory(files_list, output_base_dir, repo_dir):
+    # Group files by directory
+    files_by_directory = {}
+    
+    for filepath in files_list:
+        dir_path = os.path.dirname(filepath)
+        if dir_path not in files_by_directory:
+            files_by_directory[dir_path] = []
+        files_by_directory[dir_path].append(filepath)
+
+    # Now write a single markdown file for each directory
+    for dir_path, files in files_by_directory.items():
+        relative_dir = os.path.relpath(dir_path, repo_dir)
+        if relative_dir == '.':
+            relative_dir = 'root'
+
+        # Create a corresponding subdirectory in the output directory
+        output_dir = os.path.join(output_base_dir, relative_dir)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # The output file for the directory's source code
+        output_file_path = os.path.join(output_dir, 'directory.md')
+        
+        logging.debug(f"Writing files from directory {relative_dir} to {output_file_path}")
+        
+        with open(output_file_path, 'w', encoding='utf-8') as md_file:
+            md_file.write(f'# Directory: {relative_dir}\n\n')
+
+            for filepath in files:
+                relative_path = os.path.relpath(filepath, repo_dir)
+                md_file.write(f'## {relative_path}\n\n')
+                
+                # Determine language for syntax highlighting
+                file_extension = os.path.splitext(filepath)[1][1:]
+                language = language_from_extension(file_extension)
+                logging.debug(f"Detected language for {relative_path}: {language}")
+                md_file.write(f'```{language}\n')
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    md_file.write(content)
+                except (UnicodeDecodeError, FileNotFoundError) as e:
+                    logging.error(f"Failed to read file {filepath}: {e}")
+                    content = '[Binary file content not displayed or file not found]'
+                    md_file.write(content)
+                md_file.write('\n```\n\n')
+        logging.info(f"Exported files from directory {relative_dir} to {output_file_path}")
 
 def language_from_extension(extension):
     language_extensions = {
@@ -124,11 +148,13 @@ def language_from_extension(extension):
     return language
 
 def main():
-    parser = argparse.ArgumentParser(description='Export source code from a GitHub repository or local directory to a Markdown file.')
+    parser = argparse.ArgumentParser(description='Export source code from a GitHub repository or local directory to separate Markdown files by directory.')
     parser.add_argument('input_path', help='GitHub Repository URL or Local Directory Path')
+    parser.add_argument('output_dir', help='Directory where the Markdown files will be saved')
     args = parser.parse_args()
 
     input_path = args.input_path
+    output_dir = args.output_dir
     cleanup_needed = False
 
     # Directories to always exclude
@@ -155,9 +181,8 @@ def main():
     files_list = get_all_files(repo_dir, spec, exclude_dirs=always_exclude_dirs)
     logging.info(f"Found {len(files_list)} files after applying ignore patterns and exclusions.")
 
-    # Write the content to a Markdown file
-    output_file = 'exported_code.md'
-    write_markdown(files_list, output_file, repo_dir)
+    # Write each directory's content to its corresponding Markdown file
+    write_markdown_by_directory(files_list, output_dir, repo_dir)
 
     # Clean up the cloned repository if needed
     if cleanup_needed:

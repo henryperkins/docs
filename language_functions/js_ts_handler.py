@@ -30,7 +30,7 @@ class JSTsHandler(BaseHandler):
         self.function_schema = function_schema
         self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
 
-    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+    def extract_structure(self, code: str, file_path: str = None, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         try:
             is_typescript = self._is_typescript_file(file_path)
             parser_options = self._get_parser_options(is_typescript)
