@@ -43,18 +43,20 @@ from .html_handler import HTMLHandler
 from .css_handler import CSSHandler
 from .base_handler import BaseHandler
 from .language_functions import insert_docstrings  # Import the function
+from metrics import MetricsAnalyzer  # Import MetricsAnalyzer
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["get_handler", "insert_docstrings"]
 
-def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[BaseHandler]:
+def get_handler(language: str, function_schema: Dict[str, Any], metrics_analyzer: MetricsAnalyzer) -> Optional[BaseHandler]:
     """
     Factory function to retrieve the appropriate language handler.
 
     Args:
         language (str): The programming language of the source code.
         function_schema (Dict[str, Any]): The schema defining functions.
+        metrics_analyzer (MetricsAnalyzer): The metrics analyzer object.
 
     Returns:
         Optional[BaseHandler]: An instance of the corresponding language handler or None if unsupported.
@@ -63,29 +65,22 @@ def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[Base
         logger.error("Function schema is None. Cannot retrieve handler.")
         return None
 
-    # Normalize the language string to lowercase to ensure case-insensitive matching
     language = language.lower()
-    
+
     # Map of supported languages to their handlers
     handlers = {
         "python": PythonHandler,
-        "java": JavaHandler,
         "javascript": JSTsHandler,
         "js": JSTsHandler,
         "typescript": JSTsHandler,
         "ts": JSTsHandler,
-        "go": GoHandler,
-        "cpp": CppHandler,
-        "c++": CppHandler,
-        "cxx": CppHandler,
-        "html": HTMLHandler,
-        "htm": HTMLHandler,
-        "css": CSSHandler
+        # ... (Add other language handlers here when you're ready)
     }
 
     handler_class = handlers.get(language)
     if handler_class:
-        return handler_class(function_schema)
+        return handler_class(function_schema, metrics_analyzer)
     else:
         logger.debug(f"No handler available for language: {language}")
-        return None  # Return None instead of raising an exception
+        return None  # Return None instead of raising an exc
+    

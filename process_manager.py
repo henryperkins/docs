@@ -303,8 +303,8 @@ class DocumentationProcessManager:
         project_info: str,
         style_guidelines: str,
         safe_mode: bool,
-        project_id: str  # Add project_id parameter
-    ) -> ProcessingResult:
+        project_id: str
+    ) -> FileProcessingResult:
         """
         Processes a single file with chunking and documentation generation.
 
@@ -317,7 +317,7 @@ class DocumentationProcessManager:
             project_id: Unique identifier for the project
 
         Returns:
-            ProcessingResult: Processing result
+            FileProcessingResult: Processing result
         """
         start_time = datetime.now()
         result = None  # Initialize result
@@ -330,7 +330,7 @@ class DocumentationProcessManager:
 
                 # Get language handler
                 language = self._get_language(file_path)
-                handler = get_handler(language, self.function_schema)
+                handler = get_handler(language, self.function_schema, self.metrics_analyzer)
                 if not handler:
                     raise ValueError(f"Unsupported language for file: {file_path}")
 
@@ -347,13 +347,13 @@ class DocumentationProcessManager:
                     file_path,
                     language
                 )
-                self.metrics_analyzer.add_result(metrics_result)  # Use the result directly
+                self.metrics_analyzer.add_result(metrics_result)
 
-                # Create chunks 
+                # Create chunks
                 chunks = await self._create_chunks(
                     content=content,
                     file_path=file_path,
-                    metrics=metrics_result.metrics if metrics_result.success else None 
+                    metrics=metrics_result.metrics if metrics_result.success else None
                 )
 
                 self.metrics.total_chunks += len(chunks)
@@ -394,8 +394,8 @@ class DocumentationProcessManager:
                 )
 
                 # Insert docstrings using language handler
-                updated_code = insert_docstrings(
-                    content, combined_documentation, language, self.function_schema
+                updated_code = self.insert_docstrings(
+                    content, combined_documentation
                 )
 
                 # Format and lint code (if applicable)
@@ -443,7 +443,7 @@ class DocumentationProcessManager:
                 return result
             else:  # Handle unexpected cases where result is still None
                 return FileProcessingResult(file_path=file_path, success=False, error="Unknown error occurred.")
-
+            
     async def _create_chunks(
         self,
         content: str,

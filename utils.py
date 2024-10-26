@@ -309,6 +309,9 @@ def should_process_file(file_path: Union[str, Path], skip_types: Set[str]) -> bo
     # Check if it's a symlink
     if file_path.is_symlink():
         return False
+    
+    if "scripts" in file_path.parts:
+        return False
 
     # Check common excluded directories
     excluded_parts = {

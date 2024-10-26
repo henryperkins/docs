@@ -268,9 +268,6 @@ async def calculate_code_metrics(
             error=error_msg
         )
 
-# ... (validate_metrics, calculate_quality_score, normalize_score, get_default_halstead_metrics, MetricsAnalyzer, get_problematic_files, get_summary, add_result, _check_metrics_warnings remain the same from the last complete version provided)
-# ... (Previous code from the last response, including imports, decorators, and metric calculation functions)
-
 def validate_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
     """Validates calculated metrics against expected ranges and logs warnings."""
     validated = metrics.copy()
@@ -339,6 +336,10 @@ class MetricsAnalyzer:
 
     def add_result(self, result: MetricsResult):
         """Adds a metrics result and updates error/warning counts."""
+
+        # Remove the run_coroutine_threadsafe call
+        # result = asyncio.run_coroutine_threadsafe(result, asyncio.get_event_loop()).result()
+
         self.metrics_history.append(result)
         if not result.success:
             self.error_count += 1

@@ -8,25 +8,36 @@ from typing import Dict, Any, Optional, List
 from jsonschema import validate, ValidationError
 from radon.complexity import cc_visit, cc_rank
 from radon.metrics import mi_visit, h_visit
-
 from .base_handler import BaseHandler
 from metrics import (
     calculate_code_metrics,
-    DEFAULT_EMPTY_METRICS
+    DEFAULT_EMPTY_METRICS,
+    validate_metrics,
+    calculate_quality_score,
+    normalize_score,
+    get_default_halstead_metrics,
+    MetricsAnalyzer,
+    MetricsThresholds
 )
-
 logger = logging.getLogger(__name__)
 
 class PythonHandler(BaseHandler):
-    """Handler for Python language analysis and metrics calculation."""
-
-    def __init__(self, function_schema: Dict[str, Any]):
+    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer: MetricsAnalyzer):
         """Initialize the Python handler."""
         self.function_schema = function_schema
+        self.metrics_analyzer = metrics_analyzer
 
     async def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Extracts the structure of the Python code and calculates complexity."""
+        """
+        Extracts the structure of the Python code, calculates complexity, and validates against the schema.
 
+        Checklist:
+        - [x] Parsing: Uses ast module.
+        - [x] Data Structure: Conforms to function_schema.json.
+        - [x] Schema Validation: Implemented using jsonschema.validate.
+        - [x] Metrics Calculation: Uses radon and metrics.py.
+        - [x] Language-Specific Features: Extracts decorators, argument types, return types.
+        """
         try:
             if metrics is None:
                 metrics_result = calculate_code_metrics(code, file_path, language="python")
@@ -185,7 +196,16 @@ class PythonHandler(BaseHandler):
             return {"error": str(e), "metrics": DEFAULT_EMPTY_METRICS}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
-        """Inserts docstrings into the Python code."""
+        """
+        Inserts docstrings into the Python code.
+
+        Checklist:
+        - [x] Docstring Generation: Generates Google-style and NumPy-style docstrings.
+        - [ ] Docstring Formats: Handles Google and NumPy formats (placeholders for others).
+        - [x] Insertion Method: Uses AST manipulation.
+        - [x] Error Handling: Includes error handling and logging.
+        - [x] Preservation of Existing Docstrings: Allows preserving existing docstrings.
+        """
         try:
             tree = ast.parse(code)
             docstring_format = documentation.get("docstring_format", "Google")
@@ -197,7 +217,14 @@ class PythonHandler(BaseHandler):
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
-        """Validates the Python code using pylint."""
+        """
+        Validates the Python code using pylint.
+
+        Checklist:
+        - [x] Validation Tool: Uses pylint.
+        - [x] Error Handling: Handles validation errors.
+        - [x] Temporary Files: Uses and cleans up temporary files.
+        """
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
                 temp_file.write(code.encode("utf-8"))
@@ -278,7 +305,14 @@ class DocstringTransformer(ast.NodeTransformer):
                 formatted_docstring += f"\nReturns:\n    {returns}\n"
             return formatted_docstring
         elif format == "NumPy":
-            # ... (Implement NumPy formatting)
-            pass
-        # ... (Handle other formats)
+            formatted_docstring = docstring.strip() + "\n\n"
+            if args:
+                formatted_docstring += "Parameters\n----------\n"
+                for arg in args:
+                    formatted_docstring += f"{arg['name']} : {arg.get('type', 'Any')}\n    {arg.get('description', '')}\n"
+            if returns:
+                formatted_docstring += "\nReturns\n-------\n"
+                formatted_docstring += f"{returns}\n"
+            return formatted_docstring
+        # ... (Handle other formats like reStructuredText)
         return docstring
