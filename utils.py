@@ -82,22 +82,6 @@ from token_manager import TokenManager
 logger = logging.getLogger(__name__)
 
 
-
-def get_language(file_path: Union[str, Path]) -> Optional[str]:
-    """
-    Determines the programming language based on file extension.
-    
-    Args:
-        file_path: Path to the file
-        
-    Returns:
-        Optional[str]: Language name or None if unknown
-    """
-    ext = str(Path(file_path).suffix).lower()
-    language = LANGUAGE_MAPPING.get(ext)
-    logger.debug(f"Detected language for '{file_path}': {language}")
-    return language
-
 def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
     """
     Checks if a file extension is valid (not in skip list).
@@ -117,8 +101,9 @@ def chunk_code(
 ) -> List[CodeChunk]:
     """
     Splits code into chunks based on top-level constructs (functions, classes) 
-    without loading the entire file into memory.
-    
+    without loading the entire file into memory. Integrates code summarization
+    for Python code to reduce chunk size if a chunk exceeds max_chunk_size.
+
     Args:
         file_path: Path to the source file
         language: Programming language (supports 'python')
@@ -126,6 +111,10 @@ def chunk_code(
     
     Returns:
         List[CodeChunk]: List of code chunks
+    
+    Raises:
+        NotImplementedError: If the language is not Python.
+        ChunkTooLargeError: If a chunk exceeds max_chunk_size even after summarization.
     """
     if language != 'python':
         raise NotImplementedError("Currently, chunk_code only supports Python language.")
@@ -152,6 +141,12 @@ def chunk_code(
                         # Create a code chunk for the previous definition
                         chunk_content = ''.join(current_chunk_lines)
                         tokens = TokenManager.count_tokens(chunk_content)
+
+                        # Summarize ONLY if chunk exceeds max_chunk_size
+                        if tokens.token_count > max_chunk_size:
+                            chunk_content = summarize_code(chunk_content, language, max_chunk_size)
+                            tokens = TokenManager.count_tokens(chunk_content) # Update tokens
+
                         chunk = CodeChunk(
                             file_path=str(file_path),
                             start_line=current_chunk_start_line,
@@ -167,6 +162,14 @@ def chunk_code(
                             docstring=None,
                             metadata={}
                         )
+
+                        # Check chunk size after summarization (if it was summarized)
+                        if chunk.token_count > max_chunk_size:
+                            raise ChunkTooLargeError(
+                                f"Chunk starting at line {current_chunk_start_line} in {file_path} "
+                                f"exceeds {max_chunk_size} tokens even after summarization."
+                            )
+
                         chunks.append(chunk)
                         current_chunk_lines = []
                         current_chunk_start_line = line_number
@@ -185,6 +188,12 @@ def chunk_code(
             if current_chunk_lines:
                 chunk_content = ''.join(current_chunk_lines)
                 tokens = TokenManager.count_tokens(chunk_content)
+
+                # Summarize ONLY if chunk exceeds max_chunk_size
+                if tokens.token_count > max_chunk_size:
+                    chunk_content = summarize_code(chunk_content, language, max_chunk_size)
+                    tokens = TokenManager.count_tokens(chunk_content) # Update tokens
+
                 chunk = CodeChunk(
                     file_path=str(file_path),
                     start_line=current_chunk_start_line,
@@ -200,6 +209,14 @@ def chunk_code(
                     docstring=None,
                     metadata={}
                 )
+
+                # Check chunk size after summarization (if it was summarized)
+                if chunk.token_count > max_chunk_size:
+                    raise ChunkTooLargeError(
+                        f"Chunk starting at line {current_chunk_start_line} in {file_path} "
+                        f"exceeds {max_chunk_size} tokens even after summarization."
+                    )
+
                 chunks.append(chunk)
     except Exception as e:
         logger.error(f"Error chunking file '{file_path}': {e}")
