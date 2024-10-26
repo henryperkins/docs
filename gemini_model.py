@@ -74,4 +74,4 @@ class GeminiModel:
             {"role": "schema", "content": schema_str}
         ]
         logger.debug("Generated prompt for Gemini model.")
-        return prompt
+        return prompt    
