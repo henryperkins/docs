@@ -8,8 +8,8 @@
         "properties": {
           "docstring_format": {
             "type": "string",
-            "description": "Format of the docstring (e.g., Google, JSDoc, TSDoc).",
-            "enum": ["JSDoc", "TSDoc"]
+            "description": "Format of the docstring (e.g., Google, JSDoc, TSDoc, NumPy, reST).",
+            "enum": ["Google", "JSDoc", "TSDoc", "NumPy", "reST"]
           },
           "summary": {
             "type": "string",
@@ -34,7 +34,7 @@
                   "items": { "type": "string" }
                 },
                 "async": { "type": "boolean" },
-                "complexity": { "type": "integer" },
+                "complexity": { "type": "integer", "description": "Cyclomatic complexity of the function." },
                 "halstead": {
                   "type": "object",
                   "properties": {
@@ -42,10 +42,11 @@
                     "difficulty": { "type": "number" },
                     "effort": { "type": "number" }
                   },
+                  "description": "Halstead complexity metrics for the function.",
                   "required": []
                 }
               },
-              "required": ["name", "docstring", "args", "async", "complexity"]
+              "required": ["name", "docstring", "args", "async"]
             },
             "description": "List of functions."
           },
@@ -68,8 +69,8 @@
                         "items": { "type": "string" }
                       },
                       "async": { "type": "boolean" },
-                      "type": { "type": "string" },
-                      "complexity": { "type": "integer" },
+                      "type": { "type": "string", "description": "Return type or purpose of the method." },
+                      "complexity": { "type": "integer", "description": "Cyclomatic complexity of the method." },
                       "halstead": {
                         "type": "object",
                         "properties": {
@@ -77,10 +78,11 @@
                           "difficulty": { "type": "number" },
                           "effort": { "type": "number" }
                         },
+                        "description": "Halstead complexity metrics for the method.",
                         "required": []
                       }
                     },
-                    "required": ["name", "docstring", "args", "async", "type", "complexity"]
+                    "required": ["name", "docstring", "args", "async", "type"]
                   }
                 }
               },
@@ -94,6 +96,7 @@
               "difficulty": { "type": "number" },
               "effort": { "type": "number" }
             },
+            "description": "Overall Halstead complexity metrics for the file.",
             "required": []
           },
           "maintainability_index": {
