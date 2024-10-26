@@ -42,4 +42,4 @@ def format_metric_value(
         return f"{value:.2f}"
     elif metric_name == "halstead_effort":
         return f"{value:,.0f}"
-    return str(value)
+    return str(value)    
