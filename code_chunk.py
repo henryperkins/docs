@@ -54,7 +54,7 @@ class ChunkMetadata:
 
 @dataclass(frozen=True)
 class CodeChunk:
-    """
+	"""
     Immutable representation of a code chunk with metadata.
 
     Each chunk represents a logical segment of code (function, class, etc.)
@@ -89,33 +89,37 @@ class CodeChunk:
     decorator_list: List[str] = field(default_factory=list)
     docstring: Optional[str] = None
     parent_chunk_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    @property
+    metadata: ChunkMetadata = field(init=False)
+	 @property
     def tokens(self) -> List[str]:
         """Tokenizes chunk content on demand using TokenManager."""
         return TokenManager.count_tokens(self.chunk_content).tokens
-
+        
     def __post_init__(self) -> None:
-        """Validates chunk data, sets immutable metadata, and calculates token count."""
-        if self.start_line > self.end_line:
-            raise ValueError(
-                f"start_line ({self.start_line}) must be <= end_line ({self.end_line})"
+        try:
+            token_result = TokenManager.count_tokens(
+                self.chunk_content,
+                include_special_tokens=True
             )
+            if token_result.error:
+                raise ValueError(f"Token counting failed: {token_result.error}")
 
-        # Calculate and store token count
-        token_result = TokenManager.count_tokens(self.chunk_content)
-        object.__setattr__(self, "token_count", token_result.token_count)
+            object.__setattr__(self, "token_count", token_result.token_count)
+            object.__setattr__(self, "_tokens", token_result.tokens)
 
-        # Set chunk type in metadata
-        metadata = {
-            **self.metadata,
-            'chunk_type': self._determine_chunk_type(),
-            'hash': self._calculate_hash(),
-            'size': len(self.chunk_content)
-        }
-        object.__setattr__(self, "metadata", metadata)
+            # Initialize metadata
+            metadata = ChunkMetadata(
+                start_line=self.start_line,
+                end_line=self.end_line,
+                chunk_type=self._determine_chunk_type(),
+                token_count=token_result.token_count
+            )
+            object.__setattr__(self, "metadata", metadata)
 
+        except TokenizationError as e:
+            logger.error(f"Tokenization error in chunk: {str(e)}")
+            object.__setattr__(self, "token_count", 0)
+            object.__setattr__(self, "_tokens", [])
 
     def _determine_chunk_type(self) -> ChunkType:
         """Determines the type of this chunk based on its properties."""
@@ -341,26 +345,19 @@ class CodeChunk:
         )
         
         return [chunk1, chunk2]
-
-    def get_metrics(self) -> Dict[str, Any]:
-        """
-        Gets all metrics associated with this chunk.
-
-        Returns:
-            Dict[str, Any]: Combined metrics from metadata and calculated values.
-        """
-        return {
-            'complexity': self.metadata.get('complexity'),
-            'token_count': self.token_count,  # Access stored token count
-            'size': self.metadata.get('size'),
-            'start_line': self.start_line,
-            'end_line': self.end_line,
-            'type': self.metadata.get('chunk_type').value,
-            'has_docstring': self.docstring is not None,
-            'is_async': self.is_async,
-            'decorator_count': len(self.decorator_list),
-            'has_parent': self.parent_chunk_id is not None
-        }
+		  
+	def get_metrics(self) -> Dict[str, Any]:
+		return {
+			'complexity': self.metadata.complexity,
+		   'token_count': self.token_count,
+		   'start_line': self.metadata.start_line,
+		   'end_line': self.metadata.end_line,
+		   'type': self.metadata.chunk_type.value,
+         'has_docstring': self.docstring is not None,
+         'is_async': self.is_async,
+         'decorator_count': len(self.decorator_list),
+         'has_parent': self.parent_chunk_id is not None
+     }
 
     def __repr__(self) -> str:
         """Returns a detailed string representation of the chunk."""
