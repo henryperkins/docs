@@ -1,9 +1,9 @@
 """
 code_chunk.py
 
-Defines the CodeChunk dataclass for representing segments of code with associated 
-metadata and analysis capabilities. Provides core functionality for code 
-organization and documentation generation.
+Defines the CodeChunk dataclass for representing segments of code with associated
+metadata and analysis capabilities. Provides core functionality for code
+organization and documentation generation, including AST-based merging and splitting.
 """
 
 import uuid
@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Dict, Any, Set
 from pathlib import Path
+import ast  # Import ast for AST-based analysis
+from token_utils import TokenManager
 
 class ChunkType(Enum):
     """Enumeration of possible chunk types."""
@@ -31,15 +33,15 @@ class ChunkType(Enum):
 class ChunkMetadata:
     """
     Stores metadata about a code chunk.
-    
+
     Attributes:
-        start_line: Starting line number in source
-        end_line: Ending line number in source
-        chunk_type: Type of code chunk
-        complexity: Cyclomatic complexity if calculated
-        token_count: Number of tokens in chunk
-        dependencies: Set of chunk IDs this chunk depends on
-        used_by: Set of chunk IDs that depend on this chunk
+        start_line: Starting line number in source.
+        end_line: Ending line number in source.
+        chunk_type: Type of code chunk.
+        complexity: Cyclomatic complexity if calculated.
+        token_count: Number of tokens in chunk.
+        dependencies: Set of chunk IDs this chunk depends on.
+        used_by: Set of chunk IDs that depend on this chunk.
     """
     start_line: int
     end_line: int
@@ -49,30 +51,30 @@ class ChunkMetadata:
     dependencies: Set[str] = field(default_factory=set)
     used_by: Set[str] = field(default_factory=set)
 
+
 @dataclass(frozen=True)
 class CodeChunk:
     """
     Immutable representation of a code chunk with metadata.
-    
+
     Each chunk represents a logical segment of code (function, class, etc.)
     with associated metadata about its structure, content, and relationships.
-    
+
     Attributes:
-        file_path: Path to source file
-        start_line: Starting line number
-        end_line: Ending line number
-        function_name: Name if chunk is a function
-        class_name: Name if chunk is part of a class
-        chunk_content: Actual code content
-        tokens: List of token strings
-        token_count: Number of tokens
-        language: Programming language
-        chunk_id: Unique identifier
-        is_async: Whether chunk is async
-        decorator_list: List of decorators
-        docstring: Original docstring if any
-        parent_chunk_id: ID of parent chunk
-        metadata: Additional metadata
+        file_path: Path to source file.
+        start_line: Starting line number.
+        end_line: Ending line number.
+        function_name: Name if chunk is a function.
+        class_name: Name if chunk is part of a class.
+        chunk_content: Actual code content.
+        token_count: Number of tokens.  Calculated on initialization.
+        language: Programming language.
+        chunk_id: Unique identifier.
+        is_async: Whether chunk is async.
+        decorator_list: List of decorators.
+        docstring: Original docstring if any.
+        parent_chunk_id: ID of parent chunk.
+        metadata: Additional metadata.
     """
     file_path: str
     start_line: int
@@ -80,7 +82,6 @@ class CodeChunk:
     function_name: Optional[str]
     class_name: Optional[str]
     chunk_content: str
-    tokens: List[str]
     token_count: int
     language: str
     chunk_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -90,27 +91,31 @@ class CodeChunk:
     parent_chunk_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def tokens(self) -> List[str]:
+        """Tokenizes chunk content on demand using TokenManager."""
+        return TokenManager.count_tokens(self.chunk_content).tokens
+
     def __post_init__(self) -> None:
-        """Validates chunk data and sets immutable metadata."""
+        """Validates chunk data, sets immutable metadata, and calculates token count."""
         if self.start_line > self.end_line:
             raise ValueError(
                 f"start_line ({self.start_line}) must be <= end_line ({self.end_line})"
             )
-        if not self.tokens:
-            raise ValueError("tokens list cannot be empty")
-        if self.token_count != len(self.tokens):
-            raise ValueError(
-                f"token_count ({self.token_count}) does not match "
-                f"length of tokens ({len(self.tokens)})"
-            )
-        
+
+        # Calculate and store token count
+        token_result = TokenManager.count_tokens(self.chunk_content)
+        object.__setattr__(self, "token_count", token_result.token_count)
+
         # Set chunk type in metadata
-        super().__setattr__('metadata', {
+        metadata = {
             **self.metadata,
             'chunk_type': self._determine_chunk_type(),
             'hash': self._calculate_hash(),
             'size': len(self.chunk_content)
-        })
+        }
+        object.__setattr__(self, "metadata", metadata)
+
 
     def _determine_chunk_type(self) -> ChunkType:
         """Determines the type of this chunk based on its properties."""
@@ -129,31 +134,26 @@ class CodeChunk:
         elif self.function_name:
             if self.is_async:
                 return ChunkType.ASYNC_FUNCTION
-            return (ChunkType.NESTED_FUNCTION 
-                   if self.parent_chunk_id 
-                   else ChunkType.FUNCTION)
-        elif self.decorator_list:
+            return (ChunkType.NESTED_FUNCTION
+                    if self.parent_chunk_id
+                    else ChunkType.FUNCTION)
+        elif self.decorator_list:  # Check for decorators before defaulting to MODULE
             return ChunkType.DECORATOR
-        return ChunkType.MODULE
+        return ChunkType.MODULE  # Default to MODULE if no other type is identified
+
 
     def _calculate_hash(self) -> str:
-        """Calculates a hash of the chunk content."""
-        return hashlib.sha256(
-            self.chunk_content.encode('utf-8')
-        ).hexdigest()
+        """Calculates a SHA256 hash of the chunk content."""
+        return hashlib.sha256(self.chunk_content.encode('utf-8')).hexdigest()
+
 
     def get_context_string(self) -> str:
-        """
-        Returns a concise string representation of the chunk's context.
-        
-        Returns:
-            str: Formatted string with file path, lines, and chunk info
-        """
+        """Returns a concise string representation of the chunk's context."""
         parts = [
             f"File: {self.file_path}",
             f"Lines: {self.start_line}-{self.end_line}"
         ]
-        
+
         if self.class_name:
             parts.append(f"Class: {self.class_name}")
         if self.function_name:
@@ -161,73 +161,80 @@ class CodeChunk:
             parts.append(f"{prefix}Function: {self.function_name}")
         if self.decorator_list:
             parts.append(f"Decorators: {', '.join(self.decorator_list)}")
-        
+
         return ", ".join(parts)
 
+
     def get_hierarchy_path(self) -> str:
-        """
-        Returns the full hierarchy path of the chunk.
-        
-        Returns:
-            str: Path in form "module.class.method" or "module.function"
-        """
-        parts = [Path(self.file_path).stem]
+        """Returns the full hierarchy path of the chunk."""
+        parts = [Path(self.file_path).stem]  # Use stem for module name
         if self.class_name:
             parts.append(self.class_name)
         if self.function_name:
             parts.append(self.function_name)
         return ".".join(parts)
 
+
     def can_merge_with(self, other: 'CodeChunk') -> bool:
         """
-        Determines if this chunk can be merged with another.
+        Determines if this chunk can be merged with another using AST analysis.
         
         Args:
-            other: Another chunk to potentially merge with
+            other: Another chunk to potentially merge with.
             
         Returns:
-            bool: True if chunks can be merged
+            bool: True if chunks can be merged.
         """
-        return (
+        if not (
             self.file_path == other.file_path and
-            self.class_name == other.class_name and
-            self.function_name == other.function_name and
-            self.end_line + 1 == other.start_line and
             self.language == other.language and
-            self.parent_chunk_id == other.parent_chunk_id
-        )
+            self.end_line + 1 == other.start_line
+        ):
+            return False
 
-    @staticmethod
+        # Use AST to check if merging maintains valid syntax
+        combined_content = self.chunk_content + '\n' + other.chunk_content
+        try:
+            ast.parse(combined_content)
+            return True
+        except SyntaxError:
+            return False
+
+
+        @staticmethod
     def merge(chunk1: 'CodeChunk', chunk2: 'CodeChunk') -> 'CodeChunk':
         """
-        Creates a new chunk by merging two chunks.
+        Creates a new chunk by merging two chunks using AST analysis.
         
         Args:
-            chunk1: First chunk to merge
-            chunk2: Second chunk to merge
+            chunk1: First chunk to merge.
+            chunk2: Second chunk to merge.
             
         Returns:
-            CodeChunk: New merged chunk
+            CodeChunk: New merged chunk.
             
         Raises:
-            ValueError: If chunks cannot be merged
+            ValueError: If chunks cannot be merged.
         """
         if not chunk1.can_merge_with(chunk2):
-            raise ValueError("Chunks cannot be merged")
+            raise ValueError("Chunks cannot be merged, AST validation failed.")
+
+        combined_content = chunk1.chunk_content + '\n' + chunk2.chunk_content
+        tokens = TokenManager.count_tokens(combined_content)
         
         return CodeChunk(
             file_path=chunk1.file_path,
             start_line=chunk1.start_line,
             end_line=chunk2.end_line,
-            function_name=chunk1.function_name,
-            class_name=chunk1.class_name,
-            chunk_content=f"{chunk1.chunk_content}\n{chunk2.chunk_content}",
-            tokens=chunk1.tokens + chunk2.tokens,
-            token_count=chunk1.token_count + chunk2.token_count,
+            function_name=chunk1.function_name or chunk2.function_name,
+            class_name=chunk1.class_name or chunk2.class_name,
+            chunk_content=combined_content,
+            tokens=tokens.tokens,
+            token_count=tokens.token_count,
             language=chunk1.language,
-            is_async=chunk1.is_async,
-            decorator_list=chunk1.decorator_list,
-            docstring=chunk1.docstring,
+            is_async=chunk1.is_async or chunk2.is_async,
+            decorator_list=list(set(chunk1.decorator_list + chunk2.decorator_list)),
+            docstring=chunk1.docstring or chunk2.docstring,
             parent_chunk_id=chunk1.parent_chunk_id,
             metadata={
                 **chunk1.metadata,
@@ -236,86 +243,115 @@ class CodeChunk:
             }
         )
 
+    def get_possible_split_points(self) -> List[int]:
+        """
+        Returns a list of line numbers where the chunk can be split without breaking syntax.
+
+        Returns:
+            List[int]: List of valid split line numbers.
+        """
+        try:
+            tree = ast.parse(self.chunk_content)
+        except SyntaxError:
+            # If the chunk has invalid syntax, it can't be split safely
+            return []
+
+        possible_split_points = []
+        for node in ast.walk(tree):  # Use ast.walk to traverse all nodes
+            if isinstance(node, (ast.stmt, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Check for statements, class definitions, and function definitions
+                if hasattr(node, 'lineno'):
+                    split_line = self.start_line + node.lineno - 1
+                    if split_line < self.end_line:  # Avoid splitting on the last line
+                        possible_split_points.append(split_line)
+
+        return sorted(set(possible_split_points))  # Remove duplicates and sort
+        
     def split(
         self, 
-        split_point: int,
-        overlap_tokens: int = 0
+        split_point: int
     ) -> List['CodeChunk']:
         """
-        Splits chunk at specified line number.
+        Splits chunk at specified line number using AST analysis.
         
         Args:
-            split_point: Line number to split at
-            overlap_tokens: Number of tokens to overlap
+            split_point: Line number to split at.
             
         Returns:
-            List[CodeChunk]: List of split chunks
+            List[CodeChunk]: List of split chunks.
             
         Raises:
-            ValueError: If split point is invalid
+            ValueError: If split point is invalid.
         """
-        if (split_point <= self.start_line or 
-            split_point >= self.end_line):
-            raise ValueError("Invalid split point")
+        valid_split_points = self.get_possible_split_points()
+        if split_point not in valid_split_points:
+            raise ValueError(f"Invalid split point at line {split_point}. Valid split points are: {valid_split_points}")
         
-        lines = self.chunk_content.splitlines()
+        lines = self.chunk_content.splitlines(keepends=True)
         split_idx = split_point - self.start_line
         
         # Create first chunk
-        chunk1_lines = lines[:split_idx]
-        chunk1_content = '\n'.join(chunk1_lines)
-        chunk1_tokens = self.tokens[:split_idx]
+        chunk1_content = ''.join(lines[:split_idx])
+        tokens1 = TokenManager.count_tokens(chunk1_content)
         
-        # Create second chunk with overlap
-        if overlap_tokens > 0:
-            overlap_start = max(0, len(chunk1_tokens) - overlap_tokens)
-            overlap_tokens_list = chunk1_tokens[overlap_start:]
-        else:
-            overlap_tokens_list = []
-            
-        chunk2_lines = lines[split_idx:]
-        chunk2_content = '\n'.join(chunk2_lines)
-        chunk2_tokens = overlap_tokens_list + self.tokens[split_idx:]
+        chunk1 = CodeChunk(
+            file_path=self.file_path,
+            start_line=self.start_line,
+            end_line=split_point - 1,
+            function_name=self.function_name,
+            class_name=self.class_name,
+            chunk_content=chunk1_content,
+            tokens=tokens1.tokens,
+            token_count=tokens1.token_count,
+            language=self.language,
+            is_async=self.is_async,
+            decorator_list=self.decorator_list,
+            docstring=self.docstring,
+            parent_chunk_id=self.parent_chunk_id,
+            metadata={
+                **self.metadata,
+                'split_from': self.chunk_id,
+                'split_part': 1
+            }
+        )
         
-        chunks = []
-        for i, (content, tok) in enumerate(
-            [(chunk1_content, chunk1_tokens),
-             (chunk2_content, chunk2_tokens)],
-            1
-        ):
-            chunks.append(CodeChunk(
-                file_path=self.file_path,
-                start_line=self.start_line + (0 if i == 1 else split_idx),
-                end_line=split_point if i == 1 else self.end_line,
-                function_name=f"{self.function_name}_part{i}" if self.function_name else None,
-                class_name=f"{self.class_name}_part{i}" if self.class_name else None,
-                chunk_content=content,
-                tokens=tok,
-                token_count=len(tok),
-                language=self.language,
-                is_async=self.is_async,
-                decorator_list=self.decorator_list if i == 1 else [],
-                docstring=self.docstring if i == 1 else None,
-                parent_chunk_id=self.parent_chunk_id,
-                metadata={
-                    **self.metadata,
-                    'split_from': self.chunk_id,
-                    'split_part': i
-                }
-            ))
+        # Create second chunk
+        chunk2_content = ''.join(lines[split_idx:])
+        tokens2 = TokenManager.count_tokens(chunk2_content)
         
-        return chunks
+        chunk2 = CodeChunk(
+            file_path=self.file_path,
+            start_line=split_point,
+            end_line=self.end_line,
+            function_name=self.function_name,
+            class_name=self.class_name,
+            chunk_content=chunk2_content,
+            tokens=tokens2.tokens,
+            token_count=tokens2.token_count,
+            language=self.language,
+            is_async=self.is_async,
+            decorator_list=self.decorator_list,
+            docstring=self.docstring,
+            parent_chunk_id=self.parent_chunk_id,
+            metadata={
+                **self.metadata,
+                'split_from': self.chunk_id,
+                'split_part': 2
+            }
+        )
+        
+        return [chunk1, chunk2]
 
     def get_metrics(self) -> Dict[str, Any]:
         """
         Gets all metrics associated with this chunk.
-        
+
         Returns:
-            Dict[str, Any]: Combined metrics from metadata
+            Dict[str, Any]: Combined metrics from metadata and calculated values.
         """
         return {
             'complexity': self.metadata.get('complexity'),
-            'token_count': self.token_count,
+            'token_count': self.token_count,  # Access stored token count
             'size': self.metadata.get('size'),
             'start_line': self.start_line,
             'end_line': self.end_line,
@@ -329,15 +365,16 @@ class CodeChunk:
     def __repr__(self) -> str:
         """Returns a detailed string representation of the chunk."""
         content_preview = (
-            f"{self.chunk_content[:50]}..." 
-            if len(self.chunk_content) > 50 
+            f"{self.chunk_content[:50]}..."
+            if len(self.chunk_content) > 50
             else self.chunk_content
         ).replace('\n', '\\n')
-        
+
         return (
             f"CodeChunk(file='{self.file_path}', "
             f"lines={self.start_line}-{self.end_line}, "
             f"type={self.metadata['chunk_type'].value}, "
             f"content='{content_preview}', "
-            f"tokens={len(self.tokens)})"
+            f"tokens={self.token_count})"  # Use token_count instead of len(self.tokens)
         )
+        

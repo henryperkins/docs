@@ -70,57 +70,161 @@ class TokenizationResult:
     token_count: int
     encoding_name: str
 
-class TokenManager:
-    """Manages token counting and text encoding."""
-    
-    _instance = None
-    _encoder = None
-    
-    def __new__(cls):
-        """Ensures singleton instance."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
-    @classmethod
-    def get_encoder(cls) -> tiktoken.Encoding:
-        """Gets the tiktoken encoder, with caching."""
-        if cls._encoder is None:
-            cls._encoder = tiktoken.get_encoding("cl100k_base")
-        return cls._encoder
-    
-    @classmethod
-    def count_tokens(cls, text: str) -> TokenizationResult:
-        """
-        Counts tokens in text using tiktoken.
-        
-        Args:
-            text: Text to tokenize
-            
-        Returns:
-            TokenizationResult with token information
-        """
-        encoder = cls.get_encoder()
-        token_ints = encoder.encode(text)
-        token_strings = [encoder.decode([t]) for t in token_ints]
-        return TokenizationResult(
-            tokens=token_strings,
-            token_count=len(token_ints),
-            encoding_name=encoder.name
-        )
+import logging
+import tokenize
+from io import StringIO
+from pathlib import Path
+from typing import List, Optional, Set, Union
 
-    @classmethod
-    def decode_tokens(cls, tokens: List[int]) -> str:
-        """
-        Decodes tokens back to text.
+from code_chunk import CodeChunk
+from token_manager import TokenManager
+
+logger = logging.getLogger(__name__)
+
+
+
+def get_language(file_path: Union[str, Path]) -> Optional[str]:
+    """
+    Determines the programming language based on file extension.
+    
+    Args:
+        file_path: Path to the file
         
-        Args:
-            tokens: List of token integers
+    Returns:
+        Optional[str]: Language name or None if unknown
+    """
+    ext = str(Path(file_path).suffix).lower()
+    language = LANGUAGE_MAPPING.get(ext)
+    logger.debug(f"Detected language for '{file_path}': {language}")
+    return language
+
+def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
+    """
+    Checks if a file extension is valid (not in skip list).
+    
+    Args:
+        ext: File extension
+        
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    return ext not in skip_types
+
+def chunk_code(
+    file_path: Union[str, Path],
+    language: str,
+    max_chunk_size: int = 5000
+) -> List[CodeChunk]:
+    """
+    Splits code into chunks based on top-level constructs (functions, classes) 
+    without loading the entire file into memory.
+    
+    Args:
+        file_path: Path to the source file
+        language: Programming language (supports 'python')
+        max_chunk_size: Maximum number of tokens per chunk
+    
+    Returns:
+        List[CodeChunk]: List of code chunks
+    """
+    if language != 'python':
+        raise NotImplementedError("Currently, chunk_code only supports Python language.")
+    
+    file_path = Path(file_path)
+    if not file_path.exists():
+        logger.error(f"File does not exist: {file_path}")
+        return []
+    
+    chunks = []
+    current_chunk_lines = []
+    current_chunk_start_line = 1
+    current_chunk_name = None  # Function or Class name
+    current_chunk_type = None  # 'function' or 'class'
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as source_file:
+            lines = []
+            for line_number, line in enumerate(source_file, start=1):
+                lines.append(line)
+                if line.strip().startswith(('def ', 'async def ', 'class ')):
+                    # Start of a new top-level definition
+                    if current_chunk_lines:
+                        # Create a code chunk for the previous definition
+                        chunk_content = ''.join(current_chunk_lines)
+                        tokens = TokenManager.count_tokens(chunk_content)
+                        chunk = CodeChunk(
+                            file_path=str(file_path),
+                            start_line=current_chunk_start_line,
+                            end_line=line_number - 1,
+                            function_name=current_chunk_name if current_chunk_type == 'function' else None,
+                            class_name=current_chunk_name if current_chunk_type == 'class' else None,
+                            chunk_content=chunk_content,
+                            tokens=tokens.tokens,
+                            token_count=tokens.token_count,
+                            language=language,
+                            is_async=current_chunk_type == 'async_function',
+                            decorator_list=[],
+                            docstring=None,
+                            metadata={}
+                        )
+                        chunks.append(chunk)
+                        current_chunk_lines = []
+                        current_chunk_start_line = line_number
+                        
+                    # Update current chunk information
+                    current_chunk_lines.append(line)
+                    current_chunk_start_line = line_number
+                    current_chunk_name = extract_definition_name(line)
+                    current_chunk_type = ('async_function' if line.strip().startswith('async def ') else
+                                          'function' if line.strip().startswith('def ') else 
+                                          'class')
+                else:
+                    current_chunk_lines.append(line)
             
-        Returns:
-            str: Decoded text
-        """
-        return cls.get_encoder().decode(tokens)
+            # Add the last chunk
+            if current_chunk_lines:
+                chunk_content = ''.join(current_chunk_lines)
+                tokens = TokenManager.count_tokens(chunk_content)
+                chunk = CodeChunk(
+                    file_path=str(file_path),
+                    start_line=current_chunk_start_line,
+                    end_line=line_number,
+                    function_name=current_chunk_name if current_chunk_type == 'function' else None,
+                    class_name=current_chunk_name if current_chunk_type == 'class' else None,
+                    chunk_content=chunk_content,
+                    tokens=tokens.tokens,
+                    token_count=tokens.token_count,
+                    language=language,
+                    is_async=current_chunk_type == 'async_function',
+                    decorator_list=[],
+                    docstring=None,
+                    metadata={}
+                )
+                chunks.append(chunk)
+    except Exception as e:
+        logger.error(f"Error chunking file '{file_path}': {e}")
+        return []
+
+    return chunks
+
+def extract_definition_name(line: str) -> Optional[str]:
+    """
+    Extracts the name of the function or class from its definition line.
+    
+    Args:
+        line: Line containing the function or class definition.
+
+    Returns:
+        str: Name of the function or class, or None if not found.
+    """
+    tokens = tokenize.generate_tokens(StringIO(line).readline)
+    for toknum, tokval, _, _, _ in tokens:
+        if toknum == tokenize.NAME and tokval in ('def', 'class'):
+            # Next token is the name
+            toknum, tokval, _, _, _ = next(tokens)
+            if toknum == tokenize.NAME:
+                return tokval
+    return None
 
 def get_language(file_path: Union[str, Path]) -> Optional[str]:
     """
@@ -323,6 +427,7 @@ def get_all_file_paths(
 
     logger.debug(f"Collected {len(file_paths)} files from '{repo_path}'.")
     return file_paths
+
 
 async def clean_unused_imports_async(code: str, file_path: str) -> str:
     """

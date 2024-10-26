@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass
 from datetime import datetime
 from contextlib import asynccontextmanager
+from results import FileProcessingResult
 
 from code_chunk import CodeChunk
 from context_manager import HierarchicalContextManager, ChunkNotFoundError

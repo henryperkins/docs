@@ -163,21 +163,21 @@ def calculate_prompt_tokens(
     schema: str
 ) -> int:
     """
-    Calculates total tokens needed for the prompt.
-    
+    Calculates total tokens needed for the prompt using TokenManager.
+
     Args:
-        base_info: Project and style infogi
+        base_info: Project and style info
         context: Context from other chunks
         chunk_content: Current chunk content
         schema: JSON schema
-        
+
     Returns:
         int: Total token count
     """
-    encoder = get_tiktoken_encoder()
     total = 0
     for text in [base_info, context, chunk_content, schema]:
-        total += len(encoder.encode(text))
+        token_result = TokenManager.count_tokens(text)
+        total += token_result.token_count
     return total
 
 def generate_documentation_prompt(
