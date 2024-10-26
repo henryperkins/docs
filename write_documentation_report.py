@@ -189,9 +189,9 @@ def generate_documentation_prompt(
     max_total_tokens: int = 4096,
     max_completion_tokens: int = 1024
 ) -> List[Dict[str, str]]:
-    """Enhanced prompt generation with better token management."""
+    """Enhanced prompt generation for comprehensive documentation with optimized token management."""
     
-    # Calculate tokens for fixed content
+    # Base information: Project and Style Guidelines
     base_info = f"""
 Project Info:
 {project_info}
@@ -199,21 +199,39 @@ Project Info:
 Style Guidelines:
 {style_guidelines}
 """
+
+    # Detailed instructions for the model on documentation format
+    detailed_instructions = (
+        "Please generate comprehensive documentation with the following sections:\n"
+        "- **Summary**: A detailed summary of the file or module.\n"
+        "- **Changelog**: Include a list of recent changes if available.\n"
+        "- **Functions**: For each function, provide the name, docstring, arguments, "
+        "whether it's asynchronous, complexity, and Halstead metrics (volume, difficulty, and effort).\n"
+        "- **Classes**: For each class, provide the name, docstring, and details of each method, "
+        "including arguments, whether it's asynchronous, return type, complexity, and Halstead metrics.\n"
+        "- **Variables and Constants**: Document each variable and constant with its name, type, and description.\n"
+        "- **Metrics**: Include maintainability index and any other relevant code quality metrics.\n"
+    )
+
+    # Convert function schema to JSON format for the model's reference
     schema_str = json.dumps(function_schema, indent=2)
+    
+    # Calculate token usage for the fixed base content
     fixed_tokens = calculate_prompt_tokens(
         base_info=base_info,
         context="",
         chunk_content=chunk.chunk_content,
-        schema=schema_str
+        schema=schema_str,
+        instructions=detailed_instructions
     )
-    
-    # Calculate available tokens for context
+
+    # Determine available tokens for contextual information
     available_context_tokens = max_total_tokens - fixed_tokens - max_completion_tokens
     if available_context_tokens <= 0:
         logger.warning(f"No tokens available for context in chunk {chunk.chunk_id}")
         available_context_tokens = 0
 
-    # Get and prioritize context
+    # Prioritize context retrieval based on the type of chunk (function, class, or module)
     context_chunks = []
     if chunk.function_name:
         context_chunks = context_manager.get_context_for_function(
@@ -236,14 +254,14 @@ Style Guidelines:
             max_tokens=available_context_tokens
         )
 
-    # Build context string with token tracking
+    # Construct the context string, ensuring it fits within available token limits
     context = "Related code and documentation:\n\n"
     current_tokens = 0
     for ctx_chunk in context_chunks:
         if ctx_chunk.chunk_id == chunk.chunk_id:
             continue
-            
-        # Calculate tokens for this context addition
+
+        # Generate context snippet with associated documentation, if any
         context_addition = f"""
 # From {ctx_chunk.get_context_string()}:
 {ctx_chunk.chunk_content}
@@ -255,21 +273,25 @@ Existing documentation:
 {json.dumps(doc, indent=2)}
 """
         
+        # Calculate tokens for the context addition
         addition_tokens = len(get_tiktoken_encoder().encode(context_addition))
         if current_tokens + addition_tokens > available_context_tokens:
             break
-            
+
         context += context_addition
         current_tokens += addition_tokens
 
-    # Create final prompt
-    return create_prompt_messages(
-        chunk=chunk,
-        context=context,
-        base_info=base_info,
-        schema=schema_str,
-        docstring_format=function_schema["functions"][0]["parameters"]["properties"]["docstring_format"]["enum"][0]
-    )
+    # Create the final prompt with instructions, chunk content, context, and schema
+    prompt_messages = [
+        {"role": "system", "content": base_info},
+        {"role": "user", "content": detailed_instructions},
+        {"role": "assistant", "content": context},
+        {"role": "user", "content": chunk.chunk_content},
+        {"role": "system", "content": f"Schema:\n{schema_str}"}
+    ]
+    
+    return prompt_messages
+
 
 
 async def write_documentation_report(
