@@ -22,7 +22,7 @@ import tokenize
 from io import StringIO
 
 from code_chunk import CodeChunk
-from token_manager import TokenManager
+from token_utils import TokenManager
 logger = logging.getLogger(__name__)
 
 # Default configurations
@@ -572,6 +572,19 @@ def load_function_schema(schema_path: Union[str, Path]) -> Dict[str, Any]:
         raise ValueError(f"Invalid schema format: {e}")
         
     return schema
+def get_metric_status(value: float, thresholds: Dict[str, int]) -> str:
+    """Returns a status indicator based on metric value and thresholds."""
+    if value <= thresholds["low"]:
+        return "Low"
+    elif value <= thresholds["medium"]:
+        return "Medium"
+    else:
+        return "High"
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitizes filename by removing invalid characters."""
+    return re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
 
 def load_config(
     config_path: Union[str, Path],

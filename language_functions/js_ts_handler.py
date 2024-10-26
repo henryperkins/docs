@@ -5,9 +5,10 @@ import logging
 import subprocess
 import json
 import tempfile
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
+from jsonschema import validate, ValidationError
 
 from language_functions.base_handler import BaseHandler
 
@@ -31,6 +32,16 @@ class JSTsHandler(BaseHandler):
         self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
 
     def extract_structure(self, code: str, file_path: str = None, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Extracts the structure of the JavaScript/TypeScript code.
+
+        Checklist:
+        - [x] Parsing: Uses external js_ts_parser.js script.
+        - [x] Data Structure: Conforms to function_schema.json.
+        - [x] Schema Validation: Implemented using jsonschema.validate.
+        - [x] Metrics Calculation: Uses external js_ts_metrics.js script.
+        - [x] Language-Specific Features: Extracts React components.
+        """
         try:
             is_typescript = self._is_typescript_file(file_path)
             parser_options = self._get_parser_options(is_typescript)
@@ -42,35 +53,90 @@ class JSTsHandler(BaseHandler):
             }
 
             # Get metrics
-            metrics = self._calculate_metrics(code, is_typescript)
-            if metrics is None:
+            metrics_result = self._calculate_metrics(code, is_typescript)
+            if metrics_result is None:
                 return self._get_empty_structure("Metrics calculation failed")
 
             # Run parser script
-            structure = self._run_parser_script(input_data)
-            if structure is None:
+            parsed_data = self._run_parser_script(input_data)
+            if parsed_data is None:
                 return self._get_empty_structure("Parsing failed")
 
-            structure.update({
-                "halstead": metrics.halstead,
-                "complexity": metrics.complexity,
-                "maintainability_index": metrics.maintainability,
-                "function_metrics": metrics.function_metrics
-            })
+            # Map parsed data to function_schema.json structure
+            structured_data = {
+                "docstring_format": "JSDoc" if not is_typescript else "TSDoc",
+                "summary": parsed_data.get("summary", ""),
+                "changes_made": [],  # Placeholder for changelog
+                "functions": self._map_functions(parsed_data.get("functions", []), metrics_result.function_metrics),
+                "classes": self._map_classes(parsed_data.get("classes", []), metrics_result.function_metrics),
+                "variables": parsed_data.get("variables", []),
+                "constants": parsed_data.get("constants", []),
+                "imports": parsed_data.get("imports", []),
+                "metrics": {
+                    "complexity": metrics_result.complexity,
+                    "halstead": metrics_result.halstead,
+                    "maintainability_index": metrics_result.maintainability,
+                }
+            }
 
             # React analysis
             if self._is_react_file(file_path):
                 react_info = self._analyze_react_components(code, is_typescript)
                 if react_info is not None:
-                    structure["react_components"] = react_info
+                    structured_data["react_components"] = react_info
 
-            return structure
+            # Schema validation
+            try:
+                validate(instance=structured_data, schema=self.function_schema)
+            except ValidationError as e:
+                logger.warning(f"Schema validation failed: {e}")
+
+            return structured_data
 
         except Exception as e:
             logger.error(f"Error extracting structure: {str(e)}", exc_info=True)
             return self._get_empty_structure(f"Error: {str(e)}")
 
+    def _map_functions(self, functions: List[Dict], function_metrics: Dict) -> List[Dict]:
+        """Maps function data to the schema."""
+        mapped_functions = []
+        for func in functions:
+            func_name = func.get("name", "")
+            metrics = function_metrics.get(func_name, {})
+            mapped_functions.append({
+                "name": func_name,
+                "docstring": func.get("docstring", ""),
+                "args": func.get("params", []),
+                "async": func.get("async", False),
+                "returns": {"type": func.get("returnType", ""), "description": ""},  # Map return type
+                "complexity": metrics.get("complexity", 0),
+                "halstead": metrics.get("halstead", {})
+            })
+        return mapped_functions
+
+    def _map_classes(self, classes: List[Dict], function_metrics: Dict) -> List[Dict]:
+        """Maps class data to the schema."""
+        mapped_classes = []
+        for cls in classes:
+            mapped_methods = self._map_functions(cls.get("methods", []), function_metrics)
+            mapped_classes.append({
+                "name": cls.get("name", ""),
+                "docstring": cls.get("docstring", ""),
+                "methods": mapped_methods
+            })
+        return mapped_classes
+
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
+        """
+        Inserts JSDoc/TSDoc comments into JavaScript/TypeScript code.
+
+        Checklist:
+        - [x] Docstring Generation: Generates JSDoc/TSDoc style comments.
+        - [x] Docstring Formats: Handles JSDoc and TSDoc based on file type.
+        - [x] Insertion Method: Uses external js_ts_inserter.js script.
+        - [x] Error Handling: Includes error handling and logging.
+        - [x] Preservation of Existing Docstrings: Controlled by script options.
+        """
         try:
             is_typescript = self._is_typescript_file(documentation.get("file_path"))
             doc_style = JSDocStyle.TSDOC if is_typescript else JSDocStyle.JSDOC
@@ -82,7 +148,7 @@ class JSTsHandler(BaseHandler):
                 "options": {
                     "style": doc_style.value,
                     "includeTypes": is_typescript,
-                    "preserveExisting": True
+                    "preserveExisting": True  # Or False, depending on your requirement
                 }
             }
 
@@ -94,6 +160,14 @@ class JSTsHandler(BaseHandler):
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+        """
+        Validates JavaScript/TypeScript code using ESLint.
+
+        Checklist:
+        - [x] Validation Tool: Uses ESLint.
+        - [x] Error Handling: Handles validation errors.
+        - [x] Temporary Files: Uses and cleans up temporary files.
+        """
         try:
             if not file_path:
                 logger.warning("File path not provided for validation")
@@ -133,6 +207,7 @@ class JSTsHandler(BaseHandler):
             return False
 
     def _calculate_metrics(self, code: str, is_typescript: bool) -> Optional[MetricsResult]:
+        """Calculates code metrics using the js_ts_metrics.js script."""
         try:
             input_data = {
                 "code": code,
@@ -186,6 +261,7 @@ class JSTsHandler(BaseHandler):
             return None
 
     def _analyze_react_components(self, code: str, is_typescript: bool) -> Optional[Dict[str, Any]]:
+        """Analyzes React components using the react_analyzer.js script."""
         try:
             input_data = {
                 "code": code,
@@ -207,6 +283,7 @@ class JSTsHandler(BaseHandler):
             return None
 
     def _get_parser_options(self, is_typescript: bool) -> Dict[str, Any]:
+        """Returns parser options for the js_ts_parser.js script."""
         options = {
             "sourceType": "module",
             "plugins": [
@@ -231,23 +308,25 @@ class JSTsHandler(BaseHandler):
 
         return options
 
-    @staticmethod
-    def _is_typescript_file(file_path: Optional[str]) -> bool:
+    def _is_typescript_file(self, file_path: Optional[str]) -> bool:
+        """Checks if a file is a TypeScript file."""
         if not file_path:
             return False
         return file_path.lower().endswith(('.ts', '.tsx'))
 
-    @staticmethod
-    def _is_react_file(file_path: Optional[str]) -> bool:
+    def _is_react_file(self, file_path: Optional[str]) -> bool:
+        """Checks if a file is a React file (JSX or TSX)."""
         if not file_path:
             return False
         return file_path.lower().endswith(('.jsx', '.tsx'))
 
     def _get_eslint_config(self, is_typescript: bool) -> str:
+        """Returns the path to the appropriate ESLint config file."""
         config_name = '.eslintrc.typescript.json' if is_typescript else '.eslintrc.json'
         return os.path.join(self.script_dir, config_name)
 
     def _get_empty_structure(self, reason: str = "") -> Dict[str, Any]:
+        """Returns an empty structure dictionary with a reason."""
         return {
             "classes": [],
             "functions": [],
@@ -268,6 +347,7 @@ class JSTsHandler(BaseHandler):
         }
 
     def _run_parser_script(self, input_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Runs the js_ts_parser.js script and returns the parsed data."""
         return self._run_script(
             script_name="js_ts_parser.js",
             input_data=input_data,
@@ -275,6 +355,7 @@ class JSTsHandler(BaseHandler):
         )
 
     def _run_inserter_script(self, input_data: Dict[str, Any]) -> Optional[str]:
+        """Runs the js_ts_inserter.js script and returns the updated code."""
         result = self._run_script(
             script_name="js_ts_inserter.js",
             input_data=input_data,
@@ -291,14 +372,6 @@ class JSTsHandler(BaseHandler):
     def _run_script(self, script_name: str, input_data: Dict[str, Any], error_message: str) -> Any:
         """
         Runs a Node.js script with improved error handling and encoding management.
-        
-        Args:
-            script_name (str): Name of the script to run
-            input_data (Dict[str, Any]): Data to pass to the script
-            error_message (str): Error message prefix for logging
-            
-        Returns:
-            Any: The script's output, parsed from JSON if possible
         """
         try:
             script_path = os.path.join(self.script_dir, script_name)

@@ -51,10 +51,9 @@ class ChunkMetadata:
     dependencies: Set[str] = field(default_factory=set)
     used_by: Set[str] = field(default_factory=set)
 
-
 @dataclass(frozen=True)
 class CodeChunk:
-	"""
+    """
     Immutable representation of a code chunk with metadata.
 
     Each chunk represents a logical segment of code (function, class, etc.)
@@ -67,7 +66,7 @@ class CodeChunk:
         function_name: Name if chunk is a function.
         class_name: Name if chunk is part of a class.
         chunk_content: Actual code content.
-        token_count: Number of tokens.  Calculated on initialization.
+        token_count: Number of tokens. Calculated on initialization.
         language: Programming language.
         chunk_id: Unique identifier.
         is_async: Whether chunk is async.
@@ -90,7 +89,8 @@ class CodeChunk:
     docstring: Optional[str] = None
     parent_chunk_id: Optional[str] = None
     metadata: ChunkMetadata = field(init=False)
-	 @property
+
+    @property
     def tokens(self) -> List[str]:
         """Tokenizes chunk content on demand using TokenManager."""
         return TokenManager.count_tokens(self.chunk_content).tokens
@@ -145,11 +145,9 @@ class CodeChunk:
             return ChunkType.DECORATOR
         return ChunkType.MODULE  # Default to MODULE if no other type is identified
 
-
     def _calculate_hash(self) -> str:
         """Calculates a SHA256 hash of the chunk content."""
         return hashlib.sha256(self.chunk_content.encode('utf-8')).hexdigest()
-
 
     def get_context_string(self) -> str:
         """Returns a concise string representation of the chunk's context."""
@@ -168,7 +166,6 @@ class CodeChunk:
 
         return ", ".join(parts)
 
-
     def get_hierarchy_path(self) -> str:
         """Returns the full hierarchy path of the chunk."""
         parts = [Path(self.file_path).stem]  # Use stem for module name
@@ -177,7 +174,6 @@ class CodeChunk:
         if self.function_name:
             parts.append(self.function_name)
         return ".".join(parts)
-
 
     def can_merge_with(self, other: 'CodeChunk') -> bool:
         """
@@ -204,8 +200,7 @@ class CodeChunk:
         except SyntaxError:
             return False
 
-
-        @staticmethod
+    @staticmethod
     def merge(chunk1: 'CodeChunk', chunk2: 'CodeChunk') -> 'CodeChunk':
         """
         Creates a new chunk by merging two chunks using AST analysis.
@@ -345,14 +340,14 @@ class CodeChunk:
         )
         
         return [chunk1, chunk2]
-		  
-	def get_metrics(self) -> Dict[str, Any]:
-		return {
-			'complexity': self.metadata.complexity,
-		   'token_count': self.token_count,
-		   'start_line': self.metadata.start_line,
-		   'end_line': self.metadata.end_line,
-		   'type': self.metadata.chunk_type.value,
+          
+    def get_metrics(self) -> Dict[str, Any]:
+        return {
+            'complexity': self.metadata.complexity,
+           'token_count': self.token_count,
+           'start_line': self.metadata.start_line,
+           'end_line': self.metadata.end_line,
+           'type': self.metadata.chunk_type.value,
          'has_docstring': self.docstring is not None,
          'is_async': self.is_async,
          'decorator_count': len(self.decorator_list),
@@ -372,6 +367,5 @@ class CodeChunk:
             f"lines={self.start_line}-{self.end_line}, "
             f"type={self.metadata['chunk_type'].value}, "
             f"content='{content_preview}', "
-            f"tokens={self.token_count})"  # Use token_count instead of len(self.tokens)
+            f"tokens={self.token_count})"
         )
-        

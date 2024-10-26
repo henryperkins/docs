@@ -15,7 +15,6 @@ import sys
 from typing import Optional, Dict, Any, List, Union, cast
 from pathlib import Path
 import asyncio
-
 from utils import (
     DEFAULT_COMPLEXITY_THRESHOLDS,
     DEFAULT_HALSTEAD_THRESHOLDS,
