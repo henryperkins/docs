@@ -706,99 +706,84 @@ async def fetch_documentation_rest(
     session: aiohttp.ClientSession,
     prompt: List[Dict[str, str]],
     semaphore: asyncio.Semaphore,
-    deployment_name: str,
-    function_schema: Dict[str, Any],
-    azure_api_key: str,
-    azure_endpoint: str,
-    azure_api_version: str,
+    provider: str,
+    azure_config: Optional[Dict[str, str]] = None,
+    gemini_config: Optional[Dict[str, str]] = None,
+    openai_config: Optional[Dict[str, str]] = None,
     retry_count: int = 3,
     retry_delay: float = 1.0
 ) -> Dict[str, Any]:
     """
-    Fetches documentation from Azure OpenAI API with retry logic.
-    
-    Args:
-        session: aiohttp session
-        prompt: List of messages forming the prompt
-        semaphore: Controls concurrent API requests
-        deployment_name: Azure OpenAI deployment name
-        function_schema: Schema for documentation generation
-        azure_api_key: Azure OpenAI API key
-        azure_endpoint: Azure OpenAI endpoint
-        azure_api_version: Azure OpenAI API version
-        retry_count: Number of retry attempts
-        retry_delay: Base delay between retries
-        
-    Returns:
-        Dict[str, Any]: Generated documentation
-        
-    Raises:
-        Exception: If all retry attempts fail
-    """
-    url = f"{azure_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version={azure_api_version}"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {azure_api_key}",
-    }
+    Fetches documentation from the selected AI provider API with retry logic.
 
+    Args:
+        session (aiohttp.ClientSession): The HTTP session for making requests.
+        prompt (List[Dict[str, str]]): The structured prompt data for the model.
+        semaphore (asyncio.Semaphore): Semaphore for managing concurrency.
+        provider (str): The AI provider ('azure', 'gemini', or 'openai').
+        azure_config (Optional[Dict[str, str]]): Azure-specific configuration.
+        gemini_config (Optional[Dict[str, str]]): Gemini-specific configuration.
+        openai_config (Optional[Dict[str, str]]): OpenAI-specific configuration.
+        retry_count (int): Number of retry attempts on failure.
+        retry_delay (float): Initial delay between retries (exponential backoff applied).
+
+    Returns:
+        Dict[str, Any]: The API response data.
+    """
+    
+    # Configure URL and headers based on provider
+    if provider == "azure":
+        url = f"{azure_config['endpoint']}/openai/deployments/{azure_config['deployment_name']}/chat/completions?api-version={azure_config.get('api_version', '2023-05-15')}"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {azure_config['api_key']}",
+        }
+    elif provider == "gemini":
+        url = f"{gemini_config['endpoint']}/path/to/gemini/endpoint"  # Replace with actual Gemini endpoint
+        headers = {
+            "Authorization": f"Bearer {gemini_config['api_key']}",
+            "Content-Type": "application/json",
+        }
+    elif provider == "openai":
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {openai_config['api_key']}",
+            "Content-Type": "application/json",
+        }
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+
+    # Set up payload for each provider with default params
     payload = {
         "messages": prompt,
         "max_tokens": 1500,
         "temperature": 0.7,
         "top_p": 0.9,
-        "n": 1,
-        "stop": None,
-        "functions": function_schema["functions"],
-        "function_call": {"name": "generate_documentation"}
     }
 
+    # Retry logic with exponential backoff
     for attempt in range(retry_count):
         try:
-            async with semaphore:
+            async with semaphore:  # Ensure concurrency control
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status == 200:
                         data = await response.json()
-                        
-                        choice = data.get("choices", [{}])[0]
-                        message = choice.get("message", {})
-                        
-                        if "function_call" in message:
-                            function_call = message["function_call"]
-                            arguments = function_call.get("arguments", "{}")
-                            try:
-                                return json.loads(arguments)
-                            except json.JSONDecodeError as e:
-                                logger.error(f"Error parsing function arguments: {e}")
-                                raise
-                        else:
-                            logger.error("No function call in response")
-                            raise ValueError("No function call in response")
-                            
-                    elif response.status == 429:  # Rate limit
-                        retry_after = int(response.headers.get("Retry-After", retry_delay))
-                        logger.warning(f"Rate limited. Retrying after {retry_after}s")
-                        await asyncio.sleep(retry_after)
+                        logger.info(f"Successfully fetched documentation from {provider} on attempt {attempt + 1}")
+                        return data
+                    elif response.status in [429, 503]:  # Rate limit or server unavailable
+                        logger.warning(f"Rate limit or server error from {provider} (status {response.status}), retrying...")
+                        await asyncio.sleep(retry_delay * (2 ** attempt))
                         continue
-                        
-                    elif response.status == 401:
-                        raise ValueError("Unauthorized. Check API key and endpoint.")
-                        
                     else:
                         error_text = await response.text()
-                        raise ValueError(
-                            f"API request failed with status {response.status}: "
-                            f"{error_text}"
-                        )
-                        
+                        logger.error(f"API request failed with status {response.status}: {error_text}")
+                        raise ValueError(f"API request failed with status {response.status}: {error_text}")
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            logger.warning(f"Attempt {attempt + 1} failed for {provider} with error: {e}")
             if attempt < retry_count - 1:
-                wait_time = retry_delay * (2 ** attempt)
-                logger.warning(
-                    f"Network error (attempt {attempt + 1}/{retry_count}). "
-                    f"Retrying in {wait_time}s: {str(e)}"
-                )
-                await asyncio.sleep(wait_time)
+                await asyncio.sleep(retry_delay * (2 ** attempt))
             else:
-                raise
+                logger.error(f"All {retry_count} attempts failed for {provider}")
+                raise Exception(f"All {retry_count} attempts failed for {provider}: {e}")
 
-    raise Exception(f"All {retry_count} attempts failed")
+    raise Exception("Failed to fetch documentation after multiple attempts.")
