@@ -31,7 +31,7 @@ class JSTsHandler(BaseHandler):
         self.function_schema = function_schema
         self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
 
-    def extract_structure(self, code: str, file_path: str = None, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Extracts the structure of the JavaScript/TypeScript code.
 
@@ -391,9 +391,9 @@ class JSTsHandler(BaseHandler):
 
             process = subprocess.run(
                 ['node', script_path],
-                input=input_bytes,
+                input=input_json,  # Pass the JSON string
                 capture_output=True,
-                text=True,
+                text=True, 
                 check=True,
                 timeout=60
             )

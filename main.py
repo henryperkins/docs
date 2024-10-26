@@ -10,6 +10,7 @@ from azure_model import AzureModel
 from gemini_model import GeminiModel
 from openai_model import OpenAIModel
 from process_manager import DocumentationProcessManager
+from utils import DEFAULT_EXCLUDED_FILES, DEFAULT_EXCLUDED_DIRS, DEFAULT_SKIP_TYPES, load_config, load_function_schema, get_all_file_paths
 
 logger = logging.getLogger(__name__)
 
@@ -109,12 +110,19 @@ async def main():
             repo_root=repo_path,
             output_dir=output_dir,
             provider=args.provider,
-            azure_config={"api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-                          "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-                          "deployment_name": os.getenv("AZURE_OPENAI_DEPLOYMENT")},
-            gemini_config={"api_key": os.getenv("GEMINI_API_KEY"),
-                           "endpoint": os.getenv("GEMINI_ENDPOINT")},
-            openai_config={"api_key": os.getenv("OPENAI_API_KEY")},
+            azure_config={
+                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+                "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+                "deployment_name": os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+                "api_version": os.getenv("API_VERSION", "2024-05-01-preview")  # Moved inside azure_config
+            },
+            gemini_config={
+                "api_key": os.getenv("GEMINI_API_KEY"),
+                "endpoint": os.getenv("GEMINI_ENDPOINT")
+            },
+            openai_config={
+                "api_key": os.getenv("OPENAI_API_KEY")
+            },
             function_schema=function_schema,
             max_concurrency=args.concurrency
         )
@@ -124,7 +132,7 @@ async def main():
             skip_types=skip_types_set,
             project_info=project_info,
             style_guidelines=style_guidelines,
-            safe_mode=args.safe_mode
+            safe_mode=args.safe_mode  # safe_mode is still present
         )
 
         logger.info(f"Documentation generation completed. Results: {results}")

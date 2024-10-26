@@ -24,6 +24,28 @@ from radon.complexity import cc_visit, ComplexityVisitor
 # Configure logging
 logger = logging.getLogger(__name__)
 
+DEFAULT_EMPTY_METRICS = {
+    "maintainability_index": 0.0,
+    "cyclomatic": 0.0,
+    "halstead": {
+        "h1": 0,
+        "h2": 0,
+        "N1": 0,
+        "N2": 0,
+        "vocabulary": 0,
+        "length": 0,
+        "calculated_length": 0.0,
+        "volume": 0.0,
+        "difficulty": 0.0,
+        "effort": 0.0,
+        "time": 0.0,
+        "bugs": 0.0,
+    },
+    "function_complexity": {},
+    "raw": None,
+    "quality": None,
+}
+
 # Custom exception classes
 class MetricsCalculationError(Exception):
     """Base exception for metrics calculation errors"""

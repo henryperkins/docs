@@ -16,14 +16,27 @@ process.stdin.on('end', () => {
 
         const halstead = analysis.aggregate.halstead;
         const functionsMetrics = analysis.functions.reduce((acc, method) => {
+            // Decode the Halstead properties
+            const decodedHalstead = {
+                operators: method.halstead.operators.map(op => op.toString()),
+                operands: method.halstead.operands.map(op => op.toString()),
+                length: method.halstead.length,
+                vocabulary: method.halstead.vocabulary,
+                difficulty: method.halstead.difficulty,
+                volume: method.halstead.volume,
+                effort: method.halstead.effort,
+                bugs: method.halstead.bugs,
+                time: method.halstead.time
+            };
+
             acc[method.name] = {
                 complexity: method.cyclomatic,
                 sloc: method.sloc,
                 params: method.params,
-                halstead: method.halstead
+                halstead: decodedHalstead // Assign the decoded object
             };
             return acc;
-        }, {});
+        }, {}); // Initialize accumulator as an empty object
 
         const result = {
             complexity: analysis.aggregate.cyclomatic,
@@ -44,7 +57,7 @@ process.stdin.on('end', () => {
             complexity: 0,
             maintainability: 0,
             halstead: { volume: 0, difficulty: 0, effort: 0 },
-            functions: {}
+            functions: {} // Initialize functions as an empty object
         };
         console.log(JSON.stringify(defaultMetrics));
     }

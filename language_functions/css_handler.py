@@ -31,7 +31,7 @@ class CSSHandler(BaseHandler):
         """
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+    async def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Extracts the structure of the CSS code, analyzing selectors, properties, and rules.
 

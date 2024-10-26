@@ -31,7 +31,7 @@ class GoHandler(BaseHandler):
         """
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
+    async def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         """
         Extracts the structure of the Go code, analyzing functions, types, and variables.
 

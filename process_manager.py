@@ -24,12 +24,15 @@ from pydantic import BaseModel
 
 from azure_model import AzureModel
 from gemini_model import GeminiModel
-from context_manager import HierarchicalContextManager
+from openai_model import OpenAIModel  # Added for OpenAI support
+from context_manager import HierarchicalContextManager, ChunkNotFoundError
 from code_chunk import CodeChunk
-from metrics import MetricsResult, calculate_code_metrics
+from metrics import MetricsResult, calculate_code_metrics, MetricsAnalyzer, MetricsThresholds
 from token_utils import TokenManager, TokenizerModel
 from utils import sanitize_filename, should_process_file, load_function_schema
 from write_documentation_report import write_documentation_report
+from language_functions import get_handler, insert_docstrings  # For language specific handling
+from results import FileProcessingResult  # Standardized result storage <--- Add this import
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +169,7 @@ class DocumentationProcessManager:
 
         # Initialize metrics
         self.metrics = ProcessingMetrics()
+        self.metrics_analyzer = MetricsAnalyzer()
 
         # Initialize context manager
         self.context_manager = HierarchicalContextManager(
@@ -204,7 +208,8 @@ class DocumentationProcessManager:
         skip_types: Set[str],
         project_info: str,
         style_guidelines: str,
-        safe_mode: bool = False
+        safe_mode: bool = False,
+        project_id: str = "default"  # Add default project_id
     ) -> Dict[str, Any]:
         """
         Processes multiple files with documentation generation.
@@ -233,7 +238,8 @@ class DocumentationProcessManager:
                             file_path=file_path,
                             project_info=project_info,
                             style_guidelines=style_guidelines,
-                            safe_mode=safe_mode
+                            safe_mode=safe_mode,
+                            project_id=project_id
                         )
                         tasks.append(task)
                     else:
@@ -296,56 +302,75 @@ class DocumentationProcessManager:
         file_path: str,
         project_info: str,
         style_guidelines: str,
-        safe_mode: bool
+        safe_mode: bool,
+        project_id: str  # Add project_id parameter
     ) -> ProcessingResult:
         """
         Processes a single file with chunking and documentation generation.
-        
+
         Args:
             session: aiohttp session
             file_path: Path to the file
             project_info: Project documentation info
             style_guidelines: Documentation style guidelines
             safe_mode: If True, don't modify files
-            
+            project_id: Unique identifier for the project
+
         Returns:
             ProcessingResult: Processing result
         """
         start_time = datetime.now()
-        
+        result = None  # Initialize result
+
         try:
             async with self.file_semaphore:
                 # Read file content
                 async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                     content = await f.read()
 
-                # Calculate initial metrics
+                # Get language handler
+                language = self._get_language(file_path)
+                handler = get_handler(language, self.function_schema)
+                if not handler:
+                    raise ValueError(f"Unsupported language for file: {file_path}")
+
+                # Extract code structure (Await the result)
+                code_structure = await handler.extract_structure(content, file_path)
+                if "error" in code_structure:
+                    raise Exception(code_structure["error"])
+
+                # Calculate metrics (Await only ONCE and store the result)
                 metrics_result = await asyncio.get_event_loop().run_in_executor(
                     self.thread_pool,
                     calculate_code_metrics,
                     content,
-                    file_path
+                    file_path,
+                    language
                 )
+                self.metrics_analyzer.add_result(metrics_result)  # Use the result directly
 
-                # Create chunks
+                # Create chunks 
                 chunks = await self._create_chunks(
                     content=content,
                     file_path=file_path,
-                    metrics=metrics_result.metrics if metrics_result.success else None
+                    metrics=metrics_result.metrics if metrics_result.success else None 
                 )
 
                 self.metrics.total_chunks += len(chunks)
 
-                # Process chunks with controlled concurrency
-                chunk_results = await asyncio.gather(*[
-                    self._process_chunk(
-                        session=session,
-                        chunk=chunk,
-                        project_info=project_info,
-                        style_guidelines=style_guidelines
-                    )
-                    for chunk in chunks
-                ], return_exceptions=True)
+                # Process chunks concurrently
+                chunk_results = await asyncio.gather(
+                    *[
+                        self._process_chunk(
+                            session=session,
+                            chunk=chunk,
+                            project_info=project_info,
+                            style_guidelines=style_guidelines,
+                        )
+                        for chunk in chunks
+                    ],
+                    return_exceptions=True,
+                )
 
                 # Combine results
                 successful_chunks = []
@@ -363,41 +388,61 @@ class DocumentationProcessManager:
                             failed_chunks.append(result)
                         warnings.extend(result.warnings)
 
-                # Combine documentation
+                # Combine documentation and add metrics
                 combined_documentation = await self._combine_documentation(
-                    successful_chunks,
-                    metrics_result
+                    successful_chunks, metrics_result, code_structure
                 )
+
+                # Insert docstrings using language handler
+                updated_code = insert_docstrings(
+                    content, combined_documentation, language, self.function_schema
+                )
+
+                # Format and lint code (if applicable)
+                if language == "python":
+                    updated_code = await clean_unused_imports_async(updated_code, file_path)
+                    updated_code = await format_with_black_async(updated_code)
+                    flake8_output = await run_flake8_async(file_path)
+                    if flake8_output:
+                        combined_documentation["warnings"].append(flake8_output)
 
                 # Write documentation report
                 if not safe_mode:
                     await write_documentation_report(
                         documentation=combined_documentation,
-                        language=self._get_language(file_path),
+                        language=language,
                         file_path=file_path,
                         repo_root=str(self.repo_root),
-                        output_dir=str(self.output_dir)
+                        output_dir=str(self.output_dir),
+                        project_id=project_id,  # Pass project_id
                     )
 
                 processing_time = (datetime.now() - start_time).total_seconds()
 
-                return ProcessingResult(
-                    id=file_path,
-                    success=len(successful_chunks) > 0,
+                result = FileProcessingResult(
+                    file_path=file_path,
+                    success=True,
                     documentation=combined_documentation,
                     metrics=metrics_result.metrics if metrics_result.success else None,
-                    warnings=warnings,
-                    processing_time=processing_time
+                    chunk_count=len(chunks),
+                    successful_chunks=self.metrics.successful_chunks,
+                    timestamp=datetime.now()
                 )
 
+        except ChunkNotFoundError as e:
+            error_message = f"Chunk not found error: {e}"
+            logger.error(error_message, exc_info=True)
+            result = FileProcessingResult(file_path=file_path, success=False, error=error_message)
         except Exception as e:
-            logger.error(f"Error processing {file_path}: {str(e)}", exc_info=True)
-            return ProcessingResult(
-                id=file_path,
-                success=False,
-                error=str(e),
-                processing_time=(datetime.now() - start_time).total_seconds()
-            )
+            error_message = f"Error processing {file_path}: {str(e)}"
+            logger.error(error_message, exc_info=True)
+            result = FileProcessingResult(file_path=file_path, success=False, error=error_message)
+
+        finally:
+            if result:  # Ensure result is initialized
+                return result
+            else:  # Handle unexpected cases where result is still None
+                return FileProcessingResult(file_path=file_path, success=False, error="Unknown error occurred.")
 
     async def _create_chunks(
         self,

@@ -24,17 +24,23 @@ class PythonHandler(BaseHandler):
         """Initialize the Python handler."""
         self.function_schema = function_schema
 
-    def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Extracts the structure of the Python code and calculates complexity."""
 
         try:
             if metrics is None:
                 metrics_result = calculate_code_metrics(code, file_path, language="python")
+                
+                # Await the coroutine before accessing attributes
+                metrics_result = await metrics_result 
+                
                 if metrics_result.success:
                     metrics = metrics_result.metrics
                 else:
                     logger.warning(f"Metrics calculation failed for {file_path}: {metrics_result.error}")
                     metrics = DEFAULT_EMPTY_METRICS
+
+                self.metrics_analyzer.add_result(metrics_result)
 
             tree = ast.parse(code)
             code_structure = {

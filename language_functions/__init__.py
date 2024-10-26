@@ -42,9 +42,11 @@ from .cpp_handler import CppHandler
 from .html_handler import HTMLHandler
 from .css_handler import CSSHandler
 from .base_handler import BaseHandler
+from .language_functions import insert_docstrings  # Import the function
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["get_handler", "insert_docstrings"]
 
 def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[BaseHandler]:
     """
