@@ -671,4 +671,4 @@ if __name__ == "__main__":
         asyncio.run(process_files(files_to_process))
     else:
         logger.error("No files provided for processing")
-        sys.exit(1)
+        sys.exit(1)    
