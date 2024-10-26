@@ -1,32 +1,37 @@
 """
 write_documentation_report.py
 
-This module provides functions for generating documentation reports in both JSON (for frontend) 
-and Markdown formats. It includes utilities for creating badges, formatting tables, generating 
-summaries, and structuring documentation data.
+This module provides functions for generating documentation reports in both JSON
+and Markdown formats. It is thread-safe for concurrent write operations, handles
+file I/O exceptions gracefully, and uses f-strings for string formatting.
 """
 
 import aiofiles
 import re
 import json
 import os
-import textwrap
 import logging
 import sys
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, cast
 from pathlib import Path
+import asyncio
 
 from utils import (
     DEFAULT_COMPLEXITY_THRESHOLDS,
     DEFAULT_HALSTEAD_THRESHOLDS,
     DEFAULT_MAINTAINABILITY_THRESHOLDS,
-    get_threshold
 )
+from token_utils import TokenManager
+from code_chunk import CodeChunk
+from context_manager import HierarchicalContextManager
 
 logger = logging.getLogger(__name__)
 
+# Create a lock for file writing
+write_lock = asyncio.Lock()
 
-def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], logo: str = None) -> str:
+
+def generate_badge(metric_name: str, value: Union[int, float], thresholds: Dict[str, int], logo: str = None) -> str:
     """Generates a Markdown badge for a given metric."""
     low, medium, high = thresholds["low"], thresholds["medium"], thresholds["high"]
     color = "green" if value <= low else "yellow" if value <= medium else "red"
@@ -37,22 +42,17 @@ def generate_badge(metric_name: str, value: float, thresholds: Dict[str, int], l
 
 def generate_all_badges(metrics: Dict[str, Any]) -> str:
     """Generates badges for all metrics."""
-
-    complexity = metrics.get("complexity")
-    halstead = metrics.get("halstead")
-    mi = metrics.get("maintainability_index")
-
     badges = []
 
-    if complexity is not None:
+    if complexity := metrics.get("complexity"):
         badges.append(generate_badge("Complexity", complexity, DEFAULT_COMPLEXITY_THRESHOLDS, logo="codeClimate"))
 
-    if halstead:
+    if halstead := metrics.get("halstead"):
         badges.append(generate_badge("Halstead Volume", halstead["volume"], DEFAULT_HALSTEAD_THRESHOLDS["volume"], logo="stackOverflow"))
         badges.append(generate_badge("Halstead Difficulty", halstead["difficulty"], DEFAULT_HALSTEAD_THRESHOLDS["difficulty"], logo="codewars"))
         badges.append(generate_badge("Halstead Effort", halstead["effort"], DEFAULT_HALSTEAD_THRESHOLDS["effort"], logo="atlassian"))
 
-    if mi is not None:
+    if mi := metrics.get("maintainability_index"):
         badges.append(generate_badge("Maintainability Index", mi, DEFAULT_MAINTAINABILITY_THRESHOLDS, logo="codeclimate"))
 
     return " ".join(badges)
@@ -61,26 +61,23 @@ def generate_all_badges(metrics: Dict[str, Any]) -> str:
 def format_table(headers: List[str], rows: List[List[Any]]) -> str:
     """Formats data into a Markdown table."""
     headers = [sanitize_text(str(header)) for header in headers]
-    table = "| " + " | ".join(headers) + " |\n"
-    table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+    table = f"| {' | '.join(headers)} |\n"
+    table += f"| {' | '.join(['---'] * len(headers))} |\n"
     for row in rows:
         sanitized_row = [sanitize_text(str(cell)) for cell in row]
-        table += "| " + " | ".join(sanitized_row) + " |\n"
+        table += f"| {' | '.join(sanitized_row)} |\n"
     return table
 
 
 def truncate_description(description: str, max_length: int = 100) -> str:
     """Truncates a description to a maximum length."""
-    if len(description) > max_length:
-        return description[:max_length] + "..."
-    return description
+    return f"{description[:max_length]}..." if len(description) > max_length else description
 
 
 def sanitize_text(text: str) -> str:
     """Sanitizes text for Markdown."""
     escaped_text = re.escape(text)
     return escaped_text.replace('\n', ' ').replace('\r', '').strip()
-
 
 
 def generate_table_of_contents(content: str) -> str:
@@ -156,29 +153,37 @@ def generate_summary(documentation: Dict[str, Any]) -> str:
     return "\n".join(summary)
 
 
-def calculate_prompt_tokens(
-    base_info: str,
-    context: str,
-    chunk_content: str,
-    schema: str
-) -> int:
-    """
-    Calculates total tokens needed for the prompt using TokenManager.
-
-    Args:
-        base_info: Project and style info
-        context: Context from other chunks
-        chunk_content: Current chunk content
-        schema: JSON schema
-
-    Returns:
-        int: Total token count
-    """
+def calculate_prompt_tokens(base_info: str, context: str, chunk_content: str, schema: str) -> int:
+    """Calculates total tokens needed for the prompt using TokenManager."""
     total = 0
     for text in [base_info, context, chunk_content, schema]:
         token_result = TokenManager.count_tokens(text)
         total += token_result.token_count
     return total
+
+
+# Helper functions (these would also be included in the file)
+def truncate_description(description: str, max_length: int = 100) -> str:
+    """Truncates a description to a maximum length."""
+    return f"{description[:max_length]}..." if len(description) > max_length else description
+
+
+def format_table(headers: List[str], rows: List[List[Any]]) -> str:
+    """Formats data into a Markdown table."""
+    headers = [sanitize_text(str(header)) for header in headers]
+    table = f"| {' | '.join(headers)} |\n"
+    table += f"| {' | '.join(['---'] * len(headers))} |\n"
+    for row in rows:
+        sanitized_row = [sanitize_text(str(cell)) for cell in row]
+        table += f"| {' | '.join(sanitized_row)} |\n"
+    return table
+
+
+def sanitize_text(text: str) -> str:
+    """Sanitizes text for Markdown."""
+    escaped_text = re.escape(text)
+    return escaped_text.replace('\n', ' ').replace('\r', '').strip()
+
 
 def generate_documentation_prompt(
     chunk: CodeChunk,
@@ -190,8 +195,7 @@ def generate_documentation_prompt(
     max_completion_tokens: int = 1024
 ) -> List[Dict[str, str]]:
     """Enhanced prompt generation for comprehensive documentation with optimized token management."""
-    
-    # Base information: Project and Style Guidelines
+
     base_info = f"""
 Project Info:
 {project_info}
@@ -200,7 +204,6 @@ Style Guidelines:
 {style_guidelines}
 """
 
-    # Detailed instructions for the model on documentation format
     detailed_instructions = (
         "Please generate comprehensive documentation with the following sections:\n"
         "- **Summary**: A detailed summary of the file or module.\n"
@@ -213,25 +216,20 @@ Style Guidelines:
         "- **Metrics**: Include maintainability index and any other relevant code quality metrics.\n"
     )
 
-    # Convert function schema to JSON format for the model's reference
     schema_str = json.dumps(function_schema, indent=2)
-    
-    # Calculate token usage for the fixed base content
+
     fixed_tokens = calculate_prompt_tokens(
         base_info=base_info,
         context="",
         chunk_content=chunk.chunk_content,
-        schema=schema_str,
-        instructions=detailed_instructions
+        schema=schema_str
     )
 
-    # Determine available tokens for contextual information
     available_context_tokens = max_total_tokens - fixed_tokens - max_completion_tokens
     if available_context_tokens <= 0:
         logger.warning(f"No tokens available for context in chunk {chunk.chunk_id}")
         available_context_tokens = 0
 
-    # Prioritize context retrieval based on the type of chunk (function, class, or module)
     context_chunks = []
     if chunk.function_name:
         context_chunks = context_manager.get_context_for_function(
@@ -254,14 +252,12 @@ Style Guidelines:
             max_tokens=available_context_tokens
         )
 
-    # Construct the context string, ensuring it fits within available token limits
     context = "Related code and documentation:\n\n"
     current_tokens = 0
     for ctx_chunk in context_chunks:
         if ctx_chunk.chunk_id == chunk.chunk_id:
             continue
 
-        # Generate context snippet with associated documentation, if any
         context_addition = f"""
 # From {ctx_chunk.get_context_string()}:
 {ctx_chunk.chunk_content}
@@ -272,16 +268,14 @@ Style Guidelines:
 Existing documentation:
 {json.dumps(doc, indent=2)}
 """
-        
-        # Calculate tokens for the context addition
-        addition_tokens = len(get_tiktoken_encoder().encode(context_addition))
+
+        addition_tokens = len(TokenManager.get_encoder().encode(context_addition))
         if current_tokens + addition_tokens > available_context_tokens:
             break
 
         context += context_addition
         current_tokens += addition_tokens
 
-    # Create the final prompt with instructions, chunk content, context, and schema
     prompt_messages = [
         {"role": "system", "content": base_info},
         {"role": "user", "content": detailed_instructions},
@@ -289,9 +283,8 @@ Existing documentation:
         {"role": "user", "content": chunk.chunk_content},
         {"role": "system", "content": f"Schema:\n{schema_str}"}
     ]
-    
-    return prompt_messages
 
+    return prompt_messages
 
 
 async def write_documentation_report(
@@ -300,62 +293,65 @@ async def write_documentation_report(
     file_path: str,
     repo_root: str,
     output_dir: str,
-    project_id: str,  # Added project_id
+    project_id: str,
 ) -> Optional[Dict[str, Any]]:
-    """Writes documentation to JSON and Markdown files."""
+    """Writes documentation to JSON and Markdown files with thread safety and exception handling."""
 
     if not documentation:
         logger.warning(f"No documentation to write for '{file_path}'")
         return None
 
     try:
-        # Construct the project-specific output path
-        project_output_dir = Path(output_dir) / project_id
-        project_output_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+        async with write_lock:
+            project_output_dir = Path(output_dir) / project_id
+            project_output_dir.mkdir(parents=True, exist_ok=True)
 
-        relative_path = os.path.relpath(file_path, repo_root)
-        safe_filename = sanitize_filename(os.path.basename(file_path))
-        base_path = project_output_dir / safe_filename  # Use project_output_dir
+            relative_path = os.path.relpath(file_path, repo_root)
+            safe_filename = sanitize_filename(os.path.basename(file_path))
+            base_path = project_output_dir / safe_filename
 
-        # Frontend-compatible JSON
-        json_path = base_path.with_suffix(".json")
-        async with aiofiles.open(json_path, "w", encoding="utf-8") as f:
-            await f.write(json.dumps(documentation, indent=2))  # Write the full documentation
+            json_path = base_path.with_suffix(".json")
+            try:
+                async with aiofiles.open(json_path, "w", encoding="utf-8") as f:
+                    await f.write(json.dumps(documentation, indent=2))
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                logger.error(f"Error writing JSON to {json_path}: {e}", exc_info=True)
+                return None
 
-        # Markdown for reference (optional - check if needed)
-        if documentation.get("generate_markdown", True):  # Add a flag to control Markdown generation
-            markdown_content = await generate_markdown_content(documentation, language, file_path, relative_path)
-            md_path = base_path.with_suffix(".md")
-            async with aiofiles.open(md_path, "w", encoding="utf-8") as f:
-                await f.write(markdown_content)
+            if documentation.get("generate_markdown", True):
+                markdown_content = await generate_markdown_content(documentation, language, file_path, relative_path)
+                md_path = base_path.with_suffix(".md")
+                try:
+                    async with aiofiles.open(md_path, "w", encoding="utf-8") as f:
+                        await f.write(markdown_content)
+                except (FileNotFoundError, PermissionError, OSError) as e:
+                    logger.error(f"Error writing Markdown to {md_path}: {e}", exc_info=True)
+                    return None
 
         logger.info(f"Documentation written to {json_path}")
-        return documentation  # Return the documentation
+        return documentation
 
     except Exception as e:
         logger.error(f"Error writing documentation report: {e}", exc_info=True)
         return None
 
 
-
 async def generate_markdown_content(
     documentation: Dict[str, Any],
-    language: str,
+    language: str,  # Though not used directly in this function, it might be useful for future extensions
     file_path: str,
-    relative_path: str
+    relative_path: str  # Though not used directly in this function, it's part of the original signature
 ) -> str:
     """Generates enhanced markdown content with metrics analysis."""
-    
-    # Generate badges and basic content
+
     badges = generate_all_badges(documentation.get("metrics", {}))
     summary = generate_summary(documentation)
     functions = format_functions(documentation.get("functions", []))
     classes = format_classes(documentation.get("classes", []))
-    
-    # Add metrics analysis section
+
     metrics_summary = documentation.get("metrics_summary", {})
     problematic_files = documentation.get("problematic_files", [])
-    
+
     metrics_content = f"""
 ## Metrics Analysis
 
@@ -371,7 +367,7 @@ async def generate_markdown_content(
 
 ### Problematic Files
 """
-    
+
     if problematic_files:
         metrics_content += "\n".join(
             f"- {file['file_path']}: {', '.join(issue['type'] for issue in file['issues'])}"
@@ -380,7 +376,6 @@ async def generate_markdown_content(
     else:
         metrics_content += "No problematic files found."
 
-    # Combine with existing content
     content = f"""
 # Documentation for {os.path.basename(file_path)}
 
@@ -397,7 +392,6 @@ async def generate_markdown_content(
 {classes}
     """.strip()
 
-    # Generate table of contents
     toc = generate_table_of_contents(content)
     return f"# Table of Contents\n\n{toc}\n\n{content}"
 

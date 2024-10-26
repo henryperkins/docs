@@ -1,5 +1,7 @@
 """
-metrics.py - Enhanced version with improved error handling and debugging
+metrics.py - Enhanced version with improved error handling, debugging,
+thread pool management, specific exception handling in the decorator,
+and metrics validation.
 """
 
 import ast
@@ -13,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
 from time import perf_counter
+from concurrent.futures import ThreadPoolExecutor
 
 from radon.metrics import h_visit, mi_visit
 from radon.complexity import cc_visit, ComplexityVisitor
@@ -42,6 +45,10 @@ class MetricsResult:
     success: bool
     error: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
+
+# Create a global thread pool with a limited number of threads
+MAX_WORKERS = max(os.cpu_count() - 1, 1)
+thread_pool = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
 def log_execution_time(func):
     """Decorator to log function execution time"""
@@ -84,12 +91,20 @@ class CodeMetrics(TypedDict):
     quality: Any
 
 def safe_metric_calculation(default_value: Any = None):
-    """Decorator for safe metric calculation with error handling"""
+    """Decorator for safe metric calculation with specific error handling."""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
+            except ValueError as e:
+                logger.error(f"ValueError in {func.__name__}: {str(e)}")
+                logger.debug(f"Traceback: {traceback.format_exc()}")
+                return default_value
+            except TypeError as e:
+                logger.error(f"TypeError in {func.__name__}: {str(e)}")
+                logger.debug(f"Traceback: {traceback.format_exc()}")
+                return default_value
             except Exception as e:
                 logger.error(f"Error in {func.__name__}: {str(e)}")
                 logger.debug(f"Traceback: {traceback.format_exc()}")
@@ -105,27 +120,27 @@ def safe_metric_calculation(default_value: Any = None):
 def calculate_halstead_metrics(code: str) -> HalsteadMetrics:
     """
     Calculates Halstead complexity metrics with enhanced error handling.
-    
+
     Args:
         code (str): Source code to analyze
-        
+
     Returns:
         HalsteadMetrics: Calculated Halstead metrics
-        
+
     Raises:
         HalsteadCalculationError: If calculation fails
     """
     logger.debug("Starting Halstead metrics calculation")
-    
+
     try:
         halstead_reports = h_visit(code)
-        
+
         if not halstead_reports:
             logger.warning("No Halstead metrics found in code")
             raise HalsteadCalculationError("No Halstead metrics found")
 
         metrics = halstead_reports[0] if isinstance(halstead_reports, list) else halstead_reports
-        
+
         # Validate metrics
         for key in ['h1', 'h2', 'N1', 'N2']:
             if not hasattr(metrics, key) or getattr(metrics, key) < 0:
@@ -145,7 +160,7 @@ def calculate_halstead_metrics(code: str) -> HalsteadMetrics:
             time=metrics.time,
             bugs=metrics.bugs,
         )
-        
+
         logger.debug(f"Halstead metrics calculated successfully: {halstead_metrics}")
         return halstead_metrics
 
@@ -158,24 +173,24 @@ def calculate_halstead_metrics(code: str) -> HalsteadMetrics:
 def calculate_maintainability_index(code: str) -> float:
     """
     Calculates the Maintainability Index with enhanced error handling.
-    
+
     Args:
         code (str): Source code to analyze
-        
+
     Returns:
         float: Maintainability Index value
     """
     logger.debug("Starting Maintainability Index calculation")
-    
+
     try:
         mi_value = mi_visit(code, multi=False)
-        
+
         if not isinstance(mi_value, (int, float)) or mi_value < 0:
             raise ValueError(f"Invalid Maintainability Index value: {mi_value}")
-            
+
         logger.debug(f"Maintainability Index calculated: {mi_value}")
         return float(mi_value)
-        
+
     except Exception as e:
         logger.error(f"Error calculating Maintainability Index: {str(e)}")
         logger.debug(f"Traceback: {traceback.format_exc()}")
@@ -185,43 +200,42 @@ def calculate_maintainability_index(code: str) -> float:
 def calculate_complexity(code: str) -> Dict[str, float]:
     """
     Calculates Cyclomatic Complexity with enhanced error handling and validation.
-    
+
     Args:
         code (str): Source code to analyze
-        
+
     Returns:
         Dict[str, float]: Complexity metrics for each function
     """
     logger.debug("Starting Cyclomatic Complexity calculation")
-    
+
     try:
         complexity_visitor = ComplexityVisitor.from_code(code)
-        
+
         function_complexity = {}
         for block in complexity_visitor.functions + complexity_visitor.classes:
             if not hasattr(block, 'name') or not hasattr(block, 'complexity'):
                 logger.warning(f"Invalid block structure found: {block}")
                 continue
-                
+
             complexity = float(block.complexity)
             if complexity < 0:
                 logger.warning(f"Invalid complexity value for {block.name}: {complexity}")
                 continue
-                
+
             function_complexity[block.name] = complexity
-            
+
             # Log high complexity functions
             if complexity > 10:
                 logger.warning(f"High complexity function found: {block.name} ({complexity})")
-        
+
         logger.debug(f"Complexity calculation completed: {function_complexity}")
         return function_complexity
-        
+
     except Exception as e:
         logger.error(f"Error calculating complexity: {str(e)}")
         logger.debug(f"Traceback: {traceback.format_exc()}")
         return {}
-
 
 @log_execution_time
 async def calculate_code_metrics(
@@ -246,15 +260,15 @@ async def calculate_code_metrics(
         if language.lower() == "python":
             try:  # Combined try-except block for Python metrics
                 metrics_data['halstead'] = await asyncio.wait_for(
-                    asyncio.to_thread(calculate_halstead_metrics, code, language),
+                    asyncio.to_thread(calculate_halstead_metrics, code, language, executor=thread_pool),
                     timeout=30.0
                 )
                 metrics_data['maintainability_index'] = await asyncio.wait_for(
-                    asyncio.to_thread(calculate_maintainability_index, code, language),
+                    asyncio.to_thread(calculate_maintainability_index, code, language, executor=thread_pool),
                     timeout=10.0
                 )
                 metrics_data['function_complexity'] = await asyncio.wait_for(
-                    asyncio.to_thread(calculate_complexity, code, language),
+                    asyncio.to_thread(calculate_complexity, code, language, executor=thread_pool),
                     timeout=20.0
                 )
                 complexities = list(metrics_data['function_complexity'].values())
@@ -272,7 +286,7 @@ async def calculate_code_metrics(
                 metrics_data['halstead'] = get_default_halstead_metrics()
                 metrics_data['maintainability_index'] = 0.0
                 metrics_data['function_complexity'] = {}
-                metrics_data['cyclomatic'] = 0.0                
+                metrics_data['cyclomatic'] = 0.0
         else:  # For non-Python languages
             metrics_data['halstead'] = get_default_halstead_metrics()
             metrics_data['maintainability_index'] = 0.0
@@ -306,7 +320,7 @@ async def calculate_code_metrics(
 
     except Exception as e:
         error_msg = f"Metrics calculation failed: {str(e)}"
-        logger.error(error_msg, exc_info=True)  # Include exception info in logs
+        logger.error(error_msg, exc_info=True)
         return MetricsResult(
             file_path=file_path or "unknown",
             timestamp=datetime.now(),
@@ -317,37 +331,44 @@ async def calculate_code_metrics(
 
 def validate_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
     """Validates and sanitizes calculated metrics."""
-    validated = {}
-    
-    # Validate Halstead metrics
-    halstead = metrics.get('halstead', {})
-    validated['halstead'] = {
-        key: max(0.0, float(value))
-        for key, value in halstead.items()
-        if isinstance(value, (int, float))
-    }
+    validated = metrics.copy()
 
-    # Validate Maintainability Index (0-100 scale)
-    mi = metrics.get('maintainability_index', 0.0)
-    validated['maintainability_index'] = max(0.0, min(100.0, float(mi)))
+    # Maintainability Index (0-100)
+    mi = validated.get('maintainability_index', 0.0)
+    if not (0.0 <= mi <= 100.0):
+        logger.warning(f"Maintainability index out of range: {mi}")
+        validated['maintainability_index'] = max(0.0, min(100.0, mi))
 
-    # Validate complexity metrics
-    validated['function_complexity'] = {
-        str(func): max(0.0, float(complexity))
-        for func, complexity in metrics.get('function_complexity', {}).items()
-    }
-    
-    validated['cyclomatic'] = max(0.0, float(metrics.get('cyclomatic', 0.0)))
+    # Cyclomatic Complexity (>= 1, typically less than 30)
+    cyclomatic = validated.get('cyclomatic', 0.0)
+    if cyclomatic < 1.0:
+        logger.warning(f"Cyclomatic complexity unusually low: {cyclomatic}")
+    if cyclomatic > 50.0:
+        logger.warning(f"Cyclomatic complexity unusually high: {cyclomatic}")
+
+    # Halstead metrics (all should be non-negative)
+    halstead = validated.get('halstead', {})
+    for metric, value in halstead.items():
+        if value < 0:
+            logger.warning(f"Halstead metric '{metric}' is negative: {value}")
+            validated['halstead'][metric] = 0
+
+    # Function complexity (should be non-negative)
+    function_complexity = validated.get('function_complexity', {})
+    for func, complexity in function_complexity.items():
+        if complexity < 0:
+            logger.warning(f"Function complexity for '{func}' is negative: {complexity}")
+            validated['function_complexity'][func] = 0
 
     return validated
 
 def calculate_quality_score(metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
     Calculates a normalized quality score based on metrics.
-    
+
     Args:
         metrics (Dict[str, Any]): Validated metrics
-        
+
     Returns:
         Dict[str, Any]: Quality scores for different aspects
     """
@@ -388,14 +409,14 @@ def normalize_score(
 ) -> float:
     """
     Normalizes a metric value to a 0-1 scale.
-    
+
     Args:
         value (float): Raw metric value
         min_val (float): Minimum expected value
         max_val (float): Maximum expected value
         weight (float): Weight factor for the score
         inverse (bool): If True, lower values are better
-        
+
     Returns:
         float: Normalized score between 0 and 1
     """
@@ -422,12 +443,12 @@ def get_default_halstead_metrics() -> HalsteadMetrics:
         effort=0.0, time=0.0,
         bugs=0.0
     )
-
+    
 class MetricsAnalyzer:
     """
-    Class for analyzing and aggregating metrics across multiple files.
+    Analyzes and aggregates metrics across multiple files.
     """
-    
+
     def __init__(self):
         self.metrics_history: List[MetricsResult] = []
         self.error_count = 0
@@ -435,146 +456,109 @@ class MetricsAnalyzer:
 
     def add_result(self, result: MetricsResult):
         """
-        Adds a metrics result to the history and updates error/warning counts.
-        
+        Adds a metrics result and updates error/warning counts.
+
         Args:
-            result (MetricsResult): Metrics calculation result
+            result (MetricsResult): The result to add.
         """
         self.metrics_history.append(result)
-        
         if not result.success:
             self.error_count += 1
             logger.error(f"Metrics calculation failed for {result.file_path}: {result.error}")
-        
-        if result.success and result.metrics:
+        elif result.metrics:
             self._check_metrics_warnings(result)
 
     def _check_metrics_warnings(self, result: MetricsResult):
         """
-        Checks for concerning metrics values and logs warnings.
-        
+        Checks for and logs warnings about concerning metric values.
+
         Args:
-            result (MetricsResult): Metrics calculation result
+            result (MetricsResult): The result to check.
         """
         metrics = result.metrics
-        if not metrics:
-            return
-
-        # Check maintainability
         if metrics['maintainability_index'] < 20:
             self.warning_count += 1
-            logger.warning(
-                f"Very low maintainability index ({metrics['maintainability_index']:.2f}) "
-                f"in {result.file_path}"
-            )
-
-        # Check complexity
+            logger.warning(f"Very low maintainability index ({metrics['maintainability_index']:.2f}) in {result.file_path}")
         for func, complexity in metrics['function_complexity'].items():
             if complexity > 15:
                 self.warning_count += 1
-                logger.warning(
-                    f"High cyclomatic complexity ({complexity}) in function '{func}' "
-                    f"in {result.file_path}"
-                )
-
-        # Check Halstead metrics
+                logger.warning(f"High cyclomatic complexity ({complexity}) in function '{func}' in {result.file_path}")
         if metrics['halstead']['effort'] > 1000000:
             self.warning_count += 1
-            logger.warning(
-                f"High Halstead effort ({metrics['halstead']['effort']:.2f}) "
-                f"in {result.file_path}"
-            )
+            logger.warning(f"High Halstead effort ({metrics['halstead']['effort']:.2f}) in {result.file_path}")
 
     def get_summary(self) -> Dict[str, Any]:
         """
-        Generates a summary of all processed metrics.
-        
+        Generates a summary of processed metrics.
+
         Returns:
-            Dict[str, Any]: Summary statistics and aggregated metrics
+            Dict[str, Any]: Summary of metrics.
         """
-        if not self.metrics_history:
-            return {
-                'error_count': 0,
-                'warning_count': 0,
-                'processed_files': 0,
-                'success_rate': 0.0,
-                'average_metrics': None
-            }
-
         successful_results = [r for r in self.metrics_history if r.success and r.metrics]
-        
-        if not successful_results:
-            return {
-                'error_count': self.error_count,
-                'warning_count': self.warning_count,
-                'processed_files': len(self.metrics_history),
-                'success_rate': 0.0,
-                'average_metrics': None
-            }
-
-        # Calculate average metrics
-        avg_metrics = self._calculate_average_metrics(successful_results)
-
+        avg_metrics = self._calculate_average_metrics(successful_results) if successful_results else None
         return {
             'error_count': self.error_count,
             'warning_count': self.warning_count,
             'processed_files': len(self.metrics_history),
-            'success_rate': len(successful_results) / len(self.metrics_history) * 100,
+            'success_rate': len(successful_results) / len(self.metrics_history) * 100 if self.metrics_history else 0,
             'average_metrics': avg_metrics,
-            'execution_times': {
-                'min': min(r.execution_time for r in self.metrics_history),
-                'max': max(r.execution_time for r in self.metrics_history),
-                'avg': sum(r.execution_time for r in self.metrics_history) / len(self.metrics_history)
-            }
+            'execution_times': self._calculate_execution_time_summary()
         }
 
     def _calculate_average_metrics(self, results: List[MetricsResult]) -> Dict[str, Any]:
         """
-        Calculates average metrics across all successful results.
-        
+        Calculates average metrics from successful results.
+
         Args:
-            results (List[MetricsResult]): List of successful metric results
-            
+            results (List[MetricsResult]): The results to average.
+
         Returns:
-            Dict[str, Any]: Averaged metrics
+            Dict[str, Any]: Averaged metrics.
         """
         try:
-            avg_maintainability = sum(
-                r.metrics['maintainability_index'] for r in results
-            ) / len(results)
-
-            avg_complexity = sum(
-                sum(r.metrics['function_complexity'].values()) / 
-                max(1, len(r.metrics['function_complexity'])) 
-                for r in results
-            ) / len(results)
-
+            avg_maintainability = sum(r.metrics['maintainability_index'] for r in results) / len(results)
+            avg_complexity = sum(sum(r.metrics['function_complexity'].values()) / max(1, len(r.metrics['function_complexity'])) for r in results) / len(results)
             avg_halstead = {
-                metric: sum(
-                    r.metrics['halstead'][metric] for r in results
-                ) / len(results)
+                metric: sum(r.metrics['halstead'][metric] for r in results) / len(results)
                 for metric in ['volume', 'difficulty', 'effort']
             }
-
             return {
                 'maintainability_index': avg_maintainability,
                 'cyclomatic_complexity': avg_complexity,
                 'halstead': avg_halstead
             }
-
         except Exception as e:
             logger.error(f"Error calculating average metrics: {e}")
             return None
 
-    def get_problematic_files(self) -> List[Dict[str, Any]]:
+    def _calculate_execution_time_summary(self) -> Dict[str, float]:
         """
-        Identifies files with concerning metrics.
-        
+        Calculates execution time summary statistics.
+
         Returns:
-            List[Dict[str, Any]]: List of problematic files and their issues
+            Dict[str, float]: Execution time summary.
+        """
+        if not self.metrics_history:
+            return {'min': 0.0, 'max': 0.0, 'avg': 0.0}
+        times = [r.execution_time for r in self.metrics_history]
+        return {
+            'min': min(times),
+            'max': max(times),
+            'avg': sum(times) / len(times)
+        }
+
+    def get_problematic_files(self, thresholds: MetricsThresholds) -> List[Dict[str, Any]]:
+        """
+        Identifies files with concerning metrics based on provided thresholds.
+
+        Args:
+            thresholds: MetricsThresholds object defining the thresholds.
+
+        Returns:
+            List of problematic files and their issues.
         """
         problematic_files = []
-        
+
         for result in self.metrics_history:
             if not (result.success and result.metrics):
                 continue
@@ -582,32 +566,30 @@ class MetricsAnalyzer:
             issues = []
             metrics = result.metrics
 
-            # Check maintainability
-            if metrics['maintainability_index'] < 20:
+            if metrics['maintainability_index'] < thresholds.maintainability_low:
                 issues.append({
                     'type': 'maintainability',
                     'value': metrics['maintainability_index'],
-                    'threshold': 20
+                    'threshold': thresholds.maintainability_low
                 })
 
-            # Check complexity
             high_complexity_functions = [
-                (func, complexity) 
-                for func, complexity in metrics['function_complexity'].items() 
-                if complexity > 15
+                (func, complexity)
+                for func, complexity in metrics['function_complexity'].items()
+                if complexity > thresholds.complexity_high
             ]
             if high_complexity_functions:
                 issues.append({
                     'type': 'complexity',
-                    'functions': high_complexity_functions
+                    'functions': high_complexity_functions,
+                    'threshold': thresholds.complexity_high
                 })
 
-            # Check Halstead effort
-            if metrics['halstead']['effort'] > 1000000:
+            if metrics['halstead']['effort'] > thresholds.halstead_effort_high:
                 issues.append({
                     'type': 'halstead_effort',
                     'value': metrics['halstead']['effort'],
-                    'threshold': 1000000
+                    'threshold': thresholds.halstead_effort_high
                 })
 
             if issues:
@@ -617,58 +599,3 @@ class MetricsAnalyzer:
                 })
 
         return problematic_files
-
-if __name__ == "__main__":
-    async def process_files(files: List[str]):
-        """Process multiple files and aggregate their metrics."""
-        results = []
-        metrics_analyzer = MetricsAnalyzer()
-        
-        async with aiohttp.ClientSession() as session:
-            for file_path in files:
-                try:
-                    async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
-                        code = await f.read()
-                        result = await calculate_code_metrics(code, file_path)
-                        metrics_analyzer.add_result(result)
-                        results.append(result)
-                except Exception as e:
-                    logger.error(f"Error processing {file_path}: {e}")
-                    continue
-
-        # Generate summary report
-        summary = metrics_analyzer.get_summary()
-        problematic_files = metrics_analyzer.get_problematic_files()
-
-        # Write results to JSON
-        output = {
-            'timestamp': datetime.now().isoformat(),
-            'summary': summary,
-            'problematic_files': problematic_files,
-            'results': [
-                {
-                    'file_path': r.file_path,
-                    'success': r.success,
-                    'metrics': r.metrics if r.success else None,
-                    'error': r.error if not r.success else None,
-                    'execution_time': r.execution_time
-                }
-                for r in results
-            ]
-        }
-
-        # Save results
-        try:
-            async with aiofiles.open('metrics_report.json', 'w', encoding='utf-8') as f:
-                await f.write(json.dumps(output, indent=2, default=str))
-            logger.info("Metrics report generated successfully")
-        except Exception as e:
-            logger.error(f"Error saving metrics report: {e}")
-
-    # Production usage
-    if len(sys.argv) > 1:
-        files_to_process = sys.argv[1:]
-        asyncio.run(process_files(files_to_process))
-    else:
-        logger.error("No files provided for processing")
-        sys.exit(1)    
