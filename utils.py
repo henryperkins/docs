@@ -18,7 +18,11 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Set, Any, Optional, Union
 from dataclasses import dataclass
 from datetime import datetime
+import tokenize
+from io import StringIO
 
+from code_chunk import CodeChunk
+from token_manager import TokenManager
 logger = logging.getLogger(__name__)
 
 # Default configurations
@@ -55,29 +59,6 @@ LANGUAGE_MAPPING = {
     ".c": "cpp",
     ".java": "java",
 }
-
-@dataclass
-class TokenizationResult:
-    """
-    Stores the result of tokenizing text.
-    
-    Attributes:
-        tokens: List of token strings
-        token_count: Number of tokens
-        encoding_name: Name of the encoding used
-    """
-    tokens: List[str]
-    token_count: int
-    encoding_name: str
-
-import logging
-import tokenize
-from io import StringIO
-from pathlib import Path
-from typing import List, Optional, Set, Union
-
-from code_chunk import CodeChunk
-from token_manager import TokenManager
 
 logger = logging.getLogger(__name__)
 
