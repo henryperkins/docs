@@ -65,16 +65,24 @@ def get_handler(language: str, function_schema: Dict[str, Any], metrics_analyzer
         logger.error("Function schema is None. Cannot retrieve handler.")
         return None
 
+    # Normalize the language string to lowercase to ensure case-insensitive matching
     language = language.lower()
-
+    
     # Map of supported languages to their handlers
     handlers = {
         "python": PythonHandler,
+        "java": JavaHandler,
         "javascript": JSTsHandler,
         "js": JSTsHandler,
         "typescript": JSTsHandler,
         "ts": JSTsHandler,
-        # ... (Add other language handlers here when you're ready)
+        "go": GoHandler,
+        "cpp": CppHandler,
+        "c++": CppHandler,
+        "cxx": CppHandler,
+        "html": HTMLHandler,
+        "htm": HTMLHandler,
+        "css": CSSHandler
     }
 
     handler_class = handlers.get(language)
@@ -82,5 +90,4 @@ def get_handler(language: str, function_schema: Dict[str, Any], metrics_analyzer
         return handler_class(function_schema, metrics_analyzer)
     else:
         logger.debug(f"No handler available for language: {language}")
-        return None  # Return None instead of raising an exc
-    
+        return None  # Return None instead of raising an exception

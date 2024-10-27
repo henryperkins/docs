@@ -11,6 +11,7 @@ from gemini_model import GeminiModel
 from openai_model import OpenAIModel
 from process_manager import DocumentationProcessManager
 from utils import DEFAULT_EXCLUDED_FILES, DEFAULT_EXCLUDED_DIRS, DEFAULT_SKIP_TYPES, load_config, load_function_schema, get_all_file_paths
+from logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +58,13 @@ async def main():
     args = parse_arguments()
     load_dotenv()
 
-    # Configure logging
-    numeric_level = getattr(logging, args.log_level.upper(), logging.INFO)
-    logger.setLevel(numeric_level)
+    # Configure logging 
+    log_file = "documentation_generation.log"
+    if not setup_logging(log_file, log_level=args.log_level):
+        print("Failed to set up logging. Exiting...")
+        sys.exit(1)
+
+    logger.info("Starting documentation generation process...")  # Example log message
 
     repo_path = args.repo_path
     config_path = args.config

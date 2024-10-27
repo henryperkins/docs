@@ -38,6 +38,7 @@ class PythonHandler(BaseHandler):
         - [x] Metrics Calculation: Uses radon and metrics.py.
         - [x] Language-Specific Features: Extracts decorators, argument types, return types.
         """
+        logger.info(f"Extracting structure for file: {file_path}")
         try:
             if metrics is None:
                 metrics_result = calculate_code_metrics(code, file_path, language="python")
@@ -206,6 +207,7 @@ class PythonHandler(BaseHandler):
         - [x] Error Handling: Includes error handling and logging.
         - [x] Preservation of Existing Docstrings: Allows preserving existing docstrings.
         """
+        logger.info("Inserting docstrings...")
         try:
             tree = ast.parse(code)
             docstring_format = documentation.get("docstring_format", "Google")
@@ -225,6 +227,7 @@ class PythonHandler(BaseHandler):
         - [x] Error Handling: Handles validation errors.
         - [x] Temporary Files: Uses and cleans up temporary files.
         """
+        logger.info("Validating code...")
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
                 temp_file.write(code.encode("utf-8"))

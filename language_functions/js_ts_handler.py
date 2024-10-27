@@ -42,6 +42,7 @@ class JSTsHandler(BaseHandler):
         - [x] Metrics Calculation: Uses external js_ts_metrics.js script.
         - [x] Language-Specific Features: Extracts React components.
         """
+        logger.info(f"Extracting structure for file: {file_path}")
         try:
             is_typescript = self._is_typescript_file(file_path)
             parser_options = self._get_parser_options(is_typescript)
@@ -137,6 +138,7 @@ class JSTsHandler(BaseHandler):
         - [x] Error Handling: Includes error handling and logging.
         - [x] Preservation of Existing Docstrings: Controlled by script options.
         """
+        logger.info("Inserting docstrings...")
         try:
             is_typescript = self._is_typescript_file(documentation.get("file_path"))
             doc_style = JSDocStyle.TSDOC if is_typescript else JSDocStyle.JSDOC
@@ -168,6 +170,7 @@ class JSTsHandler(BaseHandler):
         - [x] Error Handling: Handles validation errors.
         - [x] Temporary Files: Uses and cleans up temporary files.
         """
+        logger.info("Validating code...")
         try:
             if not file_path:
                 logger.warning("File path not provided for validation")

@@ -9,6 +9,7 @@ from typing import List, Optional, Union, Dict
 from dataclasses import dataclass
 import logging
 from enum import Enum
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,12 @@ class TokenizationError(Exception):
     pass
 
 class TokenManager:
-    """Manages tokenization operations with caching and error handling"""
-    
+    """Manages tokenization operations with caching and thread-safety."""
+
     _encoders = {}  # Cache for different encoders
     _default_model = TokenizerModel.GPT4
+    _lock = threading.Lock()  # Lock for thread safety
+
 
     @classmethod
     def get_encoder(cls, model: TokenizerModel = None) -> tiktoken.Encoding:
@@ -51,13 +54,14 @@ class TokenManager:
         Raises:
             TokenizationError: If encoder creation fails
         """
-        try:
-            model = model or cls._default_model
-            if model not in cls._encoders:
-                cls._encoders[model] = tiktoken.get_encoding(model.value)
-            return cls._encoders[model]
-        except Exception as e:
-            raise TokenizationError(f"Failed to create encoder: {str(e)}")
+        with cls._lock:  # Acquire lock before accessing shared resource
+            try:
+                model = model or cls._default_model
+                if model not in cls._encoders:
+                    cls._encoders[model] = tiktoken.get_encoding(model.value)
+                return cls._encoders[model]
+            except Exception as e:
+                raise TokenizationError(f"Failed to create encoder: {str(e)}")
 
     @classmethod
     def count_tokens(
@@ -80,21 +84,19 @@ class TokenManager:
         Raises:
             TokenizationError: If tokenization fails
         """
+        logger.debug(f"Counting tokens for text: {text[:50]}...") # Truncate text for logging
         try:
             if not text:
                 return TokenizationResult([], 0, "", error="Empty input")
 
-            encoder = cls.get_encoder(model)
+            encoder = cls.get_encoder(model)  # Get encoder (thread-safe)
             model = model or cls._default_model
 
-            # Handle both single strings and lists of strings
             if isinstance(text, list):
                 text = " ".join(text)
 
-            # Encode text
             tokens = encoder.encode(text)
-            
-            # Count special tokens if requested
+
             special_tokens = None
             if include_special_tokens:
                 special_tokens = cls._count_special_tokens(text, encoder)
@@ -109,7 +111,7 @@ class TokenManager:
         except Exception as e:
             logger.error(f"Tokenization error: {str(e)}")
             raise TokenizationError(f"Failed to count tokens: {str(e)}")
-
+            
     @classmethod
     def decode_tokens(
         cls,
@@ -129,6 +131,7 @@ class TokenManager:
         Raises:
             TokenizationError: If decoding fails
         """
+        logger.debug(f"Decoding tokens: {tokens[:10]}...") # Truncate tokens for logging
         try:
             if not tokens:
                 return ""

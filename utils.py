@@ -1,9 +1,9 @@
 """
 utils.py
 
-Utility functions for code processing, file handling, metrics calculations,
-and token management. Provides core functionality for the documentation 
-generation system.
+Core utility functions and classes for code processing, file handling,
+metrics calculations, and token management. Provides the foundational
+functionality for the documentation generation system.
 """
 
 import os
@@ -14,18 +14,38 @@ import asyncio
 import tiktoken
 import pathspec
 import subprocess
+import sqlite3
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Tuple, Dict, Set, Any, Optional, Union
-from dataclasses import dataclass
+from typing import List, Tuple, Dict, Set, Any, Optional, Union, Callable, TypeVar
+from dataclasses import dataclass, field
 from datetime import datetime
 import tokenize
 from io import StringIO
+from concurrent.futures import ThreadPoolExecutor
+import threading
+from functools import lru_cache
+import coverage
+from coverage.files import PathAliases
+from coverage.misc import CoverageException
+import aiofiles
+from aiofiles import os as aio_os
+import re
+from math import log2  # Add this for maintainability index calculation
 
-from code_chunk import CodeChunk
-from token_utils import TokenManager
+
+# Try importing lizard first, fall back to radon if not available
+try:
+    import lizard
+    USE_LIZARD = True
+except ImportError:
+    import radon.complexity as radon_cc
+    import radon.metrics as radon_metrics
+    USE_LIZARD = False
+
 logger = logging.getLogger(__name__)
 
-# Default configurations
+# Default configurations for metrics thresholds
 DEFAULT_COMPLEXITY_THRESHOLDS = {"low": 10, "medium": 20, "high": 30}
 DEFAULT_HALSTEAD_THRESHOLDS = {
     "volume": {"low": 100, "medium": 500, "high": 1000},
@@ -34,928 +54,822 @@ DEFAULT_HALSTEAD_THRESHOLDS = {
 }
 DEFAULT_MAINTAINABILITY_THRESHOLDS = {"low": 50, "medium": 70, "high": 85}
 
-DEFAULT_EXCLUDED_DIRS = {
-    '.git', '__pycache__', 'node_modules', '.venv', 
-    '.idea', 'build', 'dist', '.bin', 'venv'
-}
-DEFAULT_EXCLUDED_FILES = {'.DS_Store', '.gitignore', '.env'}
-DEFAULT_SKIP_TYPES = {
-    '.json', '.md', '.txt', '.csv', '.lock', 
-    '.pyc', '.pyo', '.pyd', '.git'
+# Enhanced default patterns with more comprehensive coverage
+DEFAULT_EXCLUDED_PATTERNS = {
+    'dirs': {
+        # Version Control
+        '.git', '.svn', '.hg', '.bzr',
+        # Python
+        '__pycache__', '.pytest_cache', '.mypy_cache', '.coverage',
+        'htmlcov', '.tox', '.nox',
+        # Virtual Environments
+        'venv', '.venv', 'env', '.env', 'virtualenv',
+        # Node.js
+        'node_modules',
+        # Build/Distribution
+        'build', 'dist', '.eggs', '*.egg-info',
+        # IDE
+        '.idea', '.vscode', '.vs', '.settings',
+        # Other
+        'tmp', 'temp', '.tmp', '.temp'
+    },
+    'files': {
+        # System
+        '.DS_Store', 'Thumbs.db', 'desktop.ini',
+        # Python
+        '*.pyc', '*.pyo', '*.pyd', '.python-version',
+        '.coverage', 'coverage.xml', '.coverage.*',
+        # Package Management
+        'pip-log.txt', 'pip-delete-this-directory.txt',
+        'poetry.lock', 'Pipfile.lock',
+        # Environment
+        '.env', '.env.*',
+        # IDE
+        '*.swp', '*.swo', '*~',
+        # Build
+        '*.spec', '*.manifest',
+        # Documentation
+        '*.pdf', '*.doc', '*.docx',
+        # Other
+        '*.log', '*.bak', '*.tmp'
+    },
+    'extensions': {
+        # Python
+        '.pyc', '.pyo', '.pyd', '.so',
+        # Compilation
+        '.o', '.obj', '.dll', '.dylib',
+        # Package
+        '.egg', '.whl',
+        # Cache
+        '.cache',
+        # Documentation
+        '.pdf', '.doc', '.docx',
+        # Media
+        '.jpg', '.jpeg', '.png', '.gif', '.ico',
+        '.mov', '.mp4', '.avi',
+        '.mp3', '.wav',
+        # Archives
+        '.zip', '.tar.gz', '.tgz', '.rar'
+    }
 }
 
-# Language mappings
+# Language mappings with metadata
 LANGUAGE_MAPPING = {
-    ".py": "python",
-    ".js": "javascript",
-    ".jsx": "javascript",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".html": "html",
-    ".htm": "html",
-    ".css": "css",
-    ".go": "go",
-    ".cpp": "cpp",
-    ".c": "cpp",
-    ".java": "java",
+    ".py": {
+        "name": "python",
+        "comment_symbol": "#",
+        "doc_strings": ['"""', "'''"],
+        "supports_type_hints": True
+    },
+    ".js": {
+        "name": "javascript",
+        "comment_symbol": "//",
+        "doc_strings": ["/**", "*/"],
+        "supports_type_hints": False
+    },
+    ".ts": {
+        "name": "typescript",
+        "comment_symbol": "//",
+        "doc_strings": ["/**", "*/"],
+        "supports_type_hints": True
+    },
+    ".java": {
+        "name": "java",
+        "comment_symbol": "//",
+        "doc_strings": ["/**", "*/"],
+        "supports_type_hints": True
+    },
+    ".go": {
+        "name": "go",
+        "comment_symbol": "//",
+        "doc_strings": ["/**", "*/"],
+        "supports_type_hints": True
+    }
 }
 
-logger = logging.getLogger(__name__)
+# Custom Exceptions
+class MetricsError(Exception):
+    """Base exception for metrics-related errors."""
+    pass
 
+class FileOperationError(Exception):
+    """Base exception for file operation errors."""
+    pass
 
-def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
-    """
-    Checks if a file extension is valid (not in skip list).
+class CoverageFormatError(Exception):
+    """Raised when coverage format is invalid or unrecognized."""
+    pass
+
+# Data Classes
+@dataclass
+class TokenResult:
+    """Contains token analysis results."""
+    tokens: List[str]
+    token_count: int
+    encoding_name: str
+    special_tokens: Optional[Dict[str, int]] = None
+    error: Optional[str] = None
+
+@dataclass
+class ComplexityMetrics:
+    """Container for complexity metrics with default values."""
+    cyclomatic_complexity: float = 0.0
+    maintainability_index: float = 100.0
+    halstead_volume: float = 0.0
+    halstead_difficulty: float = 0.0
+    halstead_effort: float = 0.0
+    halstead_bugs: float = 0.0
+    halstead_time: float = 0.0
+    type_hint_coverage: float = 0.0
+
+@dataclass
+class CoverageData:
+    """Container for coverage metrics."""
+    line_rate: float = 0.0
+    branch_rate: float = 0.0
+    complexity: float = 0.0
+    timestamp: str = ""
+    source_file: str = ""
+
+# Core Utility Classes
+class TokenManager:
+    """Manages token counting and analysis with caching."""
     
-    Args:
-        ext: File extension
-        
-    Returns:
-        bool: True if valid, False otherwise
-    """
-    return ext not in skip_types
-
-def chunk_code(
-    file_path: Union[str, Path],
-    language: str,
-    max_chunk_size: int = 5000
-) -> List[CodeChunk]:
-    """
-    Splits code into chunks based on top-level constructs (functions, classes) 
-    without loading the entire file into memory. Integrates code summarization
-    for Python code to reduce chunk size if a chunk exceeds max_chunk_size.
-
-    Args:
-        file_path: Path to the source file
-        language: Programming language (supports 'python')
-        max_chunk_size: Maximum number of tokens per chunk
+    _encoders = {}
+    _lock = threading.Lock()
+    _cache = {}
+    _max_cache_size = 1000
     
-    Returns:
-        List[CodeChunk]: List of code chunks
-    
-    Raises:
-        NotImplementedError: If the language is not Python.
-        ChunkTooLargeError: If a chunk exceeds max_chunk_size even after summarization.
-    """
-    if language != 'python':
-        raise NotImplementedError("Currently, chunk_code only supports Python language.")
-    
-    file_path = Path(file_path)
-    if not file_path.exists():
-        logger.error(f"File does not exist: {file_path}")
-        return []
-    
-    chunks = []
-    current_chunk_lines = []
-    current_chunk_start_line = 1
-    current_chunk_name = None  # Function or Class name
-    current_chunk_type = None  # 'function' or 'class'
-
-    try:
-        with open(file_path, 'r', encoding='utf-8') as source_file:
-            lines = []
-            for line_number, line in enumerate(source_file, start=1):
-                lines.append(line)
-                if line.strip().startswith(('def ', 'async def ', 'class ')):
-                    # Start of a new top-level definition
-                    if current_chunk_lines:
-                        # Create a code chunk for the previous definition
-                        chunk_content = ''.join(current_chunk_lines)
-                        tokens = TokenManager.count_tokens(chunk_content)
-
-                        # Summarize ONLY if chunk exceeds max_chunk_size
-                        if tokens.token_count > max_chunk_size:
-                            chunk_content = summarize_code(chunk_content, language, max_chunk_size)
-                            tokens = TokenManager.count_tokens(chunk_content) # Update tokens
-
-                        chunk = CodeChunk(
-                            file_path=str(file_path),
-                            start_line=current_chunk_start_line,
-                            end_line=line_number - 1,
-                            function_name=current_chunk_name if current_chunk_type == 'function' else None,
-                            class_name=current_chunk_name if current_chunk_type == 'class' else None,
-                            chunk_content=chunk_content,
-                            tokens=tokens.tokens,
-                            token_count=tokens.token_count,
-                            language=language,
-                            is_async=current_chunk_type == 'async_function',
-                            decorator_list=[],
-                            docstring=None,
-                            metadata={}
-                        )
-
-                        # Check chunk size after summarization (if it was summarized)
-                        if chunk.token_count > max_chunk_size:
-                            raise ChunkTooLargeError(
-                                f"Chunk starting at line {current_chunk_start_line} in {file_path} "
-                                f"exceeds {max_chunk_size} tokens even after summarization."
-                            )
-
-                        chunks.append(chunk)
-                        current_chunk_lines = []
-                        current_chunk_start_line = line_number
-                        
-                    # Update current chunk information
-                    current_chunk_lines.append(line)
-                    current_chunk_start_line = line_number
-                    current_chunk_name = extract_definition_name(line)
-                    current_chunk_type = ('async_function' if line.strip().startswith('async def ') else
-                                          'function' if line.strip().startswith('def ') else 
-                                          'class')
-                else:
-                    current_chunk_lines.append(line)
+    @classmethod
+    def get_encoder(cls, model_name: str = "gpt-4") -> Any:
+        """Gets or creates a tiktoken encoder with thread safety."""
+        with cls._lock:
+            if model_name not in cls._encoders:
+                try:
+                    if model_name.startswith("gpt-4"):
+                        encoding_name = "cl100k_base"
+                    elif model_name.startswith("gpt-3"):
+                        encoding_name = "p50k_base"
+                    else:
+                        encoding_name = "cl100k_base"  # default
+                    
+                    cls._encoders[model_name] = tiktoken.get_encoding(encoding_name)
+                except Exception as e:
+                    logger.error(f"Error creating encoder for {model_name}: {e}")
+                    raise
             
-            # Add the last chunk
-            if current_chunk_lines:
-                chunk_content = ''.join(current_chunk_lines)
-                tokens = TokenManager.count_tokens(chunk_content)
+            return cls._encoders[model_name]
 
-                # Summarize ONLY if chunk exceeds max_chunk_size
-                if tokens.token_count > max_chunk_size:
-                    chunk_content = summarize_code(chunk_content, language, max_chunk_size)
-                    tokens = TokenManager.count_tokens(chunk_content) # Update tokens
+    @classmethod
+    def count_tokens(
+        cls,
+        text: str,
+        model_name: str = "gpt-4",
+        use_cache: bool = True
+    ) -> TokenResult:
+        """Counts tokens in text using tiktoken with caching."""
+        if not text:
+            return TokenResult([], 0, "", error="Empty text")
+            
+        if use_cache:
+            cache_key = hash(text + model_name)
+            if cache_key in cls._cache:
+                return cls._cache[cache_key]
+        
+        try:
+            encoder = cls.get_encoder(model_name)
+            tokens = encoder.encode(text)
+            special_tokens = cls._count_special_tokens(text)
+            
+            result = TokenResult(
+                tokens=tokens,
+                token_count=len(tokens),
+                encoding_name=encoder.name,
+                special_tokens=special_tokens
+            )
+            
+            if use_cache:
+                with cls._lock:
+                    if len(cls._cache) >= cls._max_cache_size:
+                        cls._cache.pop(next(iter(cls._cache)))
+                    cls._cache[cache_key] = result
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error counting tokens: {e}")
+            return TokenResult([], 0, "", error=str(e))
 
-                chunk = CodeChunk(
-                    file_path=str(file_path),
-                    start_line=current_chunk_start_line,
-                    end_line=line_number,
-                    function_name=current_chunk_name if current_chunk_type == 'function' else None,
-                    class_name=current_chunk_name if current_chunk_type == 'class' else None,
-                    chunk_content=chunk_content,
-                    tokens=tokens.tokens,
-                    token_count=tokens.token_count,
-                    language=language,
-                    is_async=current_chunk_type == 'async_function',
-                    decorator_list=[],
-                    docstring=None,
-                    metadata={}
+    @staticmethod
+    def _count_special_tokens(text: str) -> Dict[str, int]:
+        """Counts special tokens like newlines and code blocks."""
+        return {
+            "newlines": text.count("\n"),
+            "code_blocks": text.count("```"),
+            "inline_code": text.count("`") - (text.count("```") * 3)
+        }
+
+class FileHandler:
+    """Handles file operations with caching and error handling."""
+    
+    _content_cache = {}
+    _cache_lock = threading.Lock()
+    _max_cache_size = 100
+    _executor = ThreadPoolExecutor(max_workers=4)
+    
+    @classmethod
+    async def read_file(
+        cls,
+        file_path: Union[str, Path],
+        use_cache: bool = True,
+        encoding: str = 'utf-8'
+    ) -> Optional[str]:
+        """Reads file content asynchronously with caching."""
+        file_path = str(file_path)
+        
+        try:
+            if use_cache:
+                with cls._cache_lock:
+                    cache_key = f"{file_path}:{encoding}"
+                    if cache_key in cls._content_cache:
+                        return cls._content_cache[cache_key]
+        
+            async with aiofiles.open(file_path, 'r', encoding=encoding) as f:
+                content = await f.read()
+        
+            if use_cache:
+                with cls._cache_lock:
+                    if len(cls._content_cache) >= cls._max_cache_size:
+                        cls._content_cache.pop(next(iter(cls._content_cache)))
+                    cls._content_cache[cache_key] = content
+        
+            return content
+            
+        except UnicodeDecodeError:
+            logger.warning(
+                f"UnicodeDecodeError for {file_path} with {encoding}, "
+                "trying with error handling"
+            )
+            try:
+                async with aiofiles.open(
+                    file_path,
+                    'r',
+                    encoding=encoding,
+                    errors='replace'
+                ) as f:
+                    return await f.read()
+            except Exception as e:
+                logger.error(f"Error reading file {file_path}: {e}")
+                return None
+        except Exception as e:
+            logger.error(f"Error reading file {file_path}: {e}")
+            return None
+
+class EnhancedMetricsCalculator:
+    """Enhanced metrics calculator with robust error handling."""
+
+    def __init__(self):
+        self.using_lizard = USE_LIZARD
+        logger.info(f"Using {'lizard' if self.using_lizard else 'radon'} for metrics calculation")
+
+    def calculate_metrics(
+        self,
+        code: str,
+        file_path: Optional[Union[str, Path]] = None,
+        language: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculates comprehensive code metrics.
+        
+        Args:
+            code: Source code to analyze
+            file_path: Optional file path for coverage data
+            language: Programming language
+            
+        Returns:
+            Dict containing calculated metrics
+        """
+        try:
+            metrics = ComplexityMetrics()
+            
+            if self.using_lizard:
+                metrics = self._calculate_lizard_metrics(code)
+            else:
+                metrics = self._calculate_radon_metrics(code)
+
+            # Add language-specific metrics if available
+            if language:
+                self._add_language_metrics(metrics, code, language)
+
+            return self._prepare_metrics_output(metrics)
+
+        except Exception as e:
+            logger.error(f"Error calculating metrics: {str(e)}")
+            return self._prepare_metrics_output(ComplexityMetrics())
+            
+    def _calculate_maintainability_index(self, code: str) -> float:
+        """
+        Calculates maintainability index using a modified version of the SEI formula.
+        
+        The formula considers:
+        - Lines of code
+        - Cyclomatic complexity
+        - Halstead volume
+        
+        Args:
+            code (str): Source code to analyze
+            
+        Returns:
+            float: Maintainability index (0-100)
+        """
+        try:
+            # Count lines of code (excluding empty lines and comments)
+            lines = [
+                line.strip()
+                for line in code.splitlines()
+                if line.strip() and not line.strip().startswith('#')
+            ]
+            loc = len(lines)
+            
+            if loc == 0:
+                return 100.0
+            
+            # Calculate average line length as a complexity factor
+            avg_line_length = sum(len(line) for line in lines) / loc
+            
+            # Count control structures as a basic complexity measure
+            control_structures = len(re.findall(
+                r'\b(if|else|elif|for|while|try|except|with)\b',
+                code
+            ))
+            
+            # Basic Halstead volume approximation
+            operators = len(re.findall(
+                r'[\+\-\*/=<>!&|%]+|and|or|not|in|is',
+                code
+            ))
+            operands = len(re.findall(r'\b[a-zA-Z_]\w*\b', code))
+            
+            # Modified SEI formula
+            vol = (operators + operands) * log2(operators + operands) if operators + operands > 0 else 0
+            cc = control_structures / loc
+            
+            mi = 171 - 5.2 * log2(vol + 1) - 0.23 * cc * 100 - 16.2 * log2(loc)
+            
+            # Normalize to 0-100 scale
+            return max(0.0, min(100.0, mi))
+            
+        except Exception as e:
+            logger.error(f"Error calculating maintainability index: {str(e)}")
+            return 100.0
+
+    def _calculate_lizard_metrics(self, code: str) -> ComplexityMetrics:
+        """Calculates metrics using lizard."""
+        try:
+            analysis = lizard.analyze_file.analyze_source_code("temp.py", code)
+            
+            # Calculate average complexity
+            total_complexity = sum(func.cyclomatic_complexity for func in analysis.function_list)
+            avg_complexity = (
+                total_complexity / len(analysis.function_list)
+                if analysis.function_list
+                else 0.0
+            )
+
+            return ComplexityMetrics(
+                cyclomatic_complexity=avg_complexity,
+                maintainability_index=self._calculate_maintainability_index(code),
+                halstead_volume=analysis.nloc,  # Using NLOC as a proxy
+                halstead_difficulty=avg_complexity,  # Using complexity as proxy
+                halstead_effort=analysis.nloc * avg_complexity
+            )
+
+        except Exception as e:
+            logger.error(f"Error in lizard metrics calculation: {str(e)}")
+            return ComplexityMetrics()
+
+    def _calculate_radon_metrics(self, code: str) -> ComplexityMetrics:
+        """Calculates metrics using radon with robust error handling."""
+        metrics = ComplexityMetrics()
+
+        try:
+            # Calculate cyclomatic complexity
+            try:
+                cc_blocks = radon_cc.cc_visit(code)
+                total_cc = sum(block.complexity for block in cc_blocks)
+                metrics.cyclomatic_complexity = (
+                    total_cc / len(cc_blocks) if cc_blocks else 0.0
                 )
+            except Exception as e:
+                logger.warning(f"Error calculating cyclomatic complexity: {str(e)}")
 
-                # Check chunk size after summarization (if it was summarized)
-                if chunk.token_count > max_chunk_size:
-                    raise ChunkTooLargeError(
-                        f"Chunk starting at line {current_chunk_start_line} in {file_path} "
-                        f"exceeds {max_chunk_size} tokens even after summarization."
+            # Calculate maintainability index
+            try:
+                mi_result = radon_metrics.mi_visit(code, multi=False)
+                if isinstance(mi_result, (int, float)):
+                    metrics.maintainability_index = float(mi_result)
+            except Exception as e:
+                logger.warning(f"Error calculating maintainability index: {str(e)}")
+
+            # Calculate Halstead metrics
+            try:
+                h_visit_result = radon_metrics.h_visit(code)
+                
+                # Handle different return types from h_visit
+                if isinstance(h_visit_result, (list, tuple)) and h_visit_result:
+                    h_metrics = h_visit_result[0]
+                elif hasattr(h_visit_result, 'h1'):  # Single object
+                    h_metrics = h_visit_result
+                else:
+                    raise ValueError("Invalid Halstead metrics format")
+
+                # Safely extract Halstead metrics
+                metrics.halstead_volume = getattr(h_metrics, 'volume', 0.0)
+                metrics.halstead_difficulty = getattr(h_metrics, 'difficulty', 0.0)
+                metrics.halstead_effort = getattr(h_metrics, 'effort', 0.0)
+                metrics.halstead_bugs = getattr(h_metrics, 'bugs', 0.0)
+                metrics.halstead_time = getattr(h_metrics, 'time', 0.0)
+
+            except Exception as e:
+                logger.warning(f"Error calculating Halstead metrics: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error in radon metrics calculation: {str(e)}")
+
+        return metrics
+
+    def _add_language_metrics(
+        self,
+        metrics: ComplexityMetrics,
+        code: str,
+        language: str
+    ) -> None:
+        """Adds language-specific metrics if available."""
+        try:
+            if language in LANGUAGE_MAPPING:
+                lang_info = LANGUAGE_MAPPING[language]
+                
+                # Add language-specific calculations here
+                if lang_info["supports_type_hints"]:
+                    # Example: Count type hints in Python
+                    if language == "python":
+                        import ast
+                        try:
+                            tree = ast.parse(code)
+                            type_hints = sum(
+                                1 for node in ast.walk(tree)
+                                if isinstance(node, ast.AnnAssign)
+                                or (isinstance(node, ast.FunctionDef) and node.returns)
+                            )
+                            metrics.type_hint_coverage = type_hints
+                        except Exception as e:
+                            logger.warning(f"Error analyzing type hints: {str(e)}")
+
+        except Exception as e:
+            logger.warning(f"Error adding language metrics: {str(e)}")
+
+    def _prepare_metrics_output(self, metrics: ComplexityMetrics) -> Dict[str, Any]:
+        """Prepares the final metrics output dictionary."""
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "complexity": metrics.cyclomatic_complexity,
+            "maintainability_index": metrics.maintainability_index,
+            "halstead": {
+                "volume": metrics.halstead_volume,
+                "difficulty": metrics.halstead_difficulty,
+                "effort": metrics.halstead_effort,
+                "bugs": metrics.halstead_bugs,
+                "time": metrics.halstead_time
+            }
+        }
+
+class CoverageHandler:
+    """Handles multiple coverage report formats."""
+
+    SUPPORTED_FORMATS = {'.coverage', '.xml', '.json', '.sqlite'}
+
+    def __init__(self):
+        self._coverage = None
+        self._aliases = PathAliases()
+
+    def get_test_coverage(
+        self,
+        file_path: Union[str, Path],
+        coverage_path: Union[str, Path]
+    ) -> Optional[CoverageData]:
+        """Gets test coverage data from various report formats."""
+        try:
+            coverage_path = Path(coverage_path)
+            file_path = Path(file_path)
+
+            if not coverage_path.exists():
+                logger.warning(f"Coverage file not found: {coverage_path}")
+                return None
+
+            if not file_path.exists():
+                logger.warning(f"Source file not found: {file_path}")
+                return None
+
+            coverage_path = coverage_path.resolve()
+            file_path = file_path.resolve()
+
+            handler_map = {
+                '.coverage': self._get_coverage_from_sqlite,
+                '.xml': self._get_coverage_from_xml,
+                '.json': self._get_coverage_from_json,
+                '.sqlite': self._get_coverage_from_sqlite
+            }
+
+            if coverage_path.suffix not in handler_map:
+                logger.warning(f"Unsupported coverage format: {coverage_path.suffix}")
+                return None
+
+            coverage_data = handler_map[coverage_path.suffix](coverage_path, file_path)
+            if coverage_data:
+                self._validate_coverage_data(coverage_data)
+            return coverage_data
+
+        except Exception as e:
+            logger.error(f"Error getting test coverage: {str(e)}")
+            return None
+
+    def _get_coverage_from_sqlite(self, coverage_path: Path, file_path: Path) -> Optional[CoverageData]:
+        """Gets coverage data from SQLite format."""
+        try:
+            conn = sqlite3.connect(str(coverage_path))
+            cursor = conn.cursor()
+
+            # Example query, adjust based on actual coverage DB schema
+            cursor.execute("""
+                SELECT line_rate, branch_rate, complexity, timestamp
+                FROM coverage
+                WHERE filename = ?
+            """, (str(file_path),))
+            row = cursor.fetchone()
+
+            conn.close()
+
+            if row:
+                line_rate, branch_rate, complexity, timestamp = row
+                return CoverageData(
+                    line_rate=line_rate,
+                    branch_rate=branch_rate,
+                    complexity=complexity,
+                    timestamp=datetime.fromtimestamp(timestamp).isoformat(),
+                    source_file=str(file_path)
+                )
+            else:
+                logger.warning(f"No coverage data found for {file_path} in {coverage_path}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error reading SQLite coverage data: {e}")
+            return None
+
+    def _get_coverage_from_xml(self, coverage_path: Path, file_path: Path) -> Optional[CoverageData]:
+        """Gets coverage data from XML format."""
+        try:
+            tree = ET.parse(coverage_path)
+            root = tree.getroot()
+
+            # Example parsing, adjust based on actual XML schema
+            for file_elem in root.findall('.//file'):
+                if file_elem.get('name') == str(file_path):
+                    line_rate = float(file_elem.get('line-rate', 0.0))
+                    branch_rate = float(file_elem.get('branch-rate', 0.0))
+                    complexity = float(file_elem.get('complexity', 0.0))
+                    timestamp = datetime.now().isoformat()  # XML might not have timestamp
+
+                    return CoverageData(
+                        line_rate=line_rate,
+                        branch_rate=branch_rate,
+                        complexity=complexity,
+                        timestamp=timestamp,
+                        source_file=str(file_path)
                     )
 
-                chunks.append(chunk)
-    except Exception as e:
-        logger.error(f"Error chunking file '{file_path}': {e}")
-        return []
+            logger.warning(f"No coverage data found for {file_path} in {coverage_path}")
+            return None
 
-    return chunks
+        except Exception as e:
+            logger.error(f"Error reading XML coverage data: {e}")
+            return None
 
-def extract_definition_name(line: str) -> Optional[str]:
-    """
-    Extracts the name of the function or class from its definition line.
+    def _get_coverage_from_json(self, coverage_path: Path, file_path: Path) -> Optional[CoverageData]:
+        """Gets coverage data from JSON format."""
+        try:
+            with open(coverage_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Example parsing, adjust based on actual JSON schema
+            file_coverage = data.get('files', {}).get(str(file_path), {})
+            if file_coverage:
+                return CoverageData(
+                    line_rate=file_coverage.get('line_rate', 0.0),
+                    branch_rate=file_coverage.get('branch_rate', 0.0),
+                    complexity=file_coverage.get('complexity', 0.0),
+                    timestamp=datetime.now().isoformat(),  # JSON might not have timestamp
+                    source_file=str(file_path)
+                )
+            else:
+                logger.warning(f"No coverage data found for {file_path} in {coverage_path}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error reading JSON coverage data: {e}")
+            return None
+
+    def _calculate_complexity(self, analysis: Any) -> float:
+        """Calculates complexity from analysis data."""
+        try:
+            # Implement complexity calculation based on analysis
+            return float(analysis.complexity)
+        except Exception as e:
+            logger.error(f"Error calculating complexity: {e}")
+            return 0.0
+
+    def _get_relative_path(self, file_path: Path) -> str:
+        """Gets the relative path of a file."""
+        try:
+            return str(file_path.relative_to(self.repo_path))
+        except ValueError:
+            return str(file_path)
+
+    def _validate_coverage_data(self, data: CoverageData) -> None:
+        """Validates the coverage data."""
+        try:
+            if not (0.0 <= data.line_rate <= 1.0):
+                raise CoverageFormatError("Line rate out of bounds")
+            if not (0.0 <= data.branch_rate <= 1.0):
+                raise CoverageFormatError("Branch rate out of bounds")
+            # Add more validation as needed
+        except CoverageFormatError as e:
+            logger.error(f"Invalid coverage data: {e}")
+            raise
+
+class PathFilter:
+    """Handles file path filtering based on various exclusion patterns."""
     
-    Args:
-        line: Line containing the function or class definition.
-
-    Returns:
-        str: Name of the function or class, or None if not found.
-    """
-    tokens = tokenize.generate_tokens(StringIO(line).readline)
-    for toknum, tokval, _, _, _ in tokens:
-        if toknum == tokenize.NAME and tokval in ('def', 'class'):
-            # Next token is the name
-            toknum, tokval, _, _, _ = next(tokens)
-            if toknum == tokenize.NAME:
-                return tokval
-    return None
-
-def get_language(file_path: Union[str, Path]) -> Optional[str]:
-    """
-    Determines the programming language based on file extension.
-    
-    Args:
-        file_path: Path to the file
+    def __init__(
+        self,
+        repo_path: Union[str, Path],
+        excluded_dirs: Optional[Set[str]] = None,
+        excluded_files: Optional[Set[str]] = None,
+        skip_types: Optional[Set[str]] = None
+    ):
+        self.repo_path = Path(repo_path)
+        self.excluded_dirs = (excluded_dirs or set()) | DEFAULT_EXCLUDED_PATTERNS['dirs']
+        self.excluded_files = (excluded_files or set()) | DEFAULT_EXCLUDED_PATTERNS['files']
+        self.skip_types = (skip_types or set()) | DEFAULT_EXCLUDED_PATTERNS['extensions']
+        self.gitignore = load_gitignore(repo_path)
         
-    Returns:
-        Optional[str]: Language name or None if unknown
-    """
-    ext = str(Path(file_path).suffix).lower()
-    language = LANGUAGE_MAPPING.get(ext)
-    logger.debug(f"Detected language for '{file_path}': {language}")
-    return language
-
-def is_valid_extension(ext: str, skip_types: Set[str]) -> bool:
-    """
-    Checks if a file extension is valid (not in skip list).
-    
-    Args:
-        ext: File extension
-        skip_types: Set of extensions to skip
-        
-    Returns:
-        bool: True if valid, False otherwise
-    """
-    return ext.lower() not in skip_types
-
-def get_threshold(metric: str, key: str, default: int) -> int:
-    """
-    Gets threshold value from environment or defaults.
-    
-    Args:
-        metric: Metric name
-        key: Threshold key (low/medium/high)
-        default: Default value
-        
-    Returns:
-        int: Threshold value
-    """
-    try:
-        return int(os.getenv(f"{metric.upper()}_{key.upper()}_THRESHOLD", default))
-    except ValueError:
-        logger.error(
-            f"Invalid environment variable for "
-            f"{metric.upper()}_{key.upper()}_THRESHOLD"
+        self.file_patterns = pathspec.PathSpec.from_lines(
+            pathspec.patterns.GitWildMatchPattern,
+            self.excluded_files
         )
-        return default
 
-def is_binary(file_path: Union[str, Path]) -> bool:
-    """
-    Checks if a file is binary.
-    
-    Args:
-        file_path: Path to check
-        
-    Returns:
-        bool: True if file is binary
-    """
-    try:
-        with open(file_path, "rb") as file:
-            return b"\0" in file.read(1024)
-    except Exception as e:
-        logger.error(f"Error checking if file is binary '{file_path}': {e}")
-        return True
+    def should_include_path(self, path: Path, relative_to: Optional<Path] = None) -> bool:
+        """Determines if a path should be included based on exclusion rules."""
+        try:
+            check_path = path.relative_to(relative_to) if relative_to else path
+            
+            if any(part.startswith('.') for part in check_path.parts):
+                return False
+                
+            if any(part in self.excluded_dirs for part in check_path.parts):
+                return False
+                
+            if self.file_patterns.match_file(str(check_path)):
+                return False
+                
+            if check_path.suffix.lower() in self.skip_types:
+                return False
+                
+            if self.gitignore.match_file(str(check_path)):
+                return False
+                
+            return True
+                
+        except Exception as e:
+            logger.warning(f"Error checking path {path}: {str(e)}")
+            return False
 
-def should_process_file(file_path: Union[str, Path], skip_types: Set[str]) -> bool:
-    """
-    Determines if a file should be processed.
-    
-    Args:
-        file_path: Path to the file
-        skip_types: File extensions to skip
-        
-    Returns:
-        bool: True if file should be processed
-    """
-    file_path = Path(file_path)
-    
-    if not file_path.exists():
-        return False
-
-    # Check if it's a symlink
-    if file_path.is_symlink():
-        return False
-    
-    if "scripts" in file_path.parts:
-        return False
-
-    # Check common excluded directories
-    excluded_parts = {
-        'node_modules', '.bin', '.git', '__pycache__', 
-        'build', 'dist', 'venv', '.venv'
-    }
-    if any(part in excluded_parts for part in file_path.parts):
-        return False
-
-    # Check extension
-    ext = file_path.suffix.lower()
-    if (not ext or 
-        ext in skip_types or 
-        ext in {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git'} or
-        ext.endswith('.d.ts')):
-        return False
-
-    # Check if binary
-    if is_binary(file_path):
-        return False
-
-    return True
-
+@lru_cache(maxsize=128)
 def load_gitignore(repo_path: Union[str, Path]) -> pathspec.PathSpec:
-    """
-    Loads .gitignore patterns.
-    
-    Args:
-        repo_path: Repository root path
-        
-    Returns:
-        pathspec.PathSpec: Compiled gitignore patterns
-    """
-    gitignore_path = Path(repo_path) / '.gitignore'
+    """Loads and caches .gitignore patterns."""
     patterns = []
+    gitignore_path = Path(repo_path) / '.gitignore'
     
-    if gitignore_path.exists():
-        with open(gitignore_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    patterns.append(line)
-    
+    try:
+        if gitignore_path.exists():
+            with open(gitignore_path, 'r', encoding='utf-8') as f:
+                patterns = [
+                    line.strip()
+                    for line in f
+                    if line.strip() and not line.startswith('#')
+                ]
+                logger.debug(f"Loaded {len(patterns)} patterns from .gitignore")
+        else:
+            logger.debug("No .gitignore file found")
+            
+    except Exception as e:
+        logger.warning(f"Error reading .gitignore: {str(e)}")
+        
     return pathspec.PathSpec.from_lines(
-        pathspec.patterns.GitWildMatchPattern, 
+        pathspec.patterns.GitWildMatchPattern,
         patterns
     )
 
 def get_all_file_paths(
     repo_path: Union[str, Path],
-    excluded_dirs: Set[str],
-    excluded_files: Set[str],
-    skip_types: Set[str]
+    excluded_dirs: Optional[Set[str]] = None,
+    excluded_files: Optional[Set[str]] = None,
+    skip_types: Optional[Set[str]] = None,
+    follow_symlinks: bool = False
 ) -> List[str]:
-    """
-    Gets all processable file paths in repository.
-    
-    Args:
-        repo_path: Repository root
-        excluded_dirs: Directories to exclude
-        excluded_files: Files to exclude
-        skip_types: Extensions to skip
-        
-    Returns:
-        List[str]: List of file paths
-    """
+    """Gets all file paths in a repository with improved filtering."""
     repo_path = Path(repo_path)
-    file_paths = []
-    normalized_excluded_dirs = {
-        os.path.normpath(repo_path / d) for d in excluded_dirs
-    }
-
-    # Add common node_modules patterns
-    node_modules_patterns = {
-        'node_modules',
-        '.bin',
-        'node_modules/.bin',
-        '**/node_modules/**/.bin',
-        '**/node_modules/**/node_modules'
-    }
-    normalized_excluded_dirs.update({
-        os.path.normpath(repo_path / d) for d in node_modules_patterns
-    })
-
-    gitignore = load_gitignore(repo_path)
-
-    for root, dirs, files in os.walk(repo_path, topdown=True):
-        # Skip excluded directories
-        if any(excluded in root for excluded in ['node_modules', '.bin']):
-            dirs[:] = []
-            continue
-
-        # Filter directories
-        dirs[:] = [
-            d for d in dirs 
-            if (os.path.normpath(Path(root) / d) not in normalized_excluded_dirs and
-                not any(excluded in d for excluded in ['node_modules', '.bin']))
-        ]
-
-        for file in files:
-            # Skip excluded files
-            if file in excluded_files:
-                continue
-                
-            # Get full path
-            full_path = Path(root) / file
+    if not repo_path.exists():
+        logger.error(f"Repository path does not exist: {repo_path}")
+        return []
+        
+    path_filter = PathFilter(
+        repo_path,
+        excluded_dirs,
+        excluded_files,
+        skip_types
+    )
+    
+    included_paths = []
+    
+    try:
+        for root, dirs, files in os.walk(repo_path, followlinks=follow_symlinks):
+            root_path = Path(root)
             
-            # Check if file should be processed
-            if should_process_file(full_path, skip_types):
-                # Check gitignore
-                relative_path = full_path.relative_to(repo_path)
-                if not gitignore.match_file(str(relative_path)):
-                    file_paths.append(str(full_path))
-
-    logger.debug(f"Collected {len(file_paths)} files from '{repo_path}'.")
-    return file_paths
-
-
-async def clean_unused_imports_async(code: str, file_path: str) -> str:
-    """
-    Removes unused imports using autoflake.
-    
-    Args:
-        code: Source code
-        file_path: Path for display
-        
-    Returns:
-        str: Code with unused imports removed
-    """
-    try:
-        process = await asyncio.create_subprocess_exec(
-            'autoflake',
-            '--remove-all-unused-imports',
-            '--remove-unused-variables',
-            '--stdin-display-name', file_path,
-            '-',
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate(input=code.encode())
-        
-        if process.returncode != 0:
-            logger.error(f"Autoflake failed:\n{stderr.decode()}")
-            return code
-        
-        return stdout.decode()
-        
-    except Exception as e:
-        logger.error(f'Error running Autoflake: {e}')
-        return code
-
-async def format_with_black_async(code: str) -> str:
-    """
-    Formats code using Black.
-    
-    Args:
-        code: Source code
-        
-    Returns:
-        str: Formatted code
-    """
-    try:
-        process = await asyncio.create_subprocess_exec(
-            'black',
-            '--quiet',
-            '-',
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate(input=code.encode())
-        
-        if process.returncode != 0:
-            logger.error(f"Black formatting failed: {stderr.decode()}")
-            return code
+            # Filter directories in-place
+            dirs[:] = [
+                d for d in dirs
+                if path_filter.should_include_path(root_path / d, repo_path)
+            ]
             
-        return stdout.decode()
-        
-    except Exception as e:
-        logger.error(f'Error running Black: {e}')
-        return code
-
-async def run_flake8_async(file_path: Union[str, Path]) -> Optional[str]:
-    """
-    Runs Flake8 on a file.
-    
-    Args:
-        file_path: Path to check
-        
-    Returns:
-        Optional[str]: Flake8 output if errors found
-    """
-    try:
-        process = await asyncio.create_subprocess_exec(
-            'flake8',
-            str(file_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode != 0:
-            return stdout.decode() + stderr.decode()
-            
-        return None
-        
-    except Exception as e:
-        logger.error(f'Error running Flake8: {e}')
-        return None
-
-def load_json_schema(schema_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
-    """
-    Loads and validates a JSON schema file.
-    
-    Args:
-        schema_path: Path to schema file
-        
-    Returns:
-        Optional[Dict[str, Any]]: Loaded schema or None if invalid
-    """
-    try:
-        with open(schema_path, "r", encoding="utf-8") as f:
-            schema = json.load(f)
-        logger.debug(f"Loaded JSON schema from '{schema_path}'")
-        return schema
-    except FileNotFoundError:
-        logger.error(f"Schema file not found: '{schema_path}'")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in schema file: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error loading schema: {e}")
-        return None
-
-def load_function_schema(schema_path: Union[str, Path]) -> Dict[str, Any]:
-    """
-    Loads and validates function schema file.
-    
-    Args:
-        schema_path: Path to schema file
-        
-    Returns:
-        Dict[str, Any]: Validated schema
-        
-    Raises:
-        ValueError: If schema is invalid
-    """
-    schema = load_json_schema(schema_path)
-    if schema is None:
-        raise ValueError("Failed to load schema file")
-        
-    if "functions" not in schema:
-        raise ValueError("Schema missing 'functions' key")
-        
-    try:
-        from jsonschema import Draft7Validator
-        Draft7Validator.check_schema(schema)
-    except Exception as e:
-        raise ValueError(f"Invalid schema format: {e}")
-        
-    return schema
-def get_metric_status(value: float, thresholds: Dict[str, int]) -> str:
-    """Returns a status indicator based on metric value and thresholds."""
-    if value <= thresholds["low"]:
-        return "Low"
-    elif value <= thresholds["medium"]:
-        return "Medium"
-    else:
-        return "High"
-
-
-def sanitize_filename(filename: str) -> str:
-    """Sanitizes filename by removing invalid characters."""
-    return re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
-
-def load_config(
-    config_path: Union[str, Path],
-    excluded_dirs: Set[str],
-    excluded_files: Set[str],
-    skip_types: Set[str]
-) -> Tuple[str, str]:
-    """
-    Loads configuration file and updates exclusion sets.
-    
-    Args:
-        config_path: Path to config file
-        excluded_dirs: Directories to exclude
-        excluded_files: Files to exclude
-        skip_types: Extensions to skip
-        
-    Returns:
-        Tuple[str, str]: Project info and style guidelines
-    """
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-            
-        project_info = config.get("project_info", "")
-        style_guidelines = config.get("style_guidelines", "")
-        
-        excluded_dirs.update(config.get("excluded_dirs", []))
-        excluded_files.update(config.get("excluded_files", []))
-        skip_types.update(config.get("skip_types", []))
-        
-        logger.debug(f"Loaded configuration from '{config_path}'")
-        return project_info, style_guidelines
-        
-    except FileNotFoundError:
-        logger.error(f"Config file not found: '{config_path}'")
-        return "", ""
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in config file: {e}")
-        return "", ""
-    except Exception as e:
-        logger.error(f"Error loading config: {e}")
-        return "", ""
-
-async def run_node_script_async(
-    script_path: Union[str, Path], 
-    input_json: str
-) -> Optional[str]:
-    """
-    Runs a Node.js script asynchronously.
-    
-    Args:
-        script_path: Path to Node.js script
-        input_json: JSON input for script
-        
-    Returns:
-        Optional[str]: Script output or None if failed
-    """
-    try:
-        process = await asyncio.create_subprocess_exec(
-            'node',
-            str(script_path),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate(input=input_json.encode())
-
-        if process.returncode != 0:
-            logger.error(
-                f"Node.js script '{script_path}' failed: {stderr.decode()}"
-            )
-            return None
-
-        return stdout.decode()
-        
-    except FileNotFoundError:
-        logger.error("Node.js is not installed or not in PATH")
-        return None
-    except Exception as e:
-        logger.error(f"Error running Node.js script: {e}")
-        return None
-
-async def run_node_insert_docstrings(
-    script_name: str,
-    input_data: Dict[str, Any],
-    scripts_dir: Union[str, Path]
-) -> Optional[str]:
-    """
-    Runs Node.js docstring insertion script.
-    
-    Args:
-        script_name: Name of script file
-        input_data: Data for script
-        scripts_dir: Directory containing scripts
-        
-    Returns:
-        Optional[str]: Modified code or None if failed
-    """
-    try:
-        script_path = Path(scripts_dir) / script_name
-        logger.debug(f"Running Node.js script: {script_path}")
-
-        input_json = json.dumps(input_data)
-        result = await run_node_script_async(script_path, input_json)
-        
-        if result:
-            try:
-                # Check if result is JSON
-                parsed = json.loads(result)
-                return parsed.get("code")
-            except json.JSONDecodeError:
-                # Return as plain text if not JSON
-                return result
-                
-        return None
-
-    except Exception as e:
-        logger.error(f"Error running {script_name}: {e}")
-        return None
-
-@dataclass
-class CodeMetrics:
-    """
-    Stores code metrics for a file or chunk.
-    
-    Attributes:
-        complexity: Cyclomatic complexity
-        maintainability: Maintainability index
-        halstead: Halstead complexity metrics
-        loc: Lines of code metrics
-        documentation_coverage: Documentation coverage percentage
-        test_coverage: Test coverage percentage if available
-    """
-    complexity: float
-    maintainability: float
-    halstead: Dict[str, float]
-    loc: Dict[str, int]
-    documentation_coverage: float
-    test_coverage: Optional[float] = None
-
-def calculate_metrics(
-    code: str,
-    file_path: Optional[Union[str, Path]] = None
-) -> Optional[CodeMetrics]:
-    """
-    Calculates various code metrics.
-    
-    Args:
-        code: Source code to analyze
-        file_path: Optional file path for context
-        
-    Returns:
-        Optional[CodeMetrics]: Calculated metrics or None if failed
-    """
-    try:
-        from radon.complexity import cc_visit
-        from radon.metrics import h_visit, mi_visit
-        
-        # Calculate complexity
-        complexity = 0
-        for block in cc_visit(code):
-            complexity += block.complexity
-            
-        # Calculate maintainability
-        maintainability = mi_visit(code, multi=False)
-        
-        # Calculate Halstead metrics
-        h_visit_result = h_visit(code)
-        if not h_visit_result:
-            logger.warning("No Halstead metrics found")
-            halstead = {
-                "volume": 0,
-                "difficulty": 0,
-                "effort": 0,
-                "time": 0,
-                "bugs": 0
-            }
-        else:
-            metrics = h_visit_result[0]
-            halstead = {
-                "volume": metrics.volume,
-                "difficulty": metrics.difficulty,
-                "effort": metrics.effort,
-                "time": metrics.time,
-                "bugs": metrics.bugs
-            }
-            
-        # Calculate LOC metrics
-        lines = code.splitlines()
-        code_lines = [l for l in lines if l.strip() and not l.strip().startswith('#')]
-        doc_lines = [l for l in lines if l.strip().startswith('"""') or 
-                    l.strip().startswith("'''")]
-        
-        loc = {
-            "total": len(lines),
-            "code": len(code_lines),
-            "docs": len(doc_lines),
-            "empty": len(lines) - len(code_lines) - len(doc_lines)
-        }
-        
-        # Calculate documentation coverage
-        doc_coverage = (len(doc_lines) / len(code_lines)) * 100 if code_lines else 0
-        
-        # Try to get test coverage if file path provided
-        test_coverage = None
-        if file_path:
-            try:
-                coverage_data = get_test_coverage(file_path)
-                if coverage_data:
-                    test_coverage = coverage_data.get("line_rate", 0) * 100
-            except Exception as e:
-                logger.debug(f"Could not get test coverage: {e}")
-        
-        return CodeMetrics(
-            complexity=complexity,
-            maintainability=maintainability,
-            halstead=halstead,
-            loc=loc,
-            documentation_coverage=doc_coverage,
-            test_coverage=test_coverage
-        )
-        
-    except Exception as e:
-        logger.error(f"Error calculating metrics: {e}")
-        return None
-
-def get_test_coverage(file_path: Union[str, Path]) -> Optional[Dict[str, float]]:
-    """
-    Gets test coverage data for a file.
-    
-    Args:
-        file_path: Path to source file
-        
-    Returns:
-        Optional[Dict[str, float]]: Coverage metrics if available
-    """
-    try:
-        # Look for coverage data in common locations
-        coverage_paths = [
-            Path.cwd() / '.coverage',
-            Path.cwd() / 'coverage' / 'coverage.json',
-            Path.cwd() / 'htmlcov' / 'coverage.json'
-        ]
-        
-        for cov_path in coverage_paths:
-            if cov_path.exists():
-                with open(cov_path) as f:
-                    coverage_data = json.load(f)
+            # Filter and add files
+            for file in files:
+                file_path = root_path / file
+                if path_filter.should_include_path(file_path, repo_path):
+                    included_paths.append(str(file_path))
                     
-                # Find data for this file
-                rel_path = Path(file_path).relative_to(Path.cwd())
-                file_data = coverage_data.get("files", {}).get(str(rel_path))
-                if file_data:
-                    return {
-                        "line_rate": file_data.get("line_rate", 0),
-                        "branch_rate": file_data.get("branch_rate", 0)
-                    }
-                    
-        return None
+        logger.info(
+            f"Found {len(included_paths)} files in {repo_path} "
+            f"(excluded: dirs={len(path_filter.excluded_dirs)}, "
+            f"files={len(path_filter.excluded_files)}, "
+            f"types={len(path_filter.skip_types)})"
+        )
+        
+        return included_paths
         
     except Exception as e:
-        logger.debug(f"Error getting coverage data: {e}")
-        return None
+        logger.error(f"Error walking repository: {str(e)}")
+        return []
 
-def format_metrics(metrics: CodeMetrics) -> Dict[str, Any]:
-    """
-    Formats metrics for output.
-    
-    Args:
-        metrics: CodeMetrics object
-        
-    Returns:
-        Dict[str, Any]: Formatted metrics
-    """
-    return {
-        "complexity": {
-            "value": metrics.complexity,
-            "severity": get_complexity_severity(metrics.complexity),
-        },
-        "maintainability": {
-            "value": metrics.maintainability,
-            "severity": get_maintainability_severity(metrics.maintainability),
-        },
-        "halstead": {
-            metric: {
-                "value": value,
-                "severity": get_halstead_severity(metric, value)
-            }
-            for metric, value in metrics.halstead.items()
-        },
-        "lines_of_code": metrics.loc,
-        "documentation": {
-            "coverage": metrics.documentation_coverage,
-            "severity": get_doc_coverage_severity(metrics.documentation_coverage)
-        },
-        "test_coverage": {
-            "value": metrics.test_coverage,
-            "severity": get_test_coverage_severity(metrics.test_coverage)
-        } if metrics.test_coverage is not None else None
-    }
-
-def get_complexity_severity(value: float) -> str:
-    """Gets severity level for complexity metric."""
-    thresholds = DEFAULT_COMPLEXITY_THRESHOLDS
-    if value <= thresholds["low"]:
-        return "low"
-    elif value <= thresholds["medium"]:
-        return "medium"
-    return "high"
-
-def get_maintainability_severity(value: float) -> str:
-    """Gets severity level for maintainability metric."""
-    thresholds = DEFAULT_MAINTAINABILITY_THRESHOLDS
-    if value >= thresholds["high"]:
-        return "low"
-    elif value >= thresholds["medium"]:
-        return "medium"
-    return "high"
-
-def get_halstead_severity(metric: str, value: float) -> str:
-    """Gets severity level for Halstead metrics."""
-    thresholds = DEFAULT_HALSTEAD_THRESHOLDS.get(metric, {})
-    if not thresholds:
-        return "unknown"
-    
-    if value <= thresholds["low"]:
-        return "low"
-    elif value <= thresholds["medium"]:
-        return "medium"
-    return "high"
-
-def get_doc_coverage_severity(value: float) -> str:
-    """Gets severity level for documentation coverage."""
-    if value >= 80:
-        return "low"
-    elif value >= 50:
-        return "medium"
-    return "high"
-
-def get_test_coverage_severity(value: Optional[float]) -> str:
-    """Gets severity level for test coverage."""
-    if value is None:
-        return "unknown"
-    
-    if value >= 80:
-        return "low"
-    elif value >= 60:
-        return "medium"
-    return "high"
+# Initialize global instances
+metrics_calculator = EnhancedMetricsCalculator()
+coverage_handler = CoverageHandler()
 
 def setup_logging(
     log_file: Optional[Union[str, Path]] = None,
-    log_level: str = "INFO"
-) -> None:
-    """
-    Sets up logging configuration.
-    
-    Args:
-        log_file: Optional path to log file
-        log_level: Logging level to use
-    """
-    handlers = [logging.StreamHandler(sys.stdout)]
-    
-    if log_file:
-        handlers.append(logging.FileHandler(log_file))
-    
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=handlers
-    )
+    log_level: str = "INFO",
+    log_format: Optional[str] = None
+) -> bool:
+    """Sets up logging configuration."""
+    try:
+        if not log_format:
+            log_format = (
+                "%(asctime)s [%(levelname)s] "
+                "%(name)s:%(lineno)d - %(message)s"
+            )
+        
+        handlers = [logging.StreamHandler(sys.stdout)]
+        
+        if log_file:
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file,
+                maxBytes=10 * 1024 * 1024,  # 10MB
+                backupCount=5
+            )
+            handlers.append(file_handler)
+        
+        logging.basicConfig(
+            level=getattr(logging, log_level.upper()),
+            format=log_format,
+            handlers=handlers
+        )
+        
+        # Set lower level for external libraries
+        logging.getLogger("aiohttp").setLevel(logging.WARNING)
+        logging.getLogger("asyncio").setLevel(logging.WARNING)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Failed to set up logging: {e}")
+        return False

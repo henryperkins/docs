@@ -1,44 +1,106 @@
 """
 process_manager.py
 
-Manages the documentation generation process, handling both Azure and Gemini providers.
-Coordinates file processing, model interactions, and documentation generation with
-enhanced error handling, metrics tracking, and parallel processing.
+Enhanced documentation generation process manager with improved provider handling,
+metrics tracking, and error management. Coordinates file processing, model
+interactions, and documentation generation across multiple AI providers.
 """
 
 import asyncio
 import logging
 import json
 import os
-import sys
-from typing import Dict, Any, List, Optional, Set, Union
+from typing import Dict, Any, List, Optional, Set
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
 import aiohttp
-import aiofiles
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
+import yaml
+import threading
+import uuid
 
-from azure_model import AzureModel
-from gemini_model import GeminiModel
-from openai_model import OpenAIModel  # Added for OpenAI support
-from context_manager import HierarchicalContextManager, ChunkNotFoundError
-from code_chunk import CodeChunk
-from metrics import MetricsResult, calculate_code_metrics, MetricsAnalyzer, MetricsThresholds
-from token_utils import TokenManager, TokenizerModel
-from utils import sanitize_filename, should_process_file, load_function_schema
-from write_documentation_report import write_documentation_report
-from language_functions import get_handler, insert_docstrings  # For language specific handling
-from results import FileProcessingResult  # Standardized result storage <--- Add this import
+from utils import (
+    FileHandler,
+    MetricsCalculator,
+    CodeFormatter,
+    setup_logging,
+    get_all_file_paths,
+    load_json_schema
+)
+from file_handlers import (
+    FileProcessor,
+    APIHandler,
+    ProcessingResult,
+    ChunkManager,
+    HierarchicalContextManager
+)
+from write_documentation_report import DocumentationGenerator
 
 logger = logging.getLogger(__name__)
 
 @dataclass
+class ProviderMetrics:
+    """Tracks metrics for an AI provider."""
+    api_calls: int = 0
+    api_errors: int = 0
+    total_tokens: int = 0
+    average_latency: float = 0.0
+    rate_limit_hits: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    retry_count: int = 0
+    error_types: Dict[str, int] = field(default_factory=dict)
+    successful_chunks: int = 0
+
+    def update_latency(self, latency: float) -> None:
+        """Updates average latency with new value."""
+        if self.api_calls == 0:
+            self.average_latency = latency
+        else:
+            self.average_latency = (
+                (self.average_latency * (self.api_calls - 1) + latency) /
+                self.api_calls
+            )
+
+    def record_error(self, error_type: str) -> None:
+        """Records an API error."""
+        self.api_errors += 1
+        self.error_types[error_type] = self.error_types.get(error_type, 0) + 1
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Returns a summary of provider metrics."""
+        error_rate = (self.api_errors / self.api_calls * 100) if self.api_calls > 0 else 0
+        tokens_per_call = (self.total_tokens / self.api_calls) if self.api_calls > 0 else 0
+        hit_rate = (self.cache_hits / (self.cache_hits + self.cache_misses) * 100) if (self.cache_hits + self.cache_misses) > 0 else 0
+        retries_per_call = (self.retry_count / self.api_calls) if self.api_calls > 0 else 0
+
+        return {
+            "api_calls": self.api_calls,
+            "api_errors": self.api_errors,
+            "error_rate": error_rate,
+            "average_latency": self.average_latency,
+            "total_tokens": self.total_tokens,
+            "tokens_per_call": tokens_per_call,
+            "rate_limit_hits": self.rate_limit_hits,
+            "cache_efficiency": {
+                "hits": self.cache_hits,
+                "misses": self.cache_misses,
+                "hit_rate": hit_rate
+            },
+            "retries": {
+                "total": self.retry_count,
+                "per_call": retries_per_call
+            },
+            "error_breakdown": self.error_types,
+            "successful_chunks": self.successful_chunks
+        }
+
+@dataclass
 class ProcessingMetrics:
-    """Tracks processing metrics and performance data."""
+    """Enhanced processing metrics with detailed tracking."""
     start_time: datetime = field(default_factory=datetime.now)
     end_time: Optional[datetime] = None
     total_files: int = 0
@@ -47,22 +109,46 @@ class ProcessingMetrics:
     failed_files: int = 0
     total_chunks: int = 0
     successful_chunks: int = 0
-    total_tokens: int = 0
-    api_calls: int = 0
-    api_errors: int = 0
-    cache_hits: int = 0
-    cache_misses: int = 0
-    
+    provider_metrics: Dict[str, ProviderMetrics] = field(default_factory=lambda: {})
+    error_types: Dict[str, int] = field(default_factory=dict)
+    processing_times: List[float] = field(default_factory=list)
+
+    def record_file_result(
+        self,
+        success: bool,
+        processing_time: float,
+        error_type: Optional[str] = None
+    ) -> None:
+        """Records file processing result."""
+        self.processed_files += 1
+        if success:
+            self.successful_files += 1
+        else:
+            self.failed_files += 1
+            if error_type:
+                self.error_types[error_type] = (
+                    self.error_types.get(error_type, 0) + 1
+                )
+        self.processing_times.append(processing_time)
+
+    def get_provider_metrics(self, provider: str) -> ProviderMetrics:
+        """Gets or creates metrics for a provider."""
+        if provider not in self.provider_metrics:
+            self.provider_metrics[provider] = ProviderMetrics()
+        return self.provider_metrics[provider]
+
     def get_summary(self) -> Dict[str, Any]:
-        """Returns a summary of processing metrics."""
+        """Returns a comprehensive metrics summary."""
         duration = (
             (self.end_time - self.start_time).total_seconds()
             if self.end_time
             else (datetime.now() - self.start_time).total_seconds()
         )
-        
         return {
-            "duration_seconds": duration,
+            "duration": {
+                "seconds": duration,
+                "formatted": str(datetime.now() - self.start_time)
+            },
             "files": {
                 "total": self.total_files,
                 "processed": self.processed_files,
@@ -83,880 +169,654 @@ class ProcessingMetrics:
                     else 0
                 )
             },
-            "tokens": {
-                "total": self.total_tokens,
-                "average_per_chunk": (
-                    self.total_tokens / self.total_chunks
-                    if self.total_chunks > 0
+            "processing_times": {
+                "average": (
+                    sum(self.processing_times) / len(self.processing_times)
+                    if self.processing_times
                     else 0
-                )
+                ),
+                "min": min(self.processing_times) if self.processing_times else 0,
+                "max": max(self.processing_times) if self.processing_times else 0
             },
-            "api": {
-                "total_calls": self.api_calls,
-                "errors": self.api_errors,
-                "error_rate": (
-                    self.api_errors / self.api_calls * 100
-                    if self.api_calls > 0
-                    else 0
-                )
+            "providers": {
+                provider: metrics.get_summary()
+                for provider, metrics in self.provider_metrics.items()
             },
-            "cache": {
-                "hits": self.cache_hits,
-                "misses": self.cache_misses,
-                "hit_rate": (
-                    self.cache_hits / (self.cache_hits + self.cache_misses) * 100
-                    if (self.cache_hits + self.cache_misses) > 0
+            "errors": {
+                "total": self.failed_files,
+                "types": self.error_types,
+                "rate": (
+                    self.failed_files / self.processed_files * 100
+                    if self.processed_files > 0
                     else 0
                 )
             }
         }
 
-@dataclass
-class ProcessingResult:
-    """Stores the result of processing a file or chunk."""
-    id: str
-    success: bool
-    error: Optional[str] = None
-    documentation: Optional[Dict[str, Any]] = None
+class ProviderConfig(BaseModel):
+    """Enhanced provider configuration with validation."""
+    name: str
+    endpoint: str
+    api_key: str
+    deployment_name: Optional[str] = None
+    api_version: Optional[str] = None
+    model_name: Optional[str] = None
+    max_tokens: int = 4096
+    temperature: float = 0.7
+    max_retries: int = 3
+    retry_delay: float = 1.0
+    cache_enabled: bool = True
+    timeout: float = 30.0
+    chunk_overlap: int = 200  # Token overlap between chunks
+    min_chunk_size: int = 100  # Minimum chunk size in tokens
+    max_parallel_chunks: int = 3
+
+    @validator("temperature")
+    def validate_temperature(cls, v):
+        if not 0 <= v <= 1:
+            raise ValueError("Temperature must be between 0 and 1")
+        return v
+
+    @validator("max_tokens")
+    def validate_max_tokens(cls, v):
+        if v < 1 or v > 8192:
+            raise ValueError("max_tokens must be between 1 and 8192")
+        return v
+
+class DocumentationRequest(BaseModel):
+    """Enhanced API request model."""
+    file_paths: List[str]
+    skip_types: Optional[List[str]] = []
+    project_info: Optional[str] = ""
+    style_guidelines: Optional[str] = ""
+    safe_mode: Optional[bool] = False
+    project_id: str
+    provider: str = "azure"
+    max_concurrency: Optional[int] = 5
+    priority: Optional[str] = "normal"
+    callback_url: Optional[str] = None
+
+    @validator("provider")
+    def validate_provider(cls, v):
+        valid_providers = {"azure", "gemini", "openai"}
+        if v not in valid_providers:
+            raise ValueError(f"Provider must be one of {valid_providers}")
+        return v
+
+    @validator("priority")
+    def validate_priority(cls, v):
+        if v not in {"low", "normal", "high"}:
+            raise ValueError("Priority must be low, normal, or high")
+        return v
+
+class DocumentationResponse(BaseModel):
+    """Enhanced API response model."""
+    task_id: str
+    status: str
+    progress: float
+    results: Optional[Dict[str, Any]] = None
+    errors: Optional[List[Dict[str, Any]]] = None
     metrics: Optional[Dict[str, Any]] = None
-    warnings: List[str] = field(default_factory=list)
-    processing_time: float = 0.0
+    estimated_completion: Optional[datetime] = None
+
+_manager_instance = None
+_manager_lock = threading.Lock()
+
+def get_manager_instance() -> 'DocumentationProcessManager':
+    """Gets or creates DocumentationProcessManager instance."""
+    global _manager_instance
+    with _manager_lock:
+        if _manager_instance is None:
+            # Load provider configurations
+            provider_configs = {
+                name: ProviderConfig(**config)
+                for name, config in load_provider_configs().items()
+            }
+
+            _manager_instance = DocumentationProcessManager(
+                repo_root=os.getenv("REPO_ROOT", "."),
+                output_dir=os.getenv("OUTPUT_DIR", "./docs"),
+                provider_configs=provider_configs,
+                max_concurrency=int(os.getenv("MAX_CONCURRENCY", 5)),
+                cache_dir=os.getenv("CACHE_DIR")
+            )
+
+    return _manager_instance
+
+def load_provider_configs() -> Dict[str, Dict[str, Any]]:
+    """Loads provider configurations from environment/files."""
+    import os
+    import yaml
+    import json
+    from pathlib import Path
+
+    config_file = os.getenv('PROVIDER_CONFIG_FILE')
+
+    if config_file:
+        config_path = Path(config_file)
+        if not config_path.is_file():
+            raise FileNotFoundError(f"Provider config file not found: {config_file}")
+
+        # Try to read the file
+        try:
+            with open(config_path, 'r') as f:
+                if config_file.endswith('.yaml') or config_file.endswith('.yml'):
+                    config = yaml.safe_load(f)
+                elif config_file.endswith('.json'):
+                    config = json.load(f)
+                else:
+                    raise ValueError("Unsupported config file format. Must be .yaml or .json")
+        except Exception as e:
+            raise ValueError(f"Failed to load provider config file: {e}")
+
+    else:
+        # Use default configuration
+        config = {
+            "azure": {
+                "name": "azure",
+                "endpoint": os.getenv("AZURE_ENDPOINT", "https://your-azure-endpoint.com"),
+                "api_key": os.getenv("AZURE_API_KEY", "your-azure-api-key"),
+                "deployment_name": os.getenv("AZURE_DEPLOYMENT_NAME", "your-deployment-name"),
+                "api_version": os.getenv("AZURE_API_VERSION", "2023-01-01"),
+                "model_name": os.getenv("AZURE_MODEL_NAME", "gpt-3"),
+                "max_tokens": int(os.getenv("AZURE_MAX_TOKENS", "4096")),
+                "temperature": float(os.getenv("AZURE_TEMPERATURE", "0.7")),
+                "max_retries": int(os.getenv("AZURE_MAX_RETRIES", "3")),
+                "retry_delay": float(os.getenv("AZURE_RETRY_DELAY", "1.0")),
+                "cache_enabled": os.getenv("AZURE_CACHE_ENABLED", "True") == "True",
+                "timeout": float(os.getenv("AZURE_TIMEOUT", "30.0")),
+                "chunk_overlap": int(os.getenv("AZURE_CHUNK_OVERLAP", "200")),
+                "min_chunk_size": int(os.getenv("AZURE_MIN_CHUNK_SIZE", "100")),
+                "max_parallel_chunks": int(os.getenv("AZURE_MAX_PARALLEL_CHUNKS", "3"))
+            },
+            "gemini": {
+                "name": "gemini",
+                "endpoint": os.getenv("GEMINI_ENDPOINT", "https://your-gemini-endpoint.com"),
+                "api_key": os.getenv("GEMINI_API_KEY", "your-gemini-api-key"),
+                "model_name": os.getenv("GEMINI_MODEL_NAME", "gemini-model"),
+                "max_tokens": int(os.getenv("GEMINI_MAX_TOKENS", "4096")),
+                "temperature": float(os.getenv("GEMINI_TEMPERATURE", "0.7")),
+                "max_retries": int(os.getenv("GEMINI_MAX_RETRIES", "3")),
+                "retry_delay": float(os.getenv("GEMINI_RETRY_DELAY", "1.0")),
+                "cache_enabled": os.getenv("GEMINI_CACHE_ENABLED", "True") == "True",
+                "timeout": float(os.getenv("GEMINI_TIMEOUT", "30.0")),
+                "chunk_overlap": int(os.getenv("GEMINI_CHUNK_OVERLAP", "200")),
+                "min_chunk_size": int(os.getenv("GEMINI_MIN_CHUNK_SIZE", "100")),
+                "max_parallel_chunks": int(os.getenv("GEMINI_MAX_PARALLEL_CHUNKS", "3"))
+            },
+            "openai": {
+                "name": "openai",
+                "endpoint": os.getenv("OPENAI_ENDPOINT", "https://api.openai.com/v1/engines"),
+                "api_key": os.getenv("OPENAI_API_KEY", "your-openai-api-key"),
+                "model_name": os.getenv("OPENAI_MODEL_NAME", "gpt-3"),
+                "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "4096")),
+                "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.7")),
+                "max_retries": int(os.getenv("OPENAI_MAX_RETRIES", "3")),
+                "retry_delay": float(os.getenv("OPENAI_RETRY_DELAY", "1.0")),
+                "cache_enabled": os.getenv("OPENAI_CACHE_ENABLED", "True") == "True",
+                "timeout": float(os.getenv("OPENAI_TIMEOUT", "30.0")),
+                "chunk_overlap": int(os.getenv("OPENAI_CHUNK_OVERLAP", "200")),
+                "min_chunk_size": int(os.getenv("OPENAI_MIN_CHUNK_SIZE", "100")),
+                "max_parallel_chunks": int(os.getenv("OPENAI_MAX_PARALLEL_CHUNKS", "3"))
+            }
+        }
+
+    # Return the configuration
+    return config
+
+def calculate_estimated_completion(
+    request: DocumentationRequest
+) -> datetime:
+    """Calculates estimated completion time."""
+    import os
+    from datetime import datetime, timedelta
+
+    # For simplicity, we can assume that processing each file takes some base time plus some time proportional to its size.
+
+    base_time_per_file = 5  # seconds
+    time_per_kb = 0.1  # seconds per kilobyte
+
+    total_time = 0.0
+
+    for file_path in request.file_paths:
+        try:
+            file_size = os.path.getsize(file_path)  # in bytes
+            file_time = base_time_per_file + (file_size / 1024) * time_per_kb
+            total_time += file_time
+        except Exception as e:
+            # If file size can't be determined, use default time
+            total_time += base_time_per_file
+
+    estimated_completion_time = datetime.now() + timedelta(seconds=total_time)
+
+    return estimated_completion_time
 
 class DocumentationProcessManager:
-    """Manages the documentation generation process."""
+    """Enhanced documentation process manager with improved error handling."""
 
     def __init__(
         self,
         repo_root: str,
         output_dir: str,
-        provider: str = "azure",
-        azure_config: Optional[Dict[str, str]] = None,
-        gemini_config: Optional[Dict[str, str]] = None,
-        openai_config: Optional[Dict[str, str]] = None,  # New: OpenAI configuration
+        provider_configs: Dict[str, ProviderConfig],
         function_schema: Optional[Dict[str, Any]] = None,
         max_concurrency: int = 5,
-        max_retries: int = 3,
-        cache_dir: Optional[str] = None,
-        token_model: TokenizerModel = TokenizerModel.GPT4
+        cache_dir: Optional[str] = None
     ):
         """
         Initializes the documentation process manager.
 
         Args:
             repo_root: Repository root path
-            output_dir: Output directory for documentation
-            provider: AI provider ("azure", "gemini", or "openai")
-            azure_config: Azure OpenAI configuration
-            gemini_config: Gemini configuration
-            openai_config: OpenAI configuration
+            output_dir: Output directory
+            provider_configs: Configuration for AI providers
             function_schema: Documentation schema
             max_concurrency: Maximum concurrent operations
-            max_retries: Maximum retry attempts
             cache_dir: Directory for caching
-            token_model: Tokenizer model to use
         """
         self.repo_root = Path(repo_root).resolve()
         self.output_dir = Path(output_dir).resolve()
-        self.provider = provider.lower()
+        self.provider_configs = provider_configs
         self.function_schema = function_schema
         self.max_concurrency = max_concurrency
-        self.max_retries = max_retries
-        self.token_model = token_model
-
-        # Initialize semaphores for concurrency control
-        self.api_semaphore = asyncio.Semaphore(max_concurrency)
-        self.file_semaphore = asyncio.Semaphore(max_concurrency * 2)
 
         # Initialize metrics
         self.metrics = ProcessingMetrics()
-        self.metrics_analyzer = MetricsAnalyzer()
 
-        # Initialize context manager
+        # Initialize semaphores
+        self.api_semaphore = asyncio.Semaphore(max_concurrency)
+        self.file_semaphore = asyncio.Semaphore(max_concurrency * 2)
+
+        # Initialize managers
         self.context_manager = HierarchicalContextManager(
-            cache_dir=cache_dir,
-            token_model=token_model
+            cache_dir=cache_dir
         )
-
-        # Initialize appropriate client based on provider
-        if self.provider == "azure":
-            if not azure_config:
-                raise ValueError("Azure configuration required")
-            self.client = AzureModel(**azure_config)
-        elif self.provider == "gemini":
-            if not gemini_config:
-                raise ValueError("Gemini configuration required")
-            self.client = GeminiModel(**gemini_config)
-        elif self.provider == "openai":  # New: OpenAI provider setup
-            if not openai_config:
-                raise ValueError("OpenAI configuration required")
-            self.client = OpenAIModel(**openai_config)
-        else:
-            raise ValueError(f"Unsupported provider: {provider}")
+        self.metrics_calculator = MetricsCalculator()
+        self.doc_generator = DocumentationGenerator()
 
         # Initialize thread pool for CPU-bound operations
         self.thread_pool = ThreadPoolExecutor(
             max_workers=max(os.cpu_count() - 1, 1)
         )
 
+        # Task tracking
+        self._active_tasks: Dict[str, Dict[asyncio.Task, str]] = {}
+        self._task_progress: Dict[str, float] = {}
+        self._task_status: Dict[str, str] = {}
+
         logger.info(
-            f"Initialized DocumentationProcessManager with {provider} provider"
+            f"Initialized DocumentationProcessManager with providers: "
+            f"{', '.join(provider_configs.keys())}"
         )
 
     async def process_files(
         self,
-        file_paths: List[str],
-        skip_types: Set[str],
-        project_info: str,
-        style_guidelines: str,
-        safe_mode: bool = False,
-        project_id: str = "default"  # Add default project_id
+        request: DocumentationRequest,
+        task_id: str
     ) -> Dict[str, Any]:
         """
-        Processes multiple files with documentation generation.
+        Processes multiple files with improved task management and error handling.
 
         Args:
-            file_paths: List of files to process
-            skip_types: File extensions to skip
-            project_info: Project documentation info
-            style_guidelines: Documentation style guidelines
-            safe_mode: If True, don't modify files
+            request: Documentation request
+            task_id: Unique task identifier
 
         Returns:
             Dict[str, Any]: Processing results and metrics
         """
         try:
             self.metrics = ProcessingMetrics()
-            self.metrics.total_files = len(file_paths)
+            self.metrics.total_files = len(request.file_paths)
 
+            # Store task status
+            self._task_status[task_id] = "in_progress"
+            self._task_progress[task_id] = 0.0
+
+            # Get provider configuration
+            provider_config = self.provider_configs.get(request.provider)
+            if not provider_config:
+                raise ValueError(f"Unsupported provider: {request.provider}")
+
+            # Initialize ProviderMetrics for the provider
+            provider_metrics = self.metrics.get_provider_metrics(request.provider)
+
+            # Initialize processing components
             async with aiohttp.ClientSession() as session:
-                # Process files in parallel with controlled concurrency
-                tasks = []
-                for file_path in file_paths:
-                    if should_process_file(file_path, skip_types):
-                        task = self._process_single_file(
-                            session=session,
+                api_handler = APIHandler(
+                    session=session,
+                    config=provider_config,
+                    semaphore=self.api_semaphore,
+                    provider_metrics=provider_metrics  # Pass ProviderMetrics
+                )
+
+                file_processor = FileProcessor(
+                    context_manager=self.context_manager,
+                    api_handler=api_handler,
+                    provider_config=provider_config,
+                    provider_metrics=provider_metrics  # Pass ProviderMetrics
+                )
+
+                # Process files with priority handling
+                prioritized_files = self._prioritize_files(
+                    request.file_paths,
+                    request.priority
+                )
+
+                results = []
+                total_files = len(prioritized_files)
+                completed = 0  # Initialize completed files counter
+
+                # Create tasks for all files
+                tasks = {}
+                for file_path in prioritized_files:
+                    task = asyncio.create_task(
+                        self._process_file(
                             file_path=file_path,
-                            project_info=project_info,
-                            style_guidelines=style_guidelines,
-                            safe_mode=safe_mode,
-                            project_id=project_id
+                            processor=file_processor,
+                            request=request,
+                            timeout=provider_config.timeout
                         )
-                        tasks.append(task)
-                    else:
-                        logger.debug(f"Skipping file: {file_path}")
+                    )
+                    tasks[task] = file_path  # Map task to file path
 
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Keep track of active tasks
+                self._active_tasks[task_id] = tasks
 
-                # Process results
-                successful_results = []
-                failed_results = []
+                for future in asyncio.as_completed(tasks.keys()):
+                    file_path = tasks[future]
+                    try:
+                        result = await future
+                        results.append(result)
+                        self.metrics.record_file_result(
+                            success=result["success"],
+                            processing_time=result.get("processing_time", 0.0),
+                            error_type=result.get("error_type")
+                        )
+                    except asyncio.CancelledError:
+                        logger.warning(f"Processing of {file_path} was cancelled.")
+                        self.metrics.record_file_result(
+                            success=False,
+                            processing_time=0.0,
+                            error_type="CancelledError"
+                        )
+                        results.append({
+                            "file_path": file_path,
+                            "success": False,
+                            "error": "Processing was cancelled",
+                            "error_type": "CancelledError"
+                        })
+                    except Exception as e:
+                        error_type = type(e).__name__
+                        logger.error(f"Error processing {file_path}: {str(e)}")
+                        self.metrics.record_file_result(
+                            success=False,
+                            processing_time=0.0,
+                            error_type=error_type
+                        )
+                        results.append({
+                            "file_path": file_path,
+                            "success": False,
+                            "error": str(e),
+                            "error_type": error_type
+                        })
+                    finally:
+                        completed += 1  # Increment completed files counter
+                        # Update progress based on files processed
+                        progress = (completed / total_files) * 100
+                        self._update_task_progress(task_id, progress)
 
-                for result in results:
-                    if isinstance(result, Exception):
-                        logger.error(f"File processing failed: {result}")
-                        self.metrics.failed_files += 1
-                    elif isinstance(result, ProcessingResult):
-                        if result.success:
-                            successful_results.append(result)
-                            self.metrics.successful_files += 1
-                        else:
-                            failed_results.append(result)
-                            self.metrics.failed_files += 1
+                        # Send progress callback if configured
+                        if request.callback_url:
+                            await self._send_progress_callback(
+                                request.callback_url,
+                                progress,
+                                completed,
+                                total_files
+                            )
 
-                self.metrics.processed_files = len(results)
+                # Update final metrics
                 self.metrics.end_time = datetime.now()
 
-                # Generate final report
+                # Mark task as completed
+                self._task_status[task_id] = "completed"
+                self._task_progress[task_id] = 100.0
+                # Remove from active tasks
+                del self._active_tasks[task_id]
+
                 return {
-                    "results": {
-                        "successful": [
-                            {
-                                "id": r.id,
-                                "documentation": r.documentation,
-                                "metrics": r.metrics,
-                                "processing_time": r.processing_time,
-                                "warnings": r.warnings
-                            }
-                            for r in successful_results
-                        ],
-                        "failed": [
-                            {
-                                "id": r.id,
-                                "error": r.error,
-                                "processing_time": r.processing_time
-                            }
-                            for r in failed_results
-                        ]
-                    },
+                    "task_id": task_id,
+                    "status": "completed",
+                    "results": results,
                     "metrics": self.metrics.get_summary()
                 }
 
         except Exception as e:
-            logger.error(f"Critical error in process_files: {str(e)}", exc_info=True)
+            logger.error(f"Critical error in process_files: {str(e)}")
+            # Mark task as failed
+            self._task_status[task_id] = "failed"
+            self._task_progress[task_id] = 100.0
+            if task_id in self._active_tasks:
+                del self._active_tasks[task_id]
             raise
 
-
-    async def _process_single_file(
+    async def _process_file(
         self,
-        session: aiohttp.ClientSession,
         file_path: str,
-        project_info: str,
-        style_guidelines: str,
-        safe_mode: bool,
-        project_id: str
-    ) -> FileProcessingResult:
-        """
-        Processes a single file with chunking and documentation generation.
-
-        Args:
-            session: aiohttp session
-            file_path: Path to the file
-            project_info: Project documentation info
-            style_guidelines: Documentation style guidelines
-            safe_mode: If True, don't modify files
-            project_id: Unique identifier for the project
-
-        Returns:
-            FileProcessingResult: Processing result
-        """
+        processor: FileProcessor,
+        request: DocumentationRequest,
+        timeout: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Processes a single file with improved error handling and timeouts."""
         start_time = datetime.now()
-        result = None  # Initialize result
 
         try:
-            async with self.file_semaphore:
-                # Read file content
-                async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
-                    content = await f.read()
-
-                # Get language handler
-                language = self._get_language(file_path)
-                handler = get_handler(language, self.function_schema, self.metrics_analyzer)
-                if not handler:
-                    raise ValueError(f"Unsupported language for file: {file_path}")
-
-                # Extract code structure (Await the result)
-                code_structure = await handler.extract_structure(content, file_path)
-                if "error" in code_structure:
-                    raise Exception(code_structure["error"])
-
-                # Calculate metrics (Await only ONCE and store the result)
-                metrics_result = await asyncio.get_event_loop().run_in_executor(
-                    self.thread_pool,
-                    calculate_code_metrics,
-                    content,
-                    file_path,
-                    language
-                )
-                self.metrics_analyzer.add_result(metrics_result)
-
-                # Create chunks
-                chunks = await self._create_chunks(
-                    content=content,
-                    file_path=file_path,
-                    metrics=metrics_result.metrics if metrics_result.success else None
-                )
-
-                self.metrics.total_chunks += len(chunks)
-
-                # Process chunks concurrently
-                chunk_results = await asyncio.gather(
-                    *[
-                        self._process_chunk(
-                            session=session,
-                            chunk=chunk,
-                            project_info=project_info,
-                            style_guidelines=style_guidelines,
-                        )
-                        for chunk in chunks
-                    ],
-                    return_exceptions=True,
-                )
-
-                # Combine results
-                successful_chunks = []
-                failed_chunks = []
-                warnings = []
-
-                for result in chunk_results:
-                    if isinstance(result, Exception):
-                        failed_chunks.append(str(result))
-                    elif isinstance(result, ProcessingResult):
-                        if result.success:
-                            successful_chunks.append(result)
-                            self.metrics.successful_chunks += 1
-                        else:
-                            failed_chunks.append(result)
-                        warnings.extend(result.warnings)
-
-                # Combine documentation and add metrics
-                combined_documentation = await self._combine_documentation(
-                    successful_chunks, metrics_result, code_structure
-                )
-
-                # Insert docstrings using language handler
-                updated_code = self.insert_docstrings(
-                    content, combined_documentation
-                )
-
-                # Format and lint code (if applicable)
-                if language == "python":
-                    updated_code = await clean_unused_imports_async(updated_code, file_path)
-                    updated_code = await format_with_black_async(updated_code)
-                    flake8_output = await run_flake8_async(file_path)
-                    if flake8_output:
-                        combined_documentation["warnings"].append(flake8_output)
-
-                # Write documentation report
-                if not safe_mode:
-                    await write_documentation_report(
-                        documentation=combined_documentation,
-                        language=language,
+            if timeout:
+                result = await asyncio.wait_for(
+                    processor.process_file(
                         file_path=file_path,
+                        skip_types=set(request.skip_types),
+                        project_info=request.project_info,
+                        style_guidelines=request.style_guidelines,
                         repo_root=str(self.repo_root),
                         output_dir=str(self.output_dir),
-                        project_id=project_id,  # Pass project_id
-                    )
-
-                processing_time = (datetime.now() - start_time).total_seconds()
-
-                result = FileProcessingResult(
+                        provider=request.provider,
+                        project_id=request.project_id,
+                        safe_mode=request.safe_mode
+                    ),
+                    timeout=timeout
+                )
+            else:
+                result = await processor.process_file(
                     file_path=file_path,
-                    success=True,
-                    documentation=combined_documentation,
-                    metrics=metrics_result.metrics if metrics_result.success else None,
-                    chunk_count=len(chunks),
-                    successful_chunks=self.metrics.successful_chunks,
-                    timestamp=datetime.now()
+                    skip_types=set(request.skip_types),
+                    project_info=request.project_info,
+                    style_guidelines=request.style_guidelines,
+                    repo_root=str(self.repo_root),
+                    output_dir=str(self.output_dir),
+                    provider=request.provider,
+                    project_id=request.project_id,
+                    safe_mode=request.safe_mode
                 )
 
-        except ChunkNotFoundError as e:
-            error_message = f"Chunk not found error: {e}"
-            logger.error(error_message, exc_info=True)
-            result = FileProcessingResult(file_path=file_path, success=False, error=error_message)
-        except Exception as e:
-            error_message = f"Error processing {file_path}: {str(e)}"
-            logger.error(error_message, exc_info=True)
-            result = FileProcessingResult(file_path=file_path, success=False, error=error_message)
+            processing_time = (
+                datetime.now() - start_time
+            ).total_seconds()
 
-        finally:
-            if result:  # Ensure result is initialized
-                return result
-            else:  # Handle unexpected cases where result is still None
-                return FileProcessingResult(file_path=file_path, success=False, error="Unknown error occurred.")
-            
-    async def _create_chunks(
-        self,
-        content: str,
-        file_path: str,
-        metrics: Optional[Dict[str, Any]] = None
-    ) -> List[CodeChunk]:
-        """Creates and validates code chunks."""
-        try:
-            language = self._get_language(file_path)
-            if not language:
-                raise ValueError(f"Unsupported file type: {file_path}")
-
-            chunks = []
-            token_count = 0
-
-            # Create initial chunks
-            raw_chunks = self._chunk_code(content, language)
-
-            # Process and validate each chunk
-            for chunk in raw_chunks:
-                try:
-                    # Validate chunk size
-                    chunk_tokens = TokenManager.count_tokens(
-                        chunk.chunk_content,
-                        model=self.token_model
-                    ).token_count
-
-                    if chunk_tokens > 4096:  # Max token limit
-                        # Split large chunks
-                        sub_chunks = self._split_large_chunk(chunk)
-                        chunks.extend(sub_chunks)
-                        token_count += sum(
-                            TokenManager.count_tokens(sc.chunk_content).token_count
-                            for sc in sub_chunks
-                        )
-                    else:
-                        chunks.append(chunk)
-                        token_count += chunk_tokens
-
-                except Exception as e:
-                    logger.warning(f"Error processing chunk in {file_path}: {str(e)}")
-                    continue
-
-            self.metrics.total_tokens += token_count
-            return chunks
-
-        except Exception as e:
-            logger.error(f"Error creating chunks for {file_path}: {str(e)}")
-            raise
-
-    async def _process_chunk(
-        self,
-        session: aiohttp.ClientSession,
-        chunk: CodeChunk,
-        project_info: str,
-        style_guidelines: str
-    ) -> ProcessingResult:
-        """
-        Processes a single code chunk with retries and error handling.
-        
-        Args:
-            session: aiohttp session
-            chunk: Code chunk to process
-            project_info: Project documentation info
-            style_guidelines: Documentation style guidelines
-            
-        Returns:
-            ProcessingResult: Processing result
-        """
-        start_time = datetime.now()
-        attempt = 0
-        last_error = None
-
-        while attempt < self.max_retries:
-            try:
-                async with self.api_semaphore:
-                    # Check cache first
-                    cached_doc = await self.context_manager.get_documentation_for_chunk(
-                        chunk.chunk_id
-                    )
-
-                    if cached_doc:
-                        self.metrics.cache_hits += 1
-                        return ProcessingResult(
-                            id=chunk.chunk_id,
-                            success=True,
-                            documentation=cached_doc,
-                            processing_time=(
-                                datetime.now() - start_time
-                            ).total_seconds()
-                        )
-
-                    self.metrics.cache_misses += 1
-
-                    # Generate documentation
-                    self.metrics.api_calls += 1
-                    documentation = await self._generate_documentation(
-                        session=session,
-                        chunk=chunk,
-                        project_info=project_info,
-                        style_guidelines=style_guidelines
-                    )
-
-                    # Cache the result
-                    await self.context_manager.add_doc_chunk(
-                        chunk.chunk_id,
-                        documentation
-                    )
-                    return ProcessingResult(
-                        id=chunk.chunk_id,
-                        success=True,
-                        documentation=documentation,
-                        processing_time=(datetime.now() - start_time).total_seconds()
-                    )
-
-            except Exception as e:
-                attempt += 1
-                last_error = str(e)
-                self.metrics.api_errors += 1
-                
-                if attempt < self.max_retries:
-                    wait_time = 2 ** attempt  # Exponential backoff
-                    logger.warning(
-                        f"Retry {attempt}/{self.max_retries} for chunk "
-                        f"{chunk.chunk_id} after {wait_time}s. Error: {str(e)}"
-                    )
-                    await asyncio.sleep(wait_time)
-                else:
-                    logger.error(
-                        f"Failed to process chunk {chunk.chunk_id} "
-                        f"after {self.max_retries} attempts: {str(e)}"
-                    )
-
-        return ProcessingResult(
-            id=chunk.chunk_id,
-            success=False,
-            error=last_error,
-            processing_time=(datetime.now() - start_time).total_seconds()
-        )
-
-    async def _generate_documentation(
-        self,
-        session: aiohttp.ClientSession,
-        chunk: CodeChunk,
-        project_info: str,
-        style_guidelines: str
-    ) -> Dict[str, Any]:
-        """
-        Generates documentation for a code chunk using the configured AI provider.
-        
-        Args:
-            session: aiohttp session
-            chunk: Code chunk
-            project_info: Project info
-            style_guidelines: Style guidelines
-            
-        Returns:
-            Dict[str, Any]: Generated documentation
-        """
-        # Get context for the chunk
-        context_chunks = await self.context_manager.get_related_chunks(
-            chunk.chunk_id
-        )
-        
-        # Prepare prompt
-        prompt = self._prepare_prompt(
-            chunk=chunk,
-            context_chunks=context_chunks,
-            project_info=project_info,
-            style_guidelines=style_guidelines
-        )
-        
-        # Generate documentation using appropriate provider
-        if self.provider == "azure":
-            return await self.client.generate_documentation(prompt)
-        else:  # gemini
-            return await self.client.generate_documentation(prompt)
-
-    def _prepare_prompt(
-        self,
-        chunk: CodeChunk,
-        context_chunks: List[CodeChunk],
-        project_info: str,
-        style_guidelines: str
-    ) -> List[Dict[str, str]]:
-        """Prepares the prompt for documentation generation."""
-        context = self._format_context(context_chunks)
-        
-        return [
-            {
-                "role": "system",
-                "content": f"""Project Information:
-{project_info}
-
-Style Guidelines:
-{style_guidelines}"""
-            },
-            {
-                "role": "user",
-                "content": f"""Related Code Context:
-{context}
-
-Current Code:
-{chunk.chunk_content}"""
+            return {
+                "file_path": file_path,
+                "success": result.success,
+                "content": result.content,
+                "error": result.error,
+                "processing_time": processing_time,
+                "retries": result.retries
             }
-        ]
 
-    def _format_context(self, chunks: List[CodeChunk]) -> str:
-        """Formats context chunks into a readable string."""
-        context_parts = []
-        for chunk in chunks:
-            context_parts.append(f"""
-# From {chunk.get_context_string()}:
-{chunk.chunk_content}
-""")
-        return "\n".join(context_parts)
+        except asyncio.TimeoutError:
+            logger.error(f"Processing of {file_path} timed out.")
+            return {
+                "file_path": file_path,
+                "success": False,
+                "error": "Processing timed out",
+                "error_type": "TimeoutError",
+                "processing_time": (
+                    datetime.now() - start_time
+                ).total_seconds()
+            }
+        except asyncio.CancelledError:
+            logger.warning(f"Processing of {file_path} was cancelled.")
+            return {
+                "file_path": file_path,
+                "success": False,
+                "error": "Processing was cancelled",
+                "error_type": "CancelledError",
+                "processing_time": (
+                    datetime.now() - start_time
+                ).total_seconds()
+            }
+        except Exception as e:
+            logger.error(f"Error processing {file_path}: {str(e)}")
+            return {
+                "file_path": file_path,
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "processing_time": (
+                    datetime.now() - start_time
+                ).total_seconds()
+            }
 
-    async def _combine_documentation(
+    def _prioritize_files(
         self,
-        chunk_results: List[ProcessingResult],
-        metrics_result: MetricsResult
-    ) -> Dict[str, Any]:
-        """
-        Combines documentation from multiple chunks intelligently.
-        
-        Args:
-            chunk_results: Results from chunk processing
-            metrics_result: Code metrics
-            
-        Returns:
-            Dict[str, Any]: Combined documentation
-        """
-        combined = {
-            "functions": [],
-            "classes": [],
-            "variables": [],
-            "constants": [],
-            "imports": [],
-            "metrics": metrics_result.metrics if metrics_result.success else {},
-            "summary": "",
-            "warnings": []
-        }
-        
-        # Track seen items to avoid duplication
-        seen_functions = set()
-        seen_classes = set()
-        seen_vars = set()
-        
-        for result in chunk_results:
-            if not result.success or not result.documentation:
-                continue
-                
-            doc = result.documentation
-            
-            # Combine functions
-            for func in doc.get("functions", []):
-                if func["name"] not in seen_functions:
-                    combined["functions"].append(func)
-                    seen_functions.add(func["name"])
-            
-            # Combine classes
-            for cls in doc.get("classes", []):
-                if cls["name"] not in seen_classes:
-                    combined["classes"].append(cls)
-                    seen_classes.add(cls["name"])
-            
-            # Combine variables and constants
-            for var in doc.get("variables", []):
-                if var["name"] not in seen_vars:
-                    combined["variables"].append(var)
-                    seen_vars.add(var["name"])
-                    
-            for const in doc.get("constants", []):
-                if const["name"] not in seen_vars:
-                    combined["constants"].append(const)
-                    seen_vars.add(const["name"])
-            
-            # Combine imports
-            combined["imports"].extend(
-                imp for imp in doc.get("imports", [])
-                if imp not in combined["imports"]
-            )
-            
-            # Combine warnings
-            combined["warnings"].extend(result.warnings)
-        
-        # Generate overall summary
-        combined["summary"] = self._generate_summary(combined)
-        
-        return combined
+        file_paths: List[str],
+        priority: str
+    ) -> List[str]:
+        """Prioritizes files based on various factors."""
+        if priority == "low":
+            return file_paths
 
-    def _generate_summary(self, documentation: Dict[str, Any]) -> str:
-        """Generates an overall summary of the documentation."""
-        summary_parts = []
-        
-        # Add basic statistics
-        summary_parts.append(f"""Code Overview:
-- {len(documentation['functions'])} functions
-- {len(documentation['classes'])} classes
-- {len(documentation['variables'])} variables
-- {len(documentation['constants'])} constants
-""")
-        
-        # Add metrics summary if available
-        metrics = documentation.get("metrics", {})
-        if metrics:
-            summary_parts.append(f"""
-Code Metrics:
-- Maintainability Index: {metrics.get('maintainability_index', 'N/A')}
-- Cyclomatic Complexity: {metrics.get('complexity', 'N/A')}
-- Total Lines: {metrics.get('loc', {}).get('total', 'N/A')}
-""")
-        
-        # Add warnings if any
-        if documentation["warnings"]:
-            summary_parts.append("\nWarnings:")
-            for warning in documentation["warnings"]:
-                summary_parts.append(f"- {warning}")
-        
-        return "\n".join(summary_parts)
-
-    def _get_language(self, file_path: str) -> Optional[str]:
-        """Determines the programming language from file extension."""
-        ext = Path(file_path).suffix.lower()
-        language_map = {
-            ".py": "python",
-            ".js": "javascript",
-            ".ts": "typescript",
-            ".jsx": "javascript",
-            ".tsx": "typescript",
-            ".java": "java",
-            ".cpp": "cpp",
-            ".hpp": "cpp",
-            ".h": "cpp",
-            ".c": "c",
-            ".go": "go",
-            ".rb": "ruby",
-            ".php": "php",
-            ".cs": "csharp",
-            ".swift": "swift",
-            ".kt": "kotlin",
-            ".rs": "rust",
-            ".html": "html",
-            ".css": "css",
-            ".scss": "scss",
-            ".sql": "sql",
-            ".sh": "shell",
-            ".yaml": "yaml",
-            ".yml": "yaml",
-            ".json": "json",
-            ".md": "markdown",
-            ".xml": "xml"
-        }
-        return language_map.get(ext)
-
-    async def cleanup(self):
-        """Cleanup resources."""
-        self.thread_pool.shutdown(wait=True)
-        await self.context_manager.clear_context()
-        logger.info("Cleanup completed")
-
-    def _split_large_chunk(self, chunk: CodeChunk) -> List[CodeChunk]:
-        """
-        Splits a large chunk into smaller ones based on token limits.
-        
-        Args:
-            chunk: Large code chunk to split
-            
-        Returns:
-            List[CodeChunk]: List of smaller chunks
-        """
         try:
-            # Get possible split points
-            split_points = chunk.get_possible_split_points()
-            if not split_points:
-                logger.warning(f"No valid split points found for chunk {chunk.chunk_id}")
-                return [chunk]
+            # Calculate file scores
+            file_scores = []
+            for file_path in file_paths:
+                score = 0
 
-            sub_chunks = []
-            current_start = chunk.start_line
-            
-            for split_point in split_points:
-                # Check if splitting here would create valid-sized chunks
-                first_part = "\n".join(
-                    chunk.chunk_content.splitlines()[:split_point - current_start]
-                )
-                
-                if TokenManager.count_tokens(first_part).token_count <= 4096:
-                    try:
-                        new_chunks = chunk.split(split_point)
-                        sub_chunks.extend(new_chunks)
-                        current_start = split_point
-                    except ValueError as e:
-                        logger.warning(f"Failed to split at point {split_point}: {e}")
-                        continue
+                # Check file size
+                size = Path(file_path).stat().st_size
+                score += min(size / 1024, 100)  # Size score (max 100)
 
-            return sub_chunks if sub_chunks else [chunk]
+                # Check modification time
+                mtime = Path(file_path).stat().st_mtime
+                age_hours = (
+                    datetime.now().timestamp() - mtime
+                ) / 3600
+                score += max(0, 100 - age_hours)  # Age score
+
+                # Add file type priority
+                ext = Path(file_path).suffix.lower()
+                type_scores = {
+                    '.py': 100,
+                    '.js': 90,
+                    '.ts': 90,
+                    '.java': 85,
+                    '.cpp': 85,
+                    '.h': 80
+                }
+                score += type_scores.get(ext, 50)
+
+                file_scores.append((score, file_path))
+
+            # Sort by score (descending for high priority)
+            file_scores.sort(reverse=priority == "high")
+            return [f[1] for f in file_scores]
 
         except Exception as e:
-            logger.error(f"Error splitting chunk {chunk.chunk_id}: {e}")
-            return [chunk]
+            logger.warning(f"Error in file prioritization: {e}")
+            return file_paths
 
-    async def get_processing_status(self) -> Dict[str, Any]:
-        """
-        Gets current processing status and metrics.
-        
-        Returns:
-            Dict[str, Any]: Current status and metrics
-        """
+    def _update_task_progress(
+        self,
+        task_id: str,
+        progress: float
+    ) -> None:
+        """Updates task progress."""
+        self._task_progress[task_id] = progress
+        if progress >= 100:
+            self._task_status[task_id] = "completed"
+        else:
+            self._task_status[task_id] = "in_progress"
+
+    async def _send_progress_callback(
+        self,
+        callback_url: str,
+        progress: float,
+        processed: int,
+        total: int
+    ) -> None:
+        """Sends progress callback to specified URL."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    callback_url,
+                    json={
+                        "progress": progress,
+                        "processed_files": processed,
+                        "total_files": total,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+        except Exception as e:
+            logger.warning(f"Error sending progress callback: {e}")
+
+    async def get_task_status(
+        self,
+        task_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Gets status of a specific task."""
+        if task_id not in self._task_status:
+            return None
+
         return {
-            "metrics": self.metrics.get_summary(),
-            "context_manager": {
-                "metrics": await self.context_manager.get_metrics(),
-                "cache_status": self._get_cache_status()
-            },
-            "provider_status": await self._check_provider_status()
+            "task_id": task_id,
+            "status": self._task_status[task_id],
+            "progress": self._task_progress.get(task_id, 0.0)
         }
 
-    def _get_cache_status(self) -> Dict[str, Any]:
-        """Gets cache status information."""
-        if not self._cache_dir:
-            return {"enabled": False}
-            
+    async def cancel_task(self, task_id: str) -> None:
+        """Cancels a running task."""
+        if task_id in self._active_tasks:
+            tasks = self._active_tasks[task_id]
+            for task in tasks.keys():
+                task.cancel()
+            self._task_status[task_id] = "cancelled"
+            self._task_progress[task_id] = 100.0
+            del self._active_tasks[task_id]
+            logger.info(f"Task {task_id} has been cancelled.")
+        else:
+            logger.warning(f"Task {task_id} not found or already completed.")
+
+    async def cleanup(self) -> None:
+        """Cleans up resources."""
         try:
-            cache_size = sum(
-                f.stat().st_size
-                for f in Path(self._cache_dir).glob('**/*')
-                if f.is_file()
-            )
-            
-            return {
-                "enabled": True,
-                "size_bytes": cache_size,
-                "size_mb": cache_size / (1024 * 1024),
-                "file_count": len(list(Path(self._cache_dir).glob('**/*')))
-            }
+            # Cancel active tasks
+            for task_dict in self._active_tasks.values():
+                for task in task_dict.keys():
+                    task.cancel()
+
+            # Cleanup thread pool
+            self.thread_pool.shutdown(wait=True)
+
+            # Clear context manager
+            await self.context_manager.clear_context()
+
+            # Clear task tracking
+            self._active_tasks.clear()
+            self._task_progress.clear()
+            self._task_status.clear()
+
+            logger.info("Cleanup completed successfully")
+
         except Exception as e:
-            logger.error(f"Error getting cache status: {e}")
-            return {"enabled": True, "error": str(e)}
-
-    async def _check_provider_status(self) -> Dict[str, Any]:
-        """Checks AI provider status."""
-        try:
-            if self.provider == "azure":
-                # Simple test call to Azure
-                test_prompt = [{"role": "user", "content": "test"}]
-                response = await self.client.generate_documentation(test_prompt)
-                return {
-                    "provider": "azure",
-                    "status": "available" if response else "error",
-                    "api_calls": self.metrics.api_calls,
-                    "error_rate": (
-                        self.metrics.api_errors / self.metrics.api_calls * 100
-                        if self.metrics.api_calls > 0
-                        else 0
-                    )
-                }
-            else:  # gemini
-                # Similar test for Gemini
-                test_prompt = [{"role": "user", "content": "test"}]
-                response = await self.client.generate_documentation(test_prompt)
-                return {
-                    "provider": "gemini",
-                    "status": "available" if response else "error",
-                    "api_calls": self.metrics.api_calls,
-                    "error_rate": (
-                        self.metrics.api_errors / self.metrics.api_calls * 100
-                        if self.metrics.api_calls > 0
-                        else 0
-                    )
-                }
-        except Exception as e:
-            return {
-                "provider": self.provider,
-                "status": "error",
-                "error": str(e)
-            }
-
-    async def optimize_performance(self):
-        """Optimizes processing performance based on metrics."""
-        metrics = self.metrics.get_summary()
-        
-        # Adjust concurrency based on error rate
-        if metrics["api"]["error_rate"] > 10:  # More than 10% errors
-            self.max_concurrency = max(1, self.max_concurrency - 1)
-            self.api_semaphore = asyncio.Semaphore(self.max_concurrency)
-            logger.info(f"Reduced concurrency to {self.max_concurrency}")
-            
-        # Adjust cache size based on hit rate
-        if metrics["cache"]["hit_rate"] < 50:  # Less than 50% cache hits
-            await self.context_manager.optimize_cache()
-            logger.info("Optimized cache")
-            
-        # Log optimization results
-        logger.info(
-            f"Performance optimization completed. "
-            f"New concurrency: {self.max_concurrency}"
-        )
-
-class DocumentationRequest(BaseModel):
-    """API request model for documentation generation."""
-    file_paths: List[str]
-    skip_types: Optional[List[str]] = []
-    project_info: Optional[str] = ""
-    style_guidelines: Optional[str] = ""
-    safe_mode: Optional[bool] = False
-
-class DocumentationResponse(BaseModel):
-    """API response model for documentation generation."""
-    task_id: str
-    status: str
-    progress: float
-    results: Optional[Dict[str, Any]] = None
+            logger.error(f"Error during cleanup: {e}")
 
 # FastAPI app setup
 app = FastAPI(title="Documentation Generator API")
@@ -967,39 +827,84 @@ async def generate_documentation(
     background_tasks: BackgroundTasks
 ) -> DocumentationResponse:
     """API endpoint to generate documentation."""
-    manager = DocumentationProcessManager(
-        repo_root=os.getenv("REPO_ROOT"),
-        output_dir=os.getenv("OUTPUT_DIR"),
-        provider=os.getenv("AI_PROVIDER", "azure"),
-        azure_config={
-            "api_key": os.getenv("AZURE_API_KEY"),
-            "endpoint": os.getenv("AZURE_ENDPOINT"),
-            "deployment": os.getenv("AZURE_DEPLOYMENT")
-        }
-    )
-    
-    task_id = str(uuid.uuid4())
-    background_tasks.add_task(
-        manager.process_files,
-        file_paths=request.file_paths,
-        skip_types=set(request.skip_types),
-        project_info=request.project_info,
-        style_guidelines=request.style_guidelines,
-        safe_mode=request.safe_mode
-    )
-    
-    return DocumentationResponse(
-        task_id=task_id,
-        status="started",
-        progress=0.0
-    )
+    try:
+        # Generate a unique task ID
+        task_id = str(uuid.uuid4())
 
-@app.get("/api/documentation/status/{task_id}")
+        # Load provider configurations
+        provider_configs = {
+            name: ProviderConfig(**config)
+            for name, config in load_provider_configs().items()
+        }
+
+        manager = DocumentationProcessManager(
+            repo_root=os.getenv("REPO_ROOT"),
+            output_dir=os.getenv("OUTPUT_DIR"),
+            provider_configs=provider_configs,
+            max_concurrency=request.max_concurrency or 5,
+            cache_dir=os.getenv("CACHE_DIR")
+        )
+
+        # Start processing task
+        background_tasks.add_task(
+            manager.process_files,
+            request=request,
+            task_id=task_id  # Pass task_id to process_files
+        )
+
+        return DocumentationResponse(
+            task_id=task_id,
+            status="started",
+            progress=0.0,
+            estimated_completion=calculate_estimated_completion(request)
+        )
+
+    except Exception as e:
+        logger.error(f"Error in generate_documentation: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Documentation generation failed: {str(e)}"
+        )
+
+@app.get(
+    "/api/documentation/status/{task_id}",
+    response_model=DocumentationResponse
+)
 async def get_status(task_id: str) -> Dict[str, Any]:
     """API endpoint to get documentation generation status."""
-    # Implementation depends on how you want to track tasks
-    pass
+    try:
+        # Get manager instance
+        manager = get_manager_instance()
+
+        status = await manager.get_task_status(task_id)
+        if not status:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Task {task_id} not found"
+            )
+
+        return status
+
+    except Exception as e:
+        logger.error(f"Error getting status: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Status check failed: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # Setup logging
+    setup_logging(
+        log_file=os.getenv("LOG_FILE"),
+        log_level=os.getenv("LOG_LEVEL", "INFO")
+    )
+
+    # Start API server
+    uvicorn.run(
+        app,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=bool(os.getenv("DEBUG", False))
+    )

@@ -1,290 +1,579 @@
 """
 write_documentation_report.py
 
-This module provides functions for generating documentation reports in both JSON
-and Markdown formats. It is thread-safe for concurrent write operations, handles
-file I/O exceptions gracefully, and uses f-strings for string formatting.
+Enhanced documentation report generation with template support, robust error handling,
+and improved Markdown generation. Provides comprehensive documentation formats with
+metrics, badges, and formatting utilities.
 """
 
-import aiofiles
 import re
 import json
-import os
 import logging
-import sys
-from typing import Optional, Dict, Any, List, Union, cast
-from pathlib import Path
 import asyncio
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Union, Type
+from dataclasses import dataclass
+from datetime import datetime
+from jinja2 import Environment, PackageLoader, select_autoescape, Template
+import aiofiles
+import aiofiles.os
+from functools import lru_cache
+
 from utils import (
+    FileHandler,
     DEFAULT_COMPLEXITY_THRESHOLDS,
     DEFAULT_HALSTEAD_THRESHOLDS,
     DEFAULT_MAINTAINABILITY_THRESHOLDS,
+    TokenManager,
+    sanitize_filename
 )
-from token_utils import TokenManager
-from code_chunk import CodeChunk
-from context_manager import HierarchicalContextManager
 
 logger = logging.getLogger(__name__)
 
-# Create a lock for file writing
+# Global write lock for thread safety
 write_lock = asyncio.Lock()
 
+class DocumentationError(Exception):
+    """Base exception for documentation-related errors."""
+    pass
 
-def generate_badge(metric_name: str, value: Union[int, float], thresholds: Dict[str, int], logo: str = None) -> str:
-    """Generates a Markdown badge for a given metric."""
-    low, medium, high = thresholds["low"], thresholds["medium"], thresholds["high"]
-    color = "green" if value <= low else "yellow" if value <= medium else "red"
-    badge_label = metric_name.replace("_", " ").title()
-    logo_part = f"&logo={logo}" if logo else ""
-    return f"![{badge_label}](https://img.shields.io/badge/{badge_label}-{value:.2f}-{color}?style=flat-square{logo_part})"
+class TemplateError(DocumentationError):
+    """Raised when template processing fails."""
+    pass
 
+class FileWriteError(DocumentationError):
+    """Raised when file writing fails."""
+    pass
 
-def generate_all_badges(metrics: Dict[str, Any]) -> str:
-    """Generates badges for all metrics."""
-    badges = []
+@dataclass
+class BadgeConfig:
+    """Configuration for badge generation."""
+    metric_name: str
+    value: Union[int, float]
+    thresholds: Dict[str, int]
+    logo: Optional[str] = None
+    style: str = "flat-square"
+    label_color: Optional[str] = None
+    
+    def get_color(self) -> str:
+        """Determines badge color based on thresholds."""
+        low, medium, high = (
+            self.thresholds["low"],
+            self.thresholds["medium"],
+            self.thresholds["high"]
+        )
+        
+        if self.value <= low:
+            return "success"
+        elif self.value <= medium:
+            return "yellow"
+        else:
+            return "critical"
 
-    if complexity := metrics.get("complexity"):
-        badges.append(generate_badge("Complexity", complexity, DEFAULT_COMPLEXITY_THRESHOLDS, logo="codeClimate"))
-
-    if halstead := metrics.get("halstead"):
-        badges.append(generate_badge("Halstead Volume", halstead["volume"], DEFAULT_HALSTEAD_THRESHOLDS["volume"], logo="stackOverflow"))
-        badges.append(generate_badge("Halstead Difficulty", halstead["difficulty"], DEFAULT_HALSTEAD_THRESHOLDS["difficulty"], logo="codewars"))
-        badges.append(generate_badge("Halstead Effort", halstead["effort"], DEFAULT_HALSTEAD_THRESHOLDS["effort"], logo="atlassian"))
-
-    if mi := metrics.get("maintainability_index"):
-        badges.append(generate_badge("Maintainability Index", mi, DEFAULT_MAINTAINABILITY_THRESHOLDS, logo="codeclimate"))
-
-    return " ".join(badges)
-
-
-def format_table(headers: List[str], rows: List[List[Any]]) -> str:
-    """Formats data into a Markdown table."""
-    headers = [sanitize_text(str(header)) for header in headers]
-    table = f"| {' | '.join(headers)} |\n"
-    table += f"| {' | '.join(['---'] * len(headers))} |\n"
-    for row in rows:
-        sanitized_row = [sanitize_text(str(cell)) for cell in row]
-        table += f"| {' | '.join(sanitized_row)} |\n"
-    return table
-
-
-def truncate_description(description: str, max_length: int = 100) -> str:
-    """Truncates a description to a maximum length."""
-    return f"{description[:max_length]}..." if len(description) > max_length else description
-
-
-def sanitize_text(text: str) -> str:
-    """Sanitizes text for Markdown."""
-    escaped_text = re.escape(text)
-    return escaped_text.replace('\n', ' ').replace('\r', '').strip()
-
-
-def generate_table_of_contents(content: str) -> str:
-    """Generates a table of contents from Markdown headers."""
-    headers = re.findall(r"^(#{1,6})\s+(.*)", content, re.MULTILINE)
-    toc = []
-    for header in headers:
-        level = len(header[0])
-        title = header[1]
-        link = title.lower().replace(" ", "-").replace(".", "").replace(",", "")
-        toc.append(f"{'  ' * (level - 1)}- [{title}](#{link})")
-    return "\n".join(toc)
-
-
-def format_methods(methods: List[Dict[str, Any]]) -> str:
-    """Formats method information into a Markdown table."""
-    headers = ["Method", "Description", "Arguments", "Complexity"]
-    rows = []
-    for method in methods:
-        name = method.get("name", "unknown")
-        doc = truncate_description(method.get("docstring", ""))
-        args = ", ".join(method.get("args", []))
-        complexity = method.get("complexity", "N/A")
-        rows.append([name, doc, args, complexity])
-    return format_table(headers, rows)
-
-
-def format_classes(classes: List[Dict[str, Any]]) -> str:
-    """Formats class information into a Markdown table."""
-    headers = ["Class", "Description", "Methods"]
-    rows = []
-    for cls in classes:
-        name = cls.get("name", "unknown")
-        doc = truncate_description(cls.get("docstring", ""))
-        methods = format_methods(cls.get("methods", []))
-        rows.append([name, doc, methods])
-    return format_table(headers, rows)
-
-
-def format_functions(functions: List[Dict[str, Any]]) -> str:
-    """Formats function information into a Markdown table."""
-    headers = ["Function", "Description", "Arguments", "Complexity"]
-    rows = []
-    for func in functions:
-        name = func.get("name", "unknown")
-        doc = truncate_description(func.get("docstring", ""))
-        args = ", ".join(func.get("args", []))
-        complexity = func.get("complexity", "N/A")
-        rows.append([name, doc, args, complexity])
-    return format_table(headers, rows)
-
-
-def generate_summary(documentation: Dict[str, Any]) -> str:
-    """Generates a summary with Markdown lists for variables and constants."""
-    summary = []
-
-    variables = documentation.get("variables", [])
-    if variables:
-        summary.append("## Variables")
-        for var in variables:
-            name = var.get("name", "unknown")
-            desc = truncate_description(var.get("description", ""))
-            summary.append(f"- **{name}**: {desc}")
-
-    constants = documentation.get("constants", [])
-    if constants:
-        summary.append("## Constants")
-        for const in constants:
-            name = const.get("name", "unknown")
-            desc = truncate_description(const.get("description", ""))
-            summary.append(f"- **{name}**: {desc}")
-
-    return "\n".join(summary)
-
-
-def calculate_prompt_tokens(base_info: str, context: str, chunk_content: str, schema: str) -> int:
-    """Calculates total tokens needed for the prompt using TokenManager."""
-    total = 0
-    for text in [base_info, context, chunk_content, schema]:
-        token_result = TokenManager.count_tokens(text)
-        total += token_result.token_count
-    return total
-
-
-# Helper functions (these would also be included in the file)
-def truncate_description(description: str, max_length: int = 100) -> str:
-    """Truncates a description to a maximum length."""
-    return f"{description[:max_length]}..." if len(description) > max_length else description
-
-
-def format_table(headers: List[str], rows: List[List[Any]]) -> str:
-    """Formats data into a Markdown table."""
-    headers = [sanitize_text(str(header)) for header in headers]
-    table = f"| {' | '.join(headers)} |\n"
-    table += f"| {' | '.join(['---'] * len(headers))} |\n"
-    for row in rows:
-        sanitized_row = [sanitize_text(str(cell)) for cell in row]
-        table += f"| {' | '.join(sanitized_row)} |\n"
-    return table
-
-
-def sanitize_text(text: str) -> str:
-    """Sanitizes text for Markdown."""
-    escaped_text = re.escape(text)
-    return escaped_text.replace('\n', ' ').replace('\r', '').strip()
-
-
-def generate_documentation_prompt(
-    chunk: CodeChunk,
-    context_manager: HierarchicalContextManager,
-    project_info: str,
-    style_guidelines: str,
-    function_schema: Dict[str, Any],
-    max_total_tokens: int = 4096,
-    max_completion_tokens: int = 1024
-) -> List[Dict[str, str]]:
-    """Enhanced prompt generation for comprehensive documentation with optimized token management."""
-
-    base_info = f"""
-Project Info:
-{project_info}
-
-Style Guidelines:
-{style_guidelines}
-"""
-
-    detailed_instructions = (
-        "Please generate comprehensive documentation with the following sections:\n"
-        "- **Summary**: A detailed summary of the file or module.\n"
-        "- **Changelog**: Include a list of recent changes if available.\n"
-        "- **Functions**: For each function, provide the name, docstring, arguments, "
-        "whether it's asynchronous, complexity, and Halstead metrics (volume, difficulty, and effort).\n"
-        "- **Classes**: For each class, provide the name, docstring, and details of each method, "
-        "including arguments, whether it's asynchronous, return type, complexity, and Halstead metrics.\n"
-        "- **Variables and Constants**: Document each variable and constant with its name, type, and description.\n"
-        "- **Metrics**: Include maintainability index and any other relevant code quality metrics.\n"
+class BadgeGenerator:
+    """Enhanced badge generation with caching and templates."""
+    
+    _badge_template = (
+        "![{label}](https://img.shields.io/badge/"
+        "{encoded_label}-{value}-{color}"
+        "?style={style}{logo_part}{label_color_part})"
     )
+    
+    @classmethod
+    @lru_cache(maxsize=128)
+    def generate_badge(cls, config: BadgeConfig) -> str:
+        """
+        Generates a Markdown badge with caching.
+        
+        Args:
+            config: Badge configuration
+            
+        Returns:
+            str: Markdown badge string
+        """
+        try:
+            label = config.metric_name.replace("_", " ").title()
+            encoded_label = label.replace(" ", "%20")
+            color = config.get_color()
+            
+            # Format value based on type
+            if isinstance(config.value, float):
+                value = f"{config.value:.2f}"
+            else:
+                value = str(config.value)
+            
+            # Add optional components
+            logo_part = f"&logo={config.logo}" if config.logo else ""
+            label_color_part = (
+                f"&labelColor={config.label_color}"
+                if config.label_color
+                else ""
+            )
+            
+            return cls._badge_template.format(
+                label=label,
+                encoded_label=encoded_label,
+                value=value,
+                color=color,
+                style=config.style,
+                logo_part=logo_part,
+                label_color_part=label_color_part
+            )
+            
+        except Exception as e:
+            logger.error(f"Error generating badge: {e}")
+            return ""
+    
+    @classmethod
+    def generate_all_badges(cls, metrics: Dict[str, Any]) -> str:
+        """
+        Generates all relevant badges for metrics.
+        
+        Args:
+            metrics: Dictionary of metrics
+            
+        Returns:
+            str: Combined badge string
+        """
+        badges = []
+        
+        try:
+            # Complexity badge
+            if complexity := metrics.get("complexity"):
+                badges.append(cls.generate_badge(BadgeConfig(
+                    metric_name="Complexity",
+                    value=complexity,
+                    thresholds=DEFAULT_COMPLEXITY_THRESHOLDS,
+                    logo="codeClimate"
+                )))
+            
+            # Halstead metrics badges
+            if halstead := metrics.get("halstead"):
+                halstead_configs = [
+                    BadgeConfig(
+                        metric_name="Volume",
+                        value=halstead["volume"],
+                        thresholds=DEFAULT_HALSTEAD_THRESHOLDS["volume"],
+                        logo="stackOverflow"
+                    ),
+                    BadgeConfig(
+                        metric_name="Difficulty",
+                        value=halstead["difficulty"],
+                        thresholds=DEFAULT_HALSTEAD_THRESHOLDS["difficulty"],
+                        logo="codewars"
+                    ),
+                    BadgeConfig(
+                        metric_name="Effort",
+                        value=halstead["effort"],
+                        thresholds=DEFAULT_HALSTEAD_THRESHOLDS["effort"],
+                        logo="atlassian"
+                    )
+                ]
+                badges.extend(
+                    cls.generate_badge(config)
+                    for config in halstead_configs
+                )
+            
+            # Maintainability badge
+            if mi := metrics.get("maintainability_index"):
+                badges.append(cls.generate_badge(BadgeConfig(
+                    metric_name="Maintainability",
+                    value=mi,
+                    thresholds=DEFAULT_MAINTAINABILITY_THRESHOLDS,
+                    logo="codeclimate"
+                )))
+            
+            # Test coverage badge if available
+            if coverage := metrics.get("test_coverage", {}).get("line_rate"):
+                badges.append(cls.generate_badge(BadgeConfig(
+                    metric_name="Coverage",
+                    value=coverage,
+                    thresholds={"low": 80, "medium": 60, "high": 0},
+                    logo="testCoverage"
+                )))
+            
+            return " ".join(badges)
+            
+        except Exception as e:
+            logger.error(f"Error generating badges: {e}")
+            return ""
 
-    schema_str = json.dumps(function_schema, indent=2)
-
-    fixed_tokens = calculate_prompt_tokens(
-        base_info=base_info,
-        context="",
-        chunk_content=chunk.chunk_content,
-        schema=schema_str
-    )
-
-    available_context_tokens = max_total_tokens - fixed_tokens - max_completion_tokens
-    if available_context_tokens <= 0:
-        logger.warning(f"No tokens available for context in chunk {chunk.chunk_id}")
-        available_context_tokens = 0
-
-    context_chunks = []
-    if chunk.function_name:
-        context_chunks = context_manager.get_context_for_function(
-            module_path=chunk.file_path,
-            function_name=chunk.function_name,
-            language=chunk.language,
-            max_tokens=available_context_tokens
+class MarkdownFormatter:
+    """Enhanced Markdown formatting with template support."""
+    
+    def __init__(self):
+        self.env = Environment(
+            loader=PackageLoader('documentation', 'templates'),
+            autoescape=select_autoescape(['html', 'xml']),
+            trim_blocks=True,
+            lstrip_blocks=True
         )
-    elif chunk.class_name:
-        context_chunks = context_manager.get_context_for_class(
-            module_path=chunk.file_path,
-            class_name=chunk.class_name,
-            language=chunk.language,
-            max_tokens=available_context_tokens
+        
+        # Register custom filters
+        self.env.filters['truncate_description'] = self.truncate_description
+        self.env.filters['sanitize_text'] = self.sanitize_text
+    
+    @staticmethod
+    def truncate_description(
+        description: str,
+        max_length: int = 100,
+        ellipsis: str = "..."
+    ) -> str:
+        """
+        Truncates description with word boundary awareness.
+        
+        Args:
+            description: Text to truncate
+            max_length: Maximum length
+            ellipsis: Ellipsis string
+            
+        Returns:
+            str: Truncated description
+        """
+        if not description or len(description) <= max_length:
+            return description
+        
+        truncated = description[:max_length]
+        # Find last word boundary
+        last_space = truncated.rfind(" ")
+        if last_space > 0:
+            truncated = truncated[:last_space]
+        
+        return truncated + ellipsis
+    
+    @staticmethod
+    def sanitize_text(text: str) -> str:
+        """
+        Sanitizes text for Markdown with improved character handling.
+        
+        Args:
+            text: Text to sanitize
+            
+        Returns:
+            str: Sanitized text
+        """
+        # Escape Markdown special characters
+        special_chars = r'[`*_{}[\]()#+\-.!|]'
+        text = re.sub(
+            special_chars,
+            lambda m: '\\' + m.group(0),
+            str(text)
         )
-    else:
-        context_chunks = context_manager.get_context_for_module(
-            module_path=chunk.file_path,
-            language=chunk.language,
-            max_tokens=available_context_tokens
-        )
-
-    context = "Related code and documentation:\n\n"
-    current_tokens = 0
-    for ctx_chunk in context_chunks:
-        if ctx_chunk.chunk_id == chunk.chunk_id:
-            continue
-
-        context_addition = f"""
-# From {ctx_chunk.get_context_string()}:
-{ctx_chunk.chunk_content}
-"""
-        doc = context_manager.get_documentation_for_chunk(ctx_chunk.chunk_id)
-        if doc:
-            context_addition += f"""
-Existing documentation:
-{json.dumps(doc, indent=2)}
-"""
-
-        addition_tokens = len(TokenManager.get_encoder().encode(context_addition))
-        if current_tokens + addition_tokens > available_context_tokens:
-            break
-
-        context += context_addition
-        current_tokens += addition_tokens
-
-    prompt_messages = [
-        {"role": "system", "content": base_info},
-        {"role": "user", "content": detailed_instructions},
-        {"role": "assistant", "content": context},
-        {"role": "user", "content": chunk.chunk_content},
-        {"role": "system", "content": f"Schema:\n{schema_str}"}
-    ]
-
-    return prompt_messages
-
+        
+        # Replace newlines and returns
+        text = text.replace('\n', ' ').replace('\r', '')
+        
+        # Normalize whitespace
+        return ' '.join(text.split())
+    
+    def format_table(
+        self,
+        headers: List[str],
+        rows: List[List[Any]],
+        alignment: Optional[List[str]] = None
+    ) -> str:
+        """
+        Formats data into a Markdown table with alignment support.
+        
+        Args:
+            headers: Column headers
+            rows: Table rows
+            alignment: Column alignments ('left', 'center', 'right')
+            
+        Returns:
+            str: Formatted Markdown table
+        """
+        if not headers or not rows:
+            return ""
+            
+        try:
+            # Sanitize headers
+            headers = [self.sanitize_text(str(header)) for header in headers]
+            
+            # Set default alignment if not provided
+            if not alignment:
+                alignment = ['left'] * len(headers)
+            
+            # Create alignment string
+            align_map = {
+                'left': ':---',
+                'center': ':---:',
+                'right': '---:'
+            }
+            separators = [
+                align_map.get(align, ':---')
+                for align in alignment
+            ]
+            
+            # Format headers and separator
+            table_lines = [
+                f"| {' | '.join(headers)} |",
+                f"| {' | '.join(separators)} |"
+            ]
+            
+            # Format rows
+            for row in rows:
+                # Ensure row has correct number of columns
+                row = (row + [''] * len(headers))[:len(headers)]
+                sanitized_row = [
+                    self.sanitize_text(str(cell))
+                    for cell in row
+                ]
+                table_lines.append(
+                    f"| {' | '.join(sanitized_row)} |"
+                )
+            
+            return '\n'.join(table_lines)
+            
+        except Exception as e:
+            logger.error(f"Error formatting table: {e}")
+            return ""
+class DocumentationGenerator:
+    """Enhanced documentation generation with template support."""
+    
+    def __init__(self):
+        self.formatter = MarkdownFormatter()
+        self.badge_generator = BadgeGenerator()
+        
+        # Load templates
+        self._load_templates()
+    
+    def _load_templates(self):
+        """Loads and validates templates."""
+        try:
+            self.templates = {
+                'main': self.formatter.env.get_template('main.md.j2'),
+                'function': self.formatter.env.get_template('function.md.j2'),
+                'class': self.formatter.env.get_template('class.md.j2'),
+                'metric': self.formatter.env.get_template('metric.md.j2'),
+                'summary': self.formatter.env.get_template('summary.md.j2')
+            }
+        except Exception as e:
+            logger.error(f"Error loading templates: {e}")
+            raise TemplateError(f"Failed to load templates: {e}")
+    
+    async def generate_documentation(
+        self,
+        documentation: Dict[str, Any],
+        language: str,
+        file_path: str,
+        metrics: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Generates comprehensive documentation using templates.
+        
+        Args:
+            documentation: Documentation data
+            language: Programming language
+            file_path: Source file path
+            metrics: Optional additional metrics
+            
+        Returns:
+            str: Generated documentation
+            
+        Raises:
+            DocumentationError: If documentation generation fails
+        """
+        try:
+            # Generate badges
+            badges = self.badge_generator.generate_all_badges(
+                metrics or documentation.get("metrics", {})
+            )
+            
+            # Generate different sections
+            language_info = self._get_language_info(language)
+            functions_doc = await self._generate_functions_section(
+                documentation.get("functions", [])
+            )
+            classes_doc = await self._generate_classes_section(
+                documentation.get("classes", [])
+            )
+            metrics_doc = await self._generate_metrics_section(
+                documentation.get("metrics", {}),
+                metrics or {}
+            )
+            summary = await self._generate_summary_section(
+                documentation,
+                language_info
+            )
+            
+            # Combine everything using the main template
+            content = await self._render_template(
+                self.templates['main'],
+                {
+                    'file_name': Path(file_path).name,
+                    'badges': badges,
+                    'language': language_info,
+                    'summary': summary,
+                    'functions': functions_doc,
+                    'classes': classes_doc,
+                    'metrics': metrics_doc,
+                    'documentation': documentation
+                }
+            )
+            
+            # Generate table of contents
+            toc = self._generate_toc(content)
+            
+            return f"# Table of Contents\n\n{toc}\n\n{content}"
+            
+        except Exception as e:
+            logger.error(f"Error generating documentation: {e}")
+            raise DocumentationError(f"Documentation generation failed: {e}")
+    
+    async def _generate_functions_section(
+        self,
+        functions: List[Dict[str, Any]]
+    ) -> str:
+        """Generates functions documentation using templates."""
+        if not functions:
+            return ""
+        
+        try:
+            function_docs = []
+            for func in functions:
+                doc = await self._render_template(
+                    self.templates['function'],
+                    {'function': func}
+                )
+                function_docs.append(doc)
+            
+            return "\n\n".join(function_docs)
+        except Exception as e:
+            logger.error(f"Error generating functions section: {e}")
+            return ""
+    
+    async def _generate_classes_section(
+        self,
+        classes: List[Dict[str, Any]]
+    ) -> str:
+        """Generates classes documentation using templates."""
+        if not classes:
+            return ""
+        
+        try:
+            class_docs = []
+            for cls in classes:
+                doc = await self._render_template(
+                    self.templates['class'],
+                    {'class': cls}
+                )
+                class_docs.append(doc)
+            
+            return "\n\n".join(class_docs)
+        except Exception as e:
+            logger.error(f"Error generating classes section: {e}")
+            return ""
+    
+    async def _generate_metrics_section(
+        self,
+        doc_metrics: Dict[str, Any],
+        additional_metrics: Dict[str, Any]
+    ) -> str:
+        """Generates metrics documentation using templates."""
+        try:
+            combined_metrics = {**doc_metrics, **additional_metrics}
+            return await self._render_template(
+                self.templates['metric'],
+                {'metrics': combined_metrics}
+            )
+        except Exception as e:
+            logger.error(f"Error generating metrics section: {e}")
+            return ""
+    
+    async def _generate_summary_section(
+        self,
+        documentation: Dict[str, Any],
+        language_info: Dict[str, Any]
+    ) -> str:
+        """Generates summary section using templates."""
+        try:
+            return await self._render_template(
+                self.templates['summary'],
+                {
+                    'documentation': documentation,
+                    'language': language_info
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error generating summary section: {e}")
+            return ""
+    
+    @staticmethod
+    def _get_language_info(language: str) -> Dict[str, Any]:
+        """Gets language-specific information."""
+        from utils import LANGUAGE_MAPPING
+        
+        for ext, info in LANGUAGE_MAPPING.items():
+            if info["name"] == language:
+                return info
+        return {"name": language}
+    
+    async def _render_template(
+        self,
+        template: Template,
+        context: Dict[str, Any]
+    ) -> str:
+        """
+        Renders a template asynchronously.
+        
+        Args:
+            template: Jinja2 template
+            context: Template context
+            
+        Returns:
+            str: Rendered content
+        """
+        try:
+            # Run template rendering in thread pool
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None,
+                template.render,
+                context
+            )
+        except Exception as e:
+            logger.error(f"Template rendering error: {e}")
+            raise TemplateError(f"Failed to render template: {e}")
+    
+    def _generate_toc(self, content: str) -> str:
+        """
+        Generates table of contents from content.
+        
+        Args:
+            content: Markdown content
+            
+        Returns:
+            str: Table of contents
+        """
+        toc_entries = []
+        current_level = 0
+        
+        for line in content.splitlines():
+            if line.startswith('#'):
+                # Count heading level
+                level = 0
+                while line.startswith('#'):
+                    level += 1
+                    line = line[1:]
+                
+                # Extract heading text
+                heading = line.strip()
+                if not heading:
+                    continue
+                
+                # Create anchor
+                anchor = heading.lower()
+                anchor = re.sub(r'[^\w\- ]', '', anchor)
+                anchor = anchor.replace(' ', '-')
+                
+                # Add TOC entry
+                indent = '  ' * (level - 1)
+                toc_entries.append(
+                    f"{indent}- [{heading}](#{anchor})"
+                )
+        
+        return '\n'.join(toc_entries)
 
 async def write_documentation_report(
     documentation: Optional[Dict[str, Any]],
@@ -293,118 +582,75 @@ async def write_documentation_report(
     repo_root: str,
     output_dir: str,
     project_id: str,
+    metrics: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, Any]]:
-    """Writes documentation to JSON and Markdown files with thread safety and exception handling."""
-
+    """
+    Writes documentation to JSON and Markdown files.
+    
+    Args:
+        documentation: Documentation data
+        language: Programming language
+        file_path: Source file path
+        repo_root: Repository root path
+        output_dir: Output directory
+        project_id: Project identifier
+        metrics: Optional additional metrics
+        
+    Returns:
+        Optional[Dict[str, Any]]: Written documentation or None if failed
+    """
     if not documentation:
         logger.warning(f"No documentation to write for '{file_path}'")
         return None
-
+    
     try:
         async with write_lock:
+            # Create output directory
             project_output_dir = Path(output_dir) / project_id
-            project_output_dir.mkdir(parents=True, exist_ok=True)
-
-            relative_path = os.path.relpath(file_path, repo_root)
-            safe_filename = sanitize_filename(os.path.basename(file_path))
+            await aiofiles.os.makedirs(
+                project_output_dir,
+                exist_ok=True
+            )
+            
+            # Prepare paths
+            relative_path = Path(file_path).relative_to(repo_root)
+            safe_filename = sanitize_filename(relative_path.name)
             base_path = project_output_dir / safe_filename
-
+            
+            # Write JSON documentation
             json_path = base_path.with_suffix(".json")
             try:
-                async with aiofiles.open(json_path, "w", encoding="utf-8") as f:
-                    await f.write(json.dumps(documentation, indent=2))
-            except (FileNotFoundError, PermissionError, OSError) as e:
-                logger.error(f"Error writing JSON to {json_path}: {e}", exc_info=True)
-                return None
-
+                async with aiofiles.open(json_path, "w") as f:
+                    await f.write(json.dumps(
+                        documentation,
+                        indent=2,
+                        sort_keys=True
+                    ))
+            except Exception as e:
+                logger.error(f"Error writing JSON to {json_path}: {e}")
+                raise FileWriteError(f"Failed to write JSON: {e}")
+            
+            # Generate and write Markdown if requested
             if documentation.get("generate_markdown", True):
-                markdown_content = await generate_markdown_content(documentation, language, file_path, relative_path)
-                md_path = base_path.with_suffix(".md")
                 try:
-                    async with aiofiles.open(md_path, "w", encoding="utf-8") as f:
+                    generator = DocumentationGenerator()
+                    markdown_content = await generator.generate_documentation(
+                        documentation,
+                        language,
+                        file_path,
+                        metrics
+                    )
+                    
+                    md_path = base_path.with_suffix(".md")
+                    async with aiofiles.open(md_path, "w") as f:
                         await f.write(markdown_content)
-                except (FileNotFoundError, PermissionError, OSError) as e:
-                    logger.error(f"Error writing Markdown to {md_path}: {e}", exc_info=True)
-                    return None
-
-        logger.info(f"Documentation written to {json_path}")
-        return documentation
-
+                except Exception as e:
+                    logger.error(f"Error writing Markdown to {md_path}: {e}")
+                    raise FileWriteError(f"Failed to write Markdown: {e}")
+            
+            logger.info(f"Documentation written to {json_path}")
+            return documentation
+            
     except Exception as e:
-        logger.error(f"Error writing documentation report: {e}", exc_info=True)
-        return None
-
-
-async def generate_markdown_content(
-    documentation: Dict[str, Any],
-    language: str,  # Though not used directly in this function, it might be useful for future extensions
-    file_path: str,
-    relative_path: str  # Though not used directly in this function, it's part of the original signature
-) -> str:
-    """Generates enhanced markdown content with metrics analysis."""
-
-    badges = generate_all_badges(documentation.get("metrics", {}))
-    summary = generate_summary(documentation)
-    functions = format_functions(documentation.get("functions", []))
-    classes = format_classes(documentation.get("classes", []))
-
-    metrics_summary = documentation.get("metrics_summary", {})
-    problematic_files = documentation.get("problematic_files", [])
-
-    metrics_content = f"""
-## Metrics Analysis
-
-### Overall Metrics
-- Maintainability Index: {metrics_summary.get('maintainability_index', 0):.2f}
-- Average Complexity: {metrics_summary.get('average_complexity', 0):.2f}
-- Total Files Analyzed: {metrics_summary.get('processed_files', 0)}
-- Success Rate: {metrics_summary.get('success_rate', 0):.1f}%
-
-### Warnings and Issues
-- Error Count: {metrics_summary.get('error_count', 0)}
-- Warning Count: {metrics_summary.get('warning_count', 0)}
-
-### Problematic Files
-"""
-
-    if problematic_files:
-        metrics_content += "\n".join(
-            f"- {file['file_path']}: {', '.join(issue['type'] for issue in file['issues'])}"
-            for file in problematic_files
-        )
-    else:
-        metrics_content += "No problematic files found."
-
-    content = f"""
-# Documentation for {os.path.basename(file_path)}
-
-{badges}
-
-{summary}
-
-{metrics_content}
-
-## Functions
-{functions}
-
-## Classes
-{classes}
-    """.strip()
-
-    toc = generate_table_of_contents(content)
-    return f"# Table of Contents\n\n{toc}\n\n{content}"
-
-
-def get_metric_status(value: float, thresholds: Dict[str, int]) -> str:
-    """Returns a status indicator based on metric value and thresholds."""
-    if value <= thresholds["low"]:
-        return "Low"
-    elif value <= thresholds["medium"]:
-        return "Medium"
-    else:
-        return "High"
-
-
-def sanitize_filename(filename: str) -> str:
-    """Sanitizes filename by removing invalid characters."""
-    return re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+        logger.error(f"Error writing documentation report: {e}")
+        raise DocumentationError(f"Documentation write failed: {e}")

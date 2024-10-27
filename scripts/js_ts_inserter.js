@@ -8,7 +8,6 @@ const t = require('@babel/types');
 
 function generateJSDoc(description, params = [], returns = '', examples = []) {
     const lines = ['/**', ` * ${description}`];
-
     params.forEach(param => {
         lines.push(` * @param {${param.type || 'any'}} ${param.name} - ${param.description || ''}`);
     });
@@ -37,6 +36,14 @@ function insertJSDoc(code, documentation, language) {
             isTypeScript ? 'typescript' : null,
             'classProperties',
             'decorators-legacy',
+            ['decorators', { decoratorsBeforeExport: true }],
+            'classPrivateProperties',
+            'classPrivateMethods',
+            'exportDefaultFrom',
+            'exportNamespaceFrom',
+            'dynamicImport',
+            'nullishCoalescingOperator',
+            'optionalChaining',
         ].filter(Boolean),
     });
 
