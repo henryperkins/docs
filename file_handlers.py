@@ -30,6 +30,7 @@ from utils import (
     MetricsCalculator,
     write_documentation_report
 )
+from chunk_manager import ChunkManager  # Import the new ChunkManager
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,81 @@ class APIHandler:
         self.provider_metrics = provider_metrics
         self._rate_limit_tokens = {}  # Track rate limits per endpoint
         self._rate_limit_lock = asyncio.Lock()
+
+
+class FileProcessor:
+    """Enhanced file processing with improved error handling and metrics."""
+
+    def __init__(
+        self,
+        context_manager: HierarchicalContextManager,
+        api_handler: APIHandler,
+        provider_config: 'ProviderConfig',
+        provider_metrics: 'ProviderMetrics',
+        repo_path: str
+    ):
+        self.context_manager = context_manager
+        self.api_handler = api_handler
+        self.provider_config = provider_config
+        self.provider_metrics = provider_metrics
+        self.chunk_manager = ChunkManager(
+            max_tokens=provider_config.max_tokens,
+            overlap=provider_config.chunk_overlap,
+            repo_path=repo_path
+        )
+        self.metrics_calculator = MetricsCalculator()
+
+    def _build_prompt(
+        self,
+        context_chunk: List[CodeChunk],
+        project_info: str,
+        style_guidelines: str
+    ) -> List[Dict[str, str]]:
+        """Builds the prompt for the AI model with multi-level context."""
+        main_chunk = context_chunk[0]  # The main chunk being documented
+
+        # 1. Direct Context (Code Chunk)
+        prompt = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": f"Please generate documentation for the following {main_chunk.language} code:\n\n```{main_chunk.language}\n{main_chunk.content}\n```"}
+        ]
+
+        # 2. Dependency Context
+        dependencies = [
+            f"* `{c.function_name}` ({self._get_module_name(c.file_path)}): {self._get_brief_description(c)}"
+            for c in context_chunk[1:] if c.function_name
+        ]
+        if dependencies:
+            prompt.append({"role": "user", "content": f"Dependencies:\n{chr(10).join(dependencies)}"})
+
+        # 3. Extended Context (Module Summary)
+        module_name = self._get_module_name(main_chunk.file_path)
+        if module_name:
+            module_summary = self._get_module_summary(module_name)  # You'll need to implement this
+            prompt.append({"role": "user", "content": f"Module Summary:\n{module_summary}"})
+
+        # Add project info and style guidelines
+        if project_info:
+            prompt.append({"role": "user", "content": f"Project Information:\n{project_info}"})
+        if style_guidelines:
+            prompt.append({"role": "user", "content": f"Style Guidelines:\n{style_guidelines}"})
+
+        return prompt
+
+    def _get_module_name(self, file_path: str) -> Optional[str]:
+        """Extracts the module name from a file path."""
+        # Implement logic to determine module name based on file path
+        pass
+
+    def _get_brief_description(self, chunk: CodeChunk) -> str:
+        """Returns a brief description of a code chunk (e.g., first line of docstring)."""
+        # Implement logic to extract a short description
+        pass
+
+    def _get_module_summary(self, module_name: str) -> str:
+        """Retrieves the summary for a module."""
+        # Implement logic to get the module summary, perhaps from a cache or analysis
+        pass
 
     async def fetch_completion(
         self,
@@ -580,7 +656,7 @@ class ChunkManager:
         analyzer: Optional[ChunkAnalyzer] = None
     ):
         self.config = config
-        self.analyzer = analyzer or ChunkAnalyzer()
+        self.analyzer = analyzer or ChunkAnalyzer()git  
         self.token_manager = TokenManager()
 
     def create_chunks(
