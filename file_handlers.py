@@ -656,7 +656,7 @@ class ChunkManager:
         analyzer: Optional[ChunkAnalyzer] = None
     ):
         self.config = config
-        self.analyzer = analyzer or ChunkAnalyzer()git  
+        self.analyzer = analyzer or ChunkAnalyzer()
         self.token_manager = TokenManager()
 
     def create_chunks(
