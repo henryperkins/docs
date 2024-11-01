@@ -5,14 +5,43 @@ import subprocess
 import argparse
 import logging
 import pathspec
+import json
+import asyncio
+import aiohttp
+from dotenv import load_dotenv
+from radon.complexity import cc_visit
+from tqdm import tqdm
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# OpenAI Configuration
+API_KEY = os.getenv("OPENAI_API_KEY")
+if not API_KEY:
+    logging.error("API key is not set. Please set the OPENAI_API_KEY environment variable.")
+    sys.exit(1)
+
+ENDPOINT = "https://api.openai.com/v1/chat/completions"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {API_KEY}",
+}
 
 def clone_repo(repo_url, clone_dir):
-    logging.debug(f"Cloning repository {repo_url} into {clone_dir}")
-    subprocess.run(['git', 'clone', repo_url, clone_dir], check=True)
-    logging.info(f"Cloned repository from {repo_url} into {clone_dir}")
+    try:
+        if os.path.exists(clone_dir):
+            logging.debug(f"Removing existing directory: {clone_dir}")
+            shutil.rmtree(clone_dir)
+        
+        logging.debug(f"Cloning repository {repo_url} into {clone_dir}")
+        subprocess.run(['git', 'clone', repo_url, clone_dir], check=True)
+        logging.info(f"Cloned repository from {repo_url} into {clone_dir}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to clone repository: {e}")
+        sys.exit(1)
 
 def load_gitignore_patterns(base_dir):
     gitignore_file = os.path.join(base_dir, '.gitignore')
@@ -27,7 +56,6 @@ def load_gitignore_patterns(base_dir):
     else:
         logging.warning(f"No .gitignore file found at {gitignore_file}")
 
-    # Create PathSpec object for .gitignore patterns
     spec = pathspec.PathSpec.from_lines('gitwildmatch', all_patterns)
     logging.info(f"Loaded {len(all_patterns)} ignore patterns from .gitignore.")
     return spec
@@ -35,11 +63,9 @@ def load_gitignore_patterns(base_dir):
 def is_ignored(path, spec, base_dir):
     if spec is None:
         return False
-    # Get the relative path from the base directory
     relative_path = os.path.relpath(path, base_dir)
     relative_path = relative_path.replace(os.path.sep, '/')
     
-    # Debugging the ignore logic
     if spec.match_file(relative_path):
         logging.debug(f"Path ignored by .gitignore: {relative_path}")
         return True
@@ -50,10 +76,9 @@ def get_all_files(directory, spec=None, exclude_dirs=None):
     if exclude_dirs is None:
         exclude_dirs = []
 
-    files_list = []
+    files_list = []  # Initialize files_list as an empty list
     logging.debug(f"Starting file walk in {directory} with exclusions: {exclude_dirs}")
     for root, dirs, files in os.walk(directory, topdown=True):
-        # Exclude specified directories explicitly, such as .git and .github
         dirs[:] = [d for d in dirs if d not in exclude_dirs and not is_ignored(os.path.join(root, d), spec, directory)]
         logging.debug(f"Directories after exclusion in {root}: {dirs}")
 
@@ -66,101 +91,121 @@ def get_all_files(directory, spec=None, exclude_dirs=None):
                 logging.debug(f"Skipping ignored file: {full_path}")
     
     logging.info(f"Retrieved {len(files_list)} files using os.walk.")
-    return files_list
+    return files_list  # Ensure files_list is returned
 
-def write_markdown_by_directory(files_list, output_base_dir, repo_dir):
-    # Group files by directory
-    files_by_directory = {}
-    
-    for filepath in files_list:
-        dir_path = os.path.dirname(filepath)
-        if dir_path not in files_by_directory:
-            files_by_directory[dir_path] = []
-        files_by_directory[dir_path].append(filepath)
+def calculate_complexity(file_content):
+    try:
+        blocks = cc_visit(file_content)
+        complexity_score = sum(block.complexity for block in blocks) / len(blocks) if blocks else 0
+        return complexity_score
+    except Exception as e:
+        logging.error(f"Failed to calculate complexity: {e}")
+        return 0
 
-    # Now write a single markdown file for each directory
-    for dir_path, files in files_by_directory.items():
-        relative_dir = os.path.relpath(dir_path, repo_dir)
-        if relative_dir == '.':
-            relative_dir = 'root'
-
-        # Create a corresponding subdirectory in the output directory
-        output_dir = os.path.join(output_base_dir, relative_dir)
-        os.makedirs(output_dir, exist_ok=True)
-
-        # The output file for the directory's source code
-        output_file_path = os.path.join(output_dir, 'directory.md')
-        
-        logging.debug(f"Writing files from directory {relative_dir} to {output_file_path}")
-        
-        with open(output_file_path, 'w', encoding='utf-8') as md_file:
-            md_file.write(f'# Directory: {relative_dir}\n\n')
-
-            for filepath in files:
-                relative_path = os.path.relpath(filepath, repo_dir)
-                md_file.write(f'## {relative_path}\n\n')
-                
-                # Determine language for syntax highlighting
-                file_extension = os.path.splitext(filepath)[1][1:]
-                language = language_from_extension(file_extension)
-                logging.debug(f"Detected language for {relative_path}: {language}")
-                md_file.write(f'```{language}\n')
-                try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    md_file.write(content)
-                except (UnicodeDecodeError, FileNotFoundError) as e:
-                    logging.error(f"Failed to read file {filepath}: {e}")
-                    content = '[Binary file content not displayed or file not found]'
-                    md_file.write(content)
-                md_file.write('\n```\n\n')
-        logging.info(f"Exported files from directory {relative_dir} to {output_file_path}")
-
-def language_from_extension(extension):
-    language_extensions = {
-        'py': 'python',
-        'js': 'javascript',
-        'java': 'java',
-        'c': 'c',
-        'cpp': 'cpp',
-        'cs': 'csharp',
-        'rb': 'ruby',
-        'php': 'php',
-        'go': 'go',
-        'rs': 'rust',
-        'sh': 'bash',
-        'html': 'html',
-        'css': 'css',
-        'md': 'markdown',
-        'json': 'json',
-        'xml': 'xml',
-        'yml': 'yaml',
-        'yaml': 'yaml',
-        'ts': 'typescript',
-        'kt': 'kotlin',
-        'swift': 'swift',
-        'pl': 'perl',
-        'r': 'r',
-        # Add other extensions and languages as needed
+async def analyze_code(session, file_content):
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Analyze the following code and provide the output in JSON format with the following structure: "
+                    "{\"summary\": \"A brief summary of the code.\", "
+                    "\"changelog\": \"List of changes or updates.\", "
+                    "\"glossary\": \"Definitions of functions, classes, and methods.\", "
+                    "\"complexity_score\": \"A score representing the complexity of the code.\"}"
+                )
+            },
+            {
+                "role": "user",
+                "content": file_content
+            }
+        ],
+        "model": "gpt-4o-2024-08-06",
+        "temperature": 0.2,
+        "max_tokens": 6000
     }
-    language = language_extensions.get(extension.lower(), '')
-    logging.debug(f"Mapped extension .{extension} to language: {language}")
-    return language
 
-def main():
-    parser = argparse.ArgumentParser(description='Export source code from a GitHub repository or local directory to separate Markdown files by directory.')
+    retries = 5
+    for attempt in range(retries):
+        try:
+            async with session.post(ENDPOINT, headers=headers, json=payload) as response:
+                if response.status == 429:
+                    logging.warning("Rate limit hit, retrying...")
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                response.raise_for_status()
+                response_text = await response.json()
+                logging.debug(f"API Response: {response_text}")
+                
+                # Validate JSON
+                try:
+                    analysis_json = json.loads(response_text["choices"][0]["message"]["content"].strip())
+                    return analysis_json
+                except json.JSONDecodeError as e:
+                    logging.error(f"JSON decode error: {e}")
+                    logging.debug(f"Raw response: {response_text}")
+                    return {"error": "Invalid JSON format."}
+        except aiohttp.ClientError as e:
+            logging.error(f"Failed to analyze code: {e}")
+            return {"error": "Analysis failed."}
+    return {"error": "Max retries exceeded."}
+
+async def process_files(files_list, repo_dir, concurrency_limit):
+    results = {}
+    semaphore = asyncio.Semaphore(concurrency_limit)
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for filepath in files_list:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    complexity_score = calculate_complexity(content)
+                    task = asyncio.ensure_future(analyze_with_semaphore(session, content, semaphore))
+                    tasks.append((filepath, task, complexity_score))
+            except Exception as e:
+                logging.error(f"Failed to process file {filepath}: {e}")
+                results[filepath] = {"error": "File processing failed."}
+
+        for filepath, task, complexity_score in tqdm(tasks, desc="Processing files"):
+            analysis = await task
+            analysis["complexity_score"] = complexity_score
+            results[filepath] = analysis
+
+    return results
+
+async def analyze_with_semaphore(session, content, semaphore):
+    async with semaphore:
+        return await analyze_code(session, content)
+
+def write_analysis_to_markdown(results, output_file_path, repo_dir):
+    with open(output_file_path, 'w', encoding='utf-8') as md_file:
+        for filepath, analysis in results.items():
+            relative_path = os.path.relpath(filepath, repo_dir)
+            md_file.write(f"# Analysis for {relative_path}\n\n")
+            md_file.write("## Summary\n")
+            md_file.write(analysis.get("summary", "Not available."))
+            md_file.write("\n\n## Changelog\n")
+            md_file.write(analysis.get("changelog", "Not available."))
+            md_file.write("\n\n## Glossary\n")
+            md_file.write(analysis.get("glossary", "Not available."))
+            md_file.write("\n\n## Complexity Score\n")
+            md_file.write(str(analysis.get("complexity_score", "Not available.")))
+            md_file.write("\n\n---\n\n")
+
+async def main():
+    parser = argparse.ArgumentParser(description='Export source code from a GitHub repository or local directory to a single Markdown file.')
     parser.add_argument('input_path', help='GitHub Repository URL or Local Directory Path')
-    parser.add_argument('output_dir', help='Directory where the Markdown files will be saved')
+    parser.add_argument('output_file', help='File where the Markdown content will be saved')
+    parser.add_argument('--concurrency', type=int, default=5, help='Number of concurrent requests to OpenAI')
     args = parser.parse_args()
 
     input_path = args.input_path
-    output_dir = args.output_dir
+    output_file = args.output_file
+    concurrency_limit = args.concurrency
     cleanup_needed = False
 
-    # Directories to always exclude
     always_exclude_dirs = ['.git', '.github']
 
-    # Determine if input_path is a URL or a local path
     if input_path.startswith('http://') or input_path.startswith('https://'):
         repo_url = input_path
         repo_dir = 'cloned_repo'
@@ -174,20 +219,20 @@ def main():
             sys.exit(1)
         logging.info(f"Using local directory {repo_dir}")
 
-    # Load .gitignore patterns
     spec = load_gitignore_patterns(repo_dir)
 
-    # Get all files, respecting ignore patterns and always excluding certain directories
     files_list = get_all_files(repo_dir, spec, exclude_dirs=always_exclude_dirs)
     logging.info(f"Found {len(files_list)} files after applying ignore patterns and exclusions.")
 
-    # Write each directory's content to its corresponding Markdown file
-    write_markdown_by_directory(files_list, output_dir, repo_dir)
+    results = await process_files(files_list, repo_dir, concurrency_limit)
+    write_analysis_to_markdown(results, output_file, repo_dir)
 
-    # Clean up the cloned repository if needed
     if cleanup_needed:
-        shutil.rmtree(repo_dir)
-        logging.info(f"Cleaned up cloned repository at {repo_dir}")
+        try:
+            shutil.rmtree(repo_dir)
+            logging.info(f"Cleaned up cloned repository at {repo_dir}")
+        except Exception as e:
+            logging.error(f"Failed to clean up cloned repository: {e}")
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
