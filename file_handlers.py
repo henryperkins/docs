@@ -7,11 +7,9 @@ chunk management, and context management for the documentation generation proces
 
 import asyncio
 import logging
-import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 from pathlib import Path
 from datetime import datetime
-from dataclasses import dataclass
 import aiohttp
 
 from utils import (
@@ -27,8 +25,13 @@ from utils import (
     ChunkTooLargeError,
     ChunkingError,
     HierarchicalContextManager,
-    MetricsCalculator,
-    write_documentation_report
+    write_documentation_report,
+    handle_api_error  # New utility function for error handling
+)
+from metrics_combined import (
+    ProviderMetrics,
+    ProcessingMetrics,
+    MetricsCalculator
 )
 from chunk_manager import ChunkManager  # Import the new ChunkManager
 
@@ -50,81 +53,6 @@ class APIHandler:
         self.provider_metrics = provider_metrics
         self._rate_limit_tokens = {}  # Track rate limits per endpoint
         self._rate_limit_lock = asyncio.Lock()
-
-
-class FileProcessor:
-    """Enhanced file processing with improved error handling and metrics."""
-
-    def __init__(
-        self,
-        context_manager: HierarchicalContextManager,
-        api_handler: APIHandler,
-        provider_config: 'ProviderConfig',
-        provider_metrics: 'ProviderMetrics',
-        repo_path: str
-    ):
-        self.context_manager = context_manager
-        self.api_handler = api_handler
-        self.provider_config = provider_config
-        self.provider_metrics = provider_metrics
-        self.chunk_manager = ChunkManager(
-            max_tokens=provider_config.max_tokens,
-            overlap=provider_config.chunk_overlap,
-            repo_path=repo_path
-        )
-        self.metrics_calculator = MetricsCalculator()
-
-    def _build_prompt(
-        self,
-        context_chunk: List[CodeChunk],
-        project_info: str,
-        style_guidelines: str
-    ) -> List[Dict[str, str]]:
-        """Builds the prompt for the AI model with multi-level context."""
-        main_chunk = context_chunk[0]  # The main chunk being documented
-
-        # 1. Direct Context (Code Chunk)
-        prompt = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": f"Please generate documentation for the following {main_chunk.language} code:\n\n```{main_chunk.language}\n{main_chunk.content}\n```"}
-        ]
-
-        # 2. Dependency Context
-        dependencies = [
-            f"* `{c.function_name}` ({self._get_module_name(c.file_path)}): {self._get_brief_description(c)}"
-            for c in context_chunk[1:] if c.function_name
-        ]
-        if dependencies:
-            prompt.append({"role": "user", "content": f"Dependencies:\n{chr(10).join(dependencies)}"})
-
-        # 3. Extended Context (Module Summary)
-        module_name = self._get_module_name(main_chunk.file_path)
-        if module_name:
-            module_summary = self._get_module_summary(module_name)  # You'll need to implement this
-            prompt.append({"role": "user", "content": f"Module Summary:\n{module_summary}"})
-
-        # Add project info and style guidelines
-        if project_info:
-            prompt.append({"role": "user", "content": f"Project Information:\n{project_info}"})
-        if style_guidelines:
-            prompt.append({"role": "user", "content": f"Style Guidelines:\n{style_guidelines}"})
-
-        return prompt
-
-    def _get_module_name(self, file_path: str) -> Optional[str]:
-        """Extracts the module name from a file path."""
-        # Implement logic to determine module name based on file path
-        pass
-
-    def _get_brief_description(self, chunk: CodeChunk) -> str:
-        """Returns a brief description of a code chunk (e.g., first line of docstring)."""
-        # Implement logic to extract a short description
-        pass
-
-    def _get_module_summary(self, module_name: str) -> str:
-        """Retrieves the summary for a module."""
-        # Implement logic to get the module summary, perhaps from a cache or analysis
-        pass
 
     async def fetch_completion(
         self,
@@ -178,34 +106,22 @@ class FileProcessor:
                         processing_time=processing_time
                     )
 
-            except aiohttp.ClientError as e:
-                error_type = "NetworkError"
-                should_retry = True
-                last_error = e
-            except asyncio.TimeoutError:
-                error_type = "TimeoutError"
-                should_retry = True
-                last_error = e
             except Exception as e:
-                error_type = type(e).__name__
-                should_retry = self._should_retry_error(str(e))
+                should_retry = handle_api_error(e, attempt, self.config.max_retries)
                 last_error = e
-
-            # Record error
-            self.provider_metrics.record_error(error_type)
 
             if should_retry and attempt < self.config.max_retries - 1:
                 attempt += 1
                 self.provider_metrics.retry_count += 1
-                delay = self._calculate_retry_delay(attempt, error_type)
+                delay = self._calculate_retry_delay(attempt, str(last_error))
                 logger.warning(
                     f"Retry {attempt}/{self.config.max_retries} "
-                    f"after {delay}s. Error: {error_type}"
+                    f"after {delay}s. Error: {type(last_error).__name__}"
                 )
                 await asyncio.sleep(delay)
                 continue
             else:
-                error_msg = f"API request failed: {error_type}"
+                error_msg = f"API request failed: {type(last_error).__name__}"
                 logger.error(error_msg)
                 break
 
@@ -312,43 +228,6 @@ class FileProcessor:
         usage = response.get('usage', {})
         return usage.get('total_tokens', 0)
 
-    def _should_retry_error(self, error_message: str) -> bool:
-        """Determines if an error should trigger a retry."""
-        retry_patterns = [
-            r"rate limit",
-            r"timeout",
-            r"too many requests",
-            r"server error",
-            r"503",
-            r"429",
-            r"connection",
-            r"network",
-            r"reset by peer"
-        ]
-        return any(
-            re.search(pattern, error_message.lower())
-            for pattern in retry_patterns
-        )
-
-    def _calculate_retry_delay(
-        self,
-        attempt: int,
-        error_type: str
-    ) -> float:
-        """Calculates retry delay with exponential backoff and jitter."""
-        base_delay = self.config.retry_delay
-        max_delay = min(base_delay * (2 ** attempt), 60)  # Cap at 60 seconds
-
-        # Add jitter (±25% of base delay)
-        import random
-        jitter = random.uniform(-0.25, 0.25) * base_delay
-
-        # Increase delay for rate limit errors
-        if "rate limit" in error_type.lower():
-            max_delay *= 1.5
-
-        return max(0.1, min(max_delay + jitter, 60))
-
     async def _wait_for_rate_limit(self, provider: str) -> None:
         """Waits if rate limit is reached."""
         async with self._rate_limit_lock:
@@ -378,6 +257,25 @@ class FileProcessor:
             if reset > 0:
                 reset_time = datetime.fromtimestamp(reset)
                 self._rate_limit_tokens[provider] = (remaining, reset_time)
+
+    def _calculate_retry_delay(
+        self,
+        attempt: int,
+        error_message: str
+    ) -> float:
+        """Calculates retry delay with exponential backoff and jitter."""
+        base_delay = self.config.retry_delay
+        max_delay = min(base_delay * (2 ** attempt), 60)  # Cap at 60 seconds
+
+        # Add jitter (±25% of base delay)
+        import random
+        jitter = random.uniform(-0.25, 0.25) * base_delay
+
+        # Increase delay for rate limit errors
+        if "rate limit" in error_message.lower():
+            max_delay *= 1.5
+
+        return max(0.1, min(max_delay + jitter, 60))
 
 class FileProcessor:
     """Enhanced file processing with improved error handling and metrics."""
@@ -646,101 +544,3 @@ class FileProcessor:
             if result.success and result.content:
                 documentation += result.content + "\n\n"
         return documentation.strip()
-
-class ChunkManager:
-    """Manages code chunking operations."""
-
-    def __init__(
-        self,
-        config: 'ProviderConfig',
-        analyzer: Optional[ChunkAnalyzer] = None
-    ):
-        self.config = config
-        self.analyzer = analyzer or ChunkAnalyzer()
-        self.token_manager = TokenManager()
-
-    def create_chunks(
-        self,
-        content: str,
-        file_path: str,
-        language: str
-    ) -> List[CodeChunk]:
-        """
-        Creates code chunks with smart splitting and validation.
-
-        Args:
-            content: Source code content
-            file_path: Path to source file
-            language: Programming language
-
-        Returns:
-            List[CodeChunk]: List of code chunks
-
-        Raises:
-            ChunkingError: If chunking fails
-        """
-        try:
-            lines = content.splitlines()
-            chunks = []
-            current_chunk = []
-            for i, line in enumerate(lines):
-                current_chunk.append(line)
-                current_chunk_str = "\n".join(current_chunk)
-                token_count = self.token_manager.count_tokens(current_chunk_str)
-                if token_count >= self.config.max_tokens - self.config.chunk_overlap:
-                    # Find a split point
-                    split_line = i
-                    while split_line > 0 and not self.analyzer.is_valid_split(lines[split_line]):
-                        split_line -= 1
-                    if split_line == 0:
-                        raise ChunkTooLargeError("No valid split point found")
-                    chunk_content = "\n".join(current_chunk[:split_line - len(current_chunk)])
-                    if self.analyzer.is_valid_chunk(chunk_content, language):
-                        chunk = self._create_chunk(
-                            chunk_content,
-                            split_line - len(current_chunk),
-                            split_line,
-                            file_path,
-                            language
-                        )
-                        chunks.append(chunk)
-                        # Start new chunk with overlap
-                        overlap_start = max(0, split_line - self.config.chunk_overlap)
-                        current_chunk = lines[overlap_start:i + 1]
-                    else:
-                        raise ChunkValidationError(f"Invalid chunk at line {split_line}")
-            # Add final chunk
-            if current_chunk:
-                final_content = "\n".join(current_chunk)
-                if self.analyzer.is_valid_chunk(final_content, language):
-                    chunk = self._create_chunk(
-                        final_content,
-                        len(lines) - len(current_chunk) + 1,
-                        len(lines),
-                        file_path,
-                        language
-                    )
-                    chunks.append(chunk)
-            return chunks
-        except Exception as e:
-            logger.error(f"Error creating chunks: {str(e)}")
-            raise ChunkingError(f"Chunking failed: {str(e)}") from e
-
-    def _create_chunk(
-        self,
-        content: str,
-        start_line: int,
-        end_line: int,
-        file_path: str,
-        language: str
-    ) -> CodeChunk:
-        """Creates a CodeChunk object."""
-        chunk_id = f"{file_path}:{start_line}-{end_line}"
-        return CodeChunk(
-            chunk_id=chunk_id,
-            content=content,
-            start_line=start_line,
-            end_line=end_line,
-            file_path=file_path,
-            language=language
-        )
