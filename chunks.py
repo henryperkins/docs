@@ -15,8 +15,8 @@ from enum import Enum, auto
 from typing import List, Optional, Dict, Set, Any, Tuple, Union
 from pathlib import Path
 import itertools
-from radon.complexity import cc_visit
 from collections import defaultdict
+from metrics_combined import EnhancedMetricsCalculator, ComplexityMetrics
 from token_utils import TokenManager, TokenizationError, TokenizationResult
 
 # Configure logger
@@ -63,7 +63,6 @@ class CodeChunk:
     parent_chunk_id: Optional[int] = None
     chunk_id: int = field(init=False)
     _chunk_counter = itertools.count()
-    _tokens: Optional[List[int]] = field(default=None, init=False, repr=False)
     metadata: ChunkMetadata = field(init=False)
 
     @property
@@ -80,68 +79,20 @@ class CodeChunk:
         """Initializes CodeChunk with tokens and complexity."""
         object.__setattr__(self, "chunk_id", next(self._chunk_counter))
 
-        try:
-            token_result: TokenizationResult = TokenManager.count_tokens(self.chunk_content, include_special_tokens=True)
-            if token_result.error:
-                raise ValueError(f"Token counting failed: {token_result.error}")
+        # Use EnhancedMetricsCalculator to calculate complexity
+        metrics_calculator = EnhancedMetricsCalculator()
+        metrics = metrics_calculator.calculate_metrics(self.chunk_content, self.file_path, self.language)
 
-            object.__setattr__(self, "_tokens", token_result.tokens)
+        complexity = metrics.get('complexity', None)
 
-            complexity = self._calculate_complexity(self.chunk_content)
-
-            metadata = ChunkMetadata(
-                start_line=self.start_line,
-                end_line=self.end_line,
-                chunk_type=self._determine_chunk_type(),
-                token_count=self.token_count,
-                complexity=complexity
-            )
-            object.__setattr__(self, "metadata", metadata)
-
-        except TokenizationError as e:
-            logger.error(f"Tokenization error in chunk: {str(e)}")
-            object.__setattr__(self, "token_count", 0)
-            object.__setattr__(self, "_tokens", [])
-            metadata = ChunkMetadata(
-                start_line=self.start_line,
-                end_line=self.end_line,
-                chunk_type=self._determine_chunk_type(),
-                token_count=0,
-                complexity=None
-            )
-            object.__setattr__(self, "metadata", metadata)
-
-    def _calculate_complexity(self, code: str) -> Optional[float]:
-        """Calculates complexity using radon."""
-        logger.debug(f"Calculating complexity for chunk (lines {self.start_line}-{self.end_line})")
-        try:
-            complexity_blocks = cc_visit(code)
-            calculated_complexity = sum(block.complexity for block in complexity_blocks)
-            logger.debug(f"Calculated complexity: {calculated_complexity}")
-            return calculated_complexity
-        except Exception as e:
-            logger.error(f"Error calculating complexity: {e}")
-            return None
-
-    def add_dependency(self, other: CodeChunk) -> CodeChunk:
-        """Adds a dependency relationship between chunks immutably."""
-        if self.chunk_id == other.chunk_id:
-            logger.warning("Attempting to add self-dependency, skipping.")
-            return self
-
-        if other.chunk_id in self.metadata.dependencies:
-            logger.debug(f"Dependency {other.chunk_id} already exists for chunk {self.chunk_id}, skipping.")
-            return self
-
-        new_dependencies = self.metadata.dependencies.union({other.chunk_id})
-        new_self_metadata = replace(self.metadata, dependencies=new_dependencies)
-        new_self = replace(self, metadata=new_self_metadata)
-
-        new_other_used_by = other.metadata.used_by.union({self.chunk_id})
-        new_other_metadata = replace(other.metadata, used_by=new_other_used_by)
-        new_other = replace(other, metadata=new_other_metadata)
-
-        return new_self
+        metadata = ChunkMetadata(
+            start_line=self.start_line,
+            end_line=self.end_line,
+            chunk_type=self._determine_chunk_type(),
+            token_count=self.token_count,
+            complexity=complexity
+        )
+        object.__setattr__(self, "metadata", metadata)
 
     def _determine_chunk_type(self) -> ChunkType:
         """Determines the type of this chunk based on its properties."""
