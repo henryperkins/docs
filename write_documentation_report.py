@@ -1,32 +1,21 @@
-"""
-write_documentation_report.py
-
-Enhanced documentation report generation with template support, robust error handling,
-and improved Markdown generation. Provides comprehensive documentation formats with
-metrics, badges, and formatting utilities.
-"""
-
 import re
 import json
 import logging
 import asyncio
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Type
+from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
-from datetime import datetime
 from jinja2 import Environment, PackageLoader, select_autoescape, Template
 import aiofiles
 import aiofiles.os
 from functools import lru_cache
 
-from utils import (
-    FileHandler,
-    DEFAULT_COMPLEXITY_THRESHOLDS,
-    DEFAULT_HALSTEAD_THRESHOLDS,
-    DEFAULT_MAINTAINABILITY_THRESHOLDS,
-    TokenManager,
-    sanitize_filename
-)
+from provider_config import load_provider_configs
+from token_utils import TokenManager
+from chunk import ChunkManager
+from dependency_analyzer import DependencyAnalyzer
+from context import HierarchicalContextManager
+from utils import sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -82,27 +71,17 @@ class BadgeGenerator:
     @classmethod
     @lru_cache(maxsize=128)
     def generate_badge(cls, config: BadgeConfig) -> str:
-        """
-        Generates a Markdown badge with caching.
-        
-        Args:
-            config: Badge configuration
-            
-        Returns:
-            str: Markdown badge string
-        """
+        """Generates a Markdown badge with caching."""
         try:
             label = config.metric_name.replace("_", " ").title()
             encoded_label = label.replace(" ", "%20")
             color = config.get_color()
             
-            # Format value based on type
             if isinstance(config.value, float):
                 value = f"{config.value:.2f}"
             else:
                 value = str(config.value)
             
-            # Add optional components
             logo_part = f"&logo={config.logo}" if config.logo else ""
             label_color_part = (
                 f"&labelColor={config.label_color}"
@@ -126,19 +105,10 @@ class BadgeGenerator:
     
     @classmethod
     def generate_all_badges(cls, metrics: Dict[str, Any]) -> str:
-        """
-        Generates all relevant badges for metrics.
-        
-        Args:
-            metrics: Dictionary of metrics
-            
-        Returns:
-            str: Combined badge string
-        """
+        """Generates all relevant badges for metrics."""
         badges = []
         
         try:
-            # Complexity badge
             if complexity := metrics.get("complexity"):
                 badges.append(cls.generate_badge(BadgeConfig(
                     metric_name="Complexity",
@@ -147,7 +117,6 @@ class BadgeGenerator:
                     logo="codeClimate"
                 )))
             
-            # Halstead metrics badges
             if halstead := metrics.get("halstead"):
                 halstead_configs = [
                     BadgeConfig(
@@ -174,7 +143,6 @@ class BadgeGenerator:
                     for config in halstead_configs
                 )
             
-            # Maintainability badge
             if mi := metrics.get("maintainability_index"):
                 badges.append(cls.generate_badge(BadgeConfig(
                     metric_name="Maintainability",
@@ -183,7 +151,6 @@ class BadgeGenerator:
                     logo="codeclimate"
                 )))
             
-            # Test coverage badge if available
             if coverage := metrics.get("test_coverage", {}).get("line_rate"):
                 badges.append(cls.generate_badge(BadgeConfig(
                     metric_name="Coverage",
@@ -202,6 +169,7 @@ class MarkdownFormatter:
     """Enhanced Markdown formatting with template support."""
     
     def __init__(self):
+        """Initializes the MarkdownFormatter."""
         self.env = Environment(
             loader=PackageLoader('documentation', 'templates'),
             autoescape=select_autoescape(['html', 'xml']),
@@ -209,7 +177,6 @@ class MarkdownFormatter:
             lstrip_blocks=True
         )
         
-        # Register custom filters
         self.env.filters['truncate_description'] = self.truncate_description
         self.env.filters['sanitize_text'] = self.sanitize_text
     
@@ -219,22 +186,11 @@ class MarkdownFormatter:
         max_length: int = 100,
         ellipsis: str = "..."
     ) -> str:
-        """
-        Truncates description with word boundary awareness.
-        
-        Args:
-            description: Text to truncate
-            max_length: Maximum length
-            ellipsis: Ellipsis string
-            
-        Returns:
-            str: Truncated description
-        """
+        """Truncates description with word boundary awareness."""
         if not description or len(description) <= max_length:
             return description
         
         truncated = description[:max_length]
-        # Find last word boundary
         last_space = truncated.rfind(" ")
         if last_space > 0:
             truncated = truncated[:last_space]
@@ -243,27 +199,16 @@ class MarkdownFormatter:
     
     @staticmethod
     def sanitize_text(text: str) -> str:
-        """
-        Sanitizes text for Markdown with improved character handling.
-        
-        Args:
-            text: Text to sanitize
-            
-        Returns:
-            str: Sanitized text
-        """
-        # Escape Markdown special characters
-        special_chars = r'[`*_{}[\]()#+\-.!|]'
+        """Sanitizes text for Markdown with improved character handling."""
+        special_chars = r'[`*_{}[$()#+\-.!|]'
         text = re.sub(
             special_chars,
             lambda m: '\\' + m.group(0),
             str(text)
         )
         
-        # Replace newlines and returns
         text = text.replace('\n', ' ').replace('\r', '')
         
-        # Normalize whitespace
         return ' '.join(text.split())
     
     def format_table(
@@ -272,29 +217,16 @@ class MarkdownFormatter:
         rows: List[List[Any]],
         alignment: Optional[List[str]] = None
     ) -> str:
-        """
-        Formats data into a Markdown table with alignment support.
-        
-        Args:
-            headers: Column headers
-            rows: Table rows
-            alignment: Column alignments ('left', 'center', 'right')
-            
-        Returns:
-            str: Formatted Markdown table
-        """
+        """Formats data into a Markdown table with alignment support."""
         if not headers or not rows:
             return ""
             
         try:
-            # Sanitize headers
             headers = [self.sanitize_text(str(header)) for header in headers]
             
-            # Set default alignment if not provided
             if not alignment:
                 alignment = ['left'] * len(headers)
             
-            # Create alignment string
             align_map = {
                 'left': ':---',
                 'center': ':---:',
@@ -305,15 +237,12 @@ class MarkdownFormatter:
                 for align in alignment
             ]
             
-            # Format headers and separator
             table_lines = [
                 f"| {' | '.join(headers)} |",
                 f"| {' | '.join(separators)} |"
             ]
             
-            # Format rows
             for row in rows:
-                # Ensure row has correct number of columns
                 row = (row + [''] * len(headers))[:len(headers)]
                 sanitized_row = [
                     self.sanitize_text(str(cell))
@@ -328,14 +257,14 @@ class MarkdownFormatter:
         except Exception as e:
             logger.error(f"Error formatting table: {e}")
             return ""
+
 class DocumentationGenerator:
     """Enhanced documentation generation with template support."""
     
     def __init__(self):
+        """Initializes the DocumentationGenerator."""
         self.formatter = MarkdownFormatter()
         self.badge_generator = BadgeGenerator()
-        
-        # Load templates
         self._load_templates()
     
     def _load_templates(self):
@@ -359,28 +288,12 @@ class DocumentationGenerator:
         file_path: str,
         metrics: Optional[Dict[str, Any]] = None
     ) -> str:
-        """
-        Generates comprehensive documentation using templates.
-        
-        Args:
-            documentation: Documentation data
-            language: Programming language
-            file_path: Source file path
-            metrics: Optional additional metrics
-            
-        Returns:
-            str: Generated documentation
-            
-        Raises:
-            DocumentationError: If documentation generation fails
-        """
+        """Generates comprehensive documentation using templates."""
         try:
-            # Generate badges
             badges = self.badge_generator.generate_all_badges(
                 metrics or documentation.get("metrics", {})
             )
             
-            # Generate different sections
             language_info = self._get_language_info(language)
             functions_doc = await self._generate_functions_section(
                 documentation.get("functions", [])
@@ -397,7 +310,6 @@ class DocumentationGenerator:
                 language_info
             )
             
-            # Combine everything using the main template
             content = await self._render_template(
                 self.templates['main'],
                 {
@@ -412,7 +324,6 @@ class DocumentationGenerator:
                 }
             )
             
-            # Generate table of contents
             toc = self._generate_toc(content)
             
             return f"# Table of Contents\n\n{toc}\n\n{content}"
@@ -514,18 +425,8 @@ class DocumentationGenerator:
         template: Template,
         context: Dict[str, Any]
     ) -> str:
-        """
-        Renders a template asynchronously.
-        
-        Args:
-            template: Jinja2 template
-            context: Template context
-            
-        Returns:
-            str: Rendered content
-        """
+        """Renders a template asynchronously."""
         try:
-            # Run template rendering in thread pool
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(
                 None,
@@ -537,37 +438,25 @@ class DocumentationGenerator:
             raise TemplateError(f"Failed to render template: {e}")
     
     def _generate_toc(self, content: str) -> str:
-        """
-        Generates table of contents from content.
-        
-        Args:
-            content: Markdown content
-            
-        Returns:
-            str: Table of contents
-        """
+        """Generates table of contents from content."""
         toc_entries = []
         current_level = 0
         
         for line in content.splitlines():
             if line.startswith('#'):
-                # Count heading level
                 level = 0
                 while line.startswith('#'):
                     level += 1
                     line = line[1:]
                 
-                # Extract heading text
                 heading = line.strip()
                 if not heading:
                     continue
                 
-                # Create anchor
                 anchor = heading.lower()
                 anchor = re.sub(r'[^\w\- ]', '', anchor)
                 anchor = anchor.replace(' ', '-')
                 
-                # Add TOC entry
                 indent = '  ' * (level - 1)
                 toc_entries.append(
                     f"{indent}- [{heading}](#{anchor})"
@@ -584,40 +473,23 @@ async def write_documentation_report(
     project_id: str,
     metrics: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, Any]]:
-    """
-    Writes documentation to JSON and Markdown files.
-    
-    Args:
-        documentation: Documentation data
-        language: Programming language
-        file_path: Source file path
-        repo_root: Repository root path
-        output_dir: Output directory
-        project_id: Project identifier
-        metrics: Optional additional metrics
-        
-    Returns:
-        Optional[Dict[str, Any]]: Written documentation or None if failed
-    """
+    """Writes documentation to JSON and Markdown files."""
     if not documentation:
         logger.warning(f"No documentation to write for '{file_path}'")
         return None
     
     try:
         async with write_lock:
-            # Create output directory
             project_output_dir = Path(output_dir) / project_id
             await aiofiles.os.makedirs(
                 project_output_dir,
                 exist_ok=True
             )
             
-            # Prepare paths
             relative_path = Path(file_path).relative_to(repo_root)
             safe_filename = sanitize_filename(relative_path.name)
             base_path = project_output_dir / safe_filename
             
-            # Write JSON documentation
             json_path = base_path.with_suffix(".json")
             try:
                 async with aiofiles.open(json_path, "w") as f:
@@ -630,7 +502,6 @@ async def write_documentation_report(
                 logger.error(f"Error writing JSON to {json_path}: {e}")
                 raise FileWriteError(f"Failed to write JSON: {e}")
             
-            # Generate and write Markdown if requested
             if documentation.get("generate_markdown", True):
                 try:
                     generator = DocumentationGenerator()
