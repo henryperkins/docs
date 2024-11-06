@@ -43,6 +43,30 @@ DEFAULT_EXCLUDED_PATTERNS = {
     }
 }
 
+def setup_logging(log_file: Optional[Union[str, Path]] = None, log_level: str = "INFO", log_format: Optional[str] = None) -> bool:
+    """Sets up logging configuration."""
+    try:
+        if not log_format:
+            log_format = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d - %(message)s"
+        
+        handlers = [logging.StreamHandler(sys.stdout)]
+        
+        if log_file:
+            file_handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
+            handlers.append(file_handler)
+        
+        logging.basicConfig(level=getattr(logging, log_level.upper()), format=log_format, handlers=handlers)
+        
+        # Set lower level for external libraries
+        logging.getLogger("aiohttp").setLevel(logging.WARNING)
+        logging.getLogger("asyncio").setLevel(logging.WARNING)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Failed to set up logging: {e}")
+        return False
+
 # FileHandler class for asynchronous file operations
 class FileHandler:
     """Handles file operations with caching and error handling."""
@@ -179,30 +203,6 @@ def get_all_file_paths(repo_path: Union[str, Path], excluded_dirs: Optional[Set[
     except Exception as e:
         logger.error(f"Error walking repository: {str(e)}")
         return []
-
-def setup_logging(log_file: Optional[Union[str, Path]] = None, log_level: str = "INFO", log_format: Optional[str] = None) -> bool:
-    """Sets up logging configuration."""
-    try:
-        if not log_format:
-            log_format = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d - %(message)s"
-        
-        handlers = [logging.StreamHandler(sys.stdout)]
-        
-        if log_file:
-            file_handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
-            handlers.append(file_handler)
-        
-        logging.basicConfig(level=getattr(logging, log_level.upper()), format=log_format, handlers=handlers)
-        
-        # Set lower level for external libraries
-        logging.getLogger("aiohttp").setLevel(logging.WARNING)
-        logging.getLogger("asyncio").setLevel(logging.WARNING)
-        
-        return True
-        
-    except Exception as e:
-        print(f"Failed to set up logging: {e}")
-        return False
 
 def handle_api_error(e: Exception, attempt: int, max_retries: int) -> bool:
     """Handles API errors and determines if a retry should occur."""
