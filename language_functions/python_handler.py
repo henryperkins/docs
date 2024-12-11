@@ -21,6 +21,7 @@ from metrics import (
 )
 logger = logging.getLogger(__name__)
 
+
 class PythonHandler(BaseHandler):
     def __init__(self, function_schema: Dict[str, Any], metrics_analyzer: MetricsAnalyzer):
         """Initialize the Python handler."""
@@ -41,15 +42,17 @@ class PythonHandler(BaseHandler):
         logger.info(f"Extracting structure for file: {file_path}")
         try:
             if metrics is None:
-                metrics_result = calculate_code_metrics(code, file_path, language="python")
-                
+                metrics_result = calculate_code_metrics(
+                    code, file_path, language="python")
+
                 # Await the coroutine before accessing attributes
-                metrics_result = await metrics_result 
-                
+                metrics_result = await metrics_result
+
                 if metrics_result.success:
                     metrics = metrics_result.metrics
                 else:
-                    logger.warning(f"Metrics calculation failed for {file_path}: {metrics_result.error}")
+                    logger.warning(
+                        f"Metrics calculation failed for {file_path}: {metrics_result.error}")
                     metrics = DEFAULT_EMPTY_METRICS
 
                 self.metrics_analyzer.add_result(metrics_result)
@@ -76,7 +79,8 @@ class PythonHandler(BaseHandler):
                 def _calculate_complexity(self, node):
                     try:
                         complexity_blocks = cc_visit(ast.unparse(node))
-                        total_complexity = sum(block.complexity for block in complexity_blocks)
+                        total_complexity = sum(
+                            block.complexity for block in complexity_blocks)
                         complexity_rank = cc_rank(total_complexity)
                         return total_complexity, complexity_rank
                     except Exception as e:
@@ -87,11 +91,13 @@ class PythonHandler(BaseHandler):
                     code_structure["summary"] = ast.get_docstring(node) or ""
                     for n in node.body:
                         if isinstance(n, (ast.Import, ast.ImportFrom)):
-                            module_name = n.module if isinstance(n, ast.ImportFrom) else None
+                            module_name = n.module if isinstance(
+                                n, ast.ImportFrom) else None
                             for alias in n.names:
                                 imported_name = alias.name
                                 full_import_path = f"{module_name}.{imported_name}" if module_name else imported_name
-                                code_structure["imports"].append(full_import_path)
+                                code_structure["imports"].append(
+                                    full_import_path)
                     self.generic_visit(node)
 
                 def visit_FunctionDef(self, node):
@@ -105,9 +111,11 @@ class PythonHandler(BaseHandler):
                     function_info = {
                         "name": node.name,
                         "docstring": ast.get_docstring(node) or "",
-                        "args": self._get_args(node),  # Extract arguments with type annotations
+                        # Extract arguments with type annotations
+                        "args": self._get_args(node),
                         "async": is_async,
-                        "returns": self._get_return_type(node),  # Extract return type
+                        # Extract return type
+                        "returns": self._get_return_type(node),
                         "lineno": node.lineno,
                         "end_lineno": node.end_lineno,
                     }
@@ -190,10 +198,12 @@ class PythonHandler(BaseHandler):
             return code_structure
 
         except SyntaxError as e:
-            logger.error(f"Syntax error in {file_path}: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
+            logger.error(
+                f"Syntax error in {file_path}: {e.text.strip()} at line {e.lineno}, offset {e.offset}")
             return {"error": str(e), "metrics": DEFAULT_EMPTY_METRICS}
         except Exception as e:
-            logger.error(f"Error extracting Python structure from {file_path}: {e}", exc_info=True)
+            logger.error(
+                f"Error extracting Python structure from {file_path}: {e}", exc_info=True)
             return {"error": str(e), "metrics": DEFAULT_EMPTY_METRICS}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -211,7 +221,8 @@ class PythonHandler(BaseHandler):
         try:
             tree = ast.parse(code)
             docstring_format = documentation.get("docstring_format", "Google")
-            transformer = DocstringTransformer(documentation, docstring_format, preserve_existing=False)
+            transformer = DocstringTransformer(
+                documentation, docstring_format, preserve_existing=False)
             modified_tree = transformer.visit(tree)
             return ast.unparse(modified_tree)
         except Exception as e:
@@ -245,11 +256,13 @@ class PythonHandler(BaseHandler):
                 logger.info("Code validation passed.")
                 return True
             else:
-                logger.error(f"Code validation failed: {result.stdout}\n{result.stderr}")
+                logger.error(
+                    f"Code validation failed: {result.stdout}\n{result.stderr}")
                 return False
         except Exception as e:
             logger.error(f"Error validating code: {e}", exc_info=True)
             return False
+
 
 class DocstringTransformer(ast.NodeTransformer):
     """Transformer for inserting docstrings into AST nodes."""
@@ -264,7 +277,8 @@ class DocstringTransformer(ast.NodeTransformer):
         for func in self.documentation.get("functions", []):
             if func["name"] == node.name:
                 if not self.preserve_existing or not ast.get_docstring(node):
-                    docstring = self._format_docstring(func["docstring"], self.docstring_format, func.get("args", []), func.get("returns"))
+                    docstring = self._format_docstring(
+                        func["docstring"], self.docstring_format, func.get("args", []), func.get("returns"))
                     node.docstring = docstring
                 break
         return node
@@ -274,7 +288,8 @@ class DocstringTransformer(ast.NodeTransformer):
         for func in self.documentation.get("functions", []):
             if func["name"] == node.name:
                 if not self.preserve_existing or not ast.get_docstring(node):
-                    docstring = self._format_docstring(func["docstring"], self.docstring_format, func.get("args", []), func.get("returns"))
+                    docstring = self._format_docstring(
+                        func["docstring"], self.docstring_format, func.get("args", []), func.get("returns"))
                     node.docstring = docstring
                 break
         return node
@@ -284,7 +299,8 @@ class DocstringTransformer(ast.NodeTransformer):
         for cls in self.documentation.get("classes", []):
             if cls["name"] == node.name:
                 if not self.preserve_existing or not ast.get_docstring(node):
-                    docstring = self._format_docstring(cls["docstring"], self.docstring_format)
+                    docstring = self._format_docstring(
+                        cls["docstring"], self.docstring_format)
                     node.docstring = docstring
                 break
         return node
@@ -292,7 +308,8 @@ class DocstringTransformer(ast.NodeTransformer):
     def visit_Module(self, node: ast.Module) -> ast.Module:
         """Adds or updates docstring to the module."""
         if not self.preserve_existing or not ast.get_docstring(node):
-            docstring = self._format_docstring(self.documentation.get("summary", ""), self.docstring_format)
+            docstring = self._format_docstring(
+                self.documentation.get("summary", ""), self.docstring_format)
             node.docstring = docstring
         return node
 

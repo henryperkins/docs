@@ -4,6 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class DependencyAnalyzer(ast.NodeVisitor):
     """Analyzes dependencies within a Python file using AST."""
 

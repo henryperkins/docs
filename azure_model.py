@@ -16,6 +16,7 @@ from token_utils import TokenManager
 
 logger = logging.getLogger(__name__)
 
+
 class AzureModel:
     def __init__(self, api_key: str, endpoint: str, deployment_name: str, api_version: str):
         self.api_key = api_key
@@ -42,11 +43,13 @@ class AzureModel:
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status == 200:
                     data = await response.json()
-                    logger.info("Azure OpenAI documentation generated successfully.")
+                    logger.info(
+                        "Azure OpenAI documentation generated successfully.")
                     choice = data.get("choices", [{}])[0]
                     return choice.get("message", {}).get("content", {})
                 else:
-                    logger.error(f"Error generating documentation from Azure: {response.status}")
+                    logger.error(
+                        f"Error generating documentation from Azure: {response.status}")
                     return {}
 
     def calculate_tokens(self, base_info: str, context: str, chunk_content: str, schema: str) -> int:

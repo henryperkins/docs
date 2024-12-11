@@ -16,22 +16,35 @@ from utils import DEFAULT_EXCLUDED_FILES, DEFAULT_EXCLUDED_DIRS, DEFAULT_SKIP_TY
 
 logger = logging.getLogger(__name__)
 
+
 def parse_arguments():
     """Parses command-line arguments."""
-    parser = argparse.ArgumentParser(description="Generate and insert docstrings using Azure OpenAI, Gemini, or OpenAI models.")
+    parser = argparse.ArgumentParser(
+        description="Generate and insert docstrings using Azure OpenAI, Gemini, or OpenAI models.")
     parser.add_argument("repo_path", help="Path to the code repository")
-    parser.add_argument("-c", "--config", help="Path to config.json", default="config.json")
-    parser.add_argument("--provider", help="Choose AI provider: 'azure', 'gemini', or 'openai'", default="azure")
-    parser.add_argument("--concurrency", help="Number of concurrent requests", type=int, default=5)
-    parser.add_argument("--skip-types", help="Comma-separated list of file extensions to skip", default="")
-    parser.add_argument("--project-info", help="Information about the project", default="")
-    parser.add_argument("--style-guidelines", help="Documentation style guidelines", default="")
-    parser.add_argument("--safe-mode", help="Run in safe mode (no files modified)", action="store_true")
+    parser.add_argument(
+        "-c", "--config", help="Path to config.json", default="config.json")
+    parser.add_argument(
+        "--provider", help="Choose AI provider: 'azure', 'gemini', or 'openai'", default="azure")
+    parser.add_argument(
+        "--concurrency", help="Number of concurrent requests", type=int, default=5)
+    parser.add_argument(
+        "--skip-types", help="Comma-separated list of file extensions to skip", default="")
+    parser.add_argument(
+        "--project-info", help="Information about the project", default="")
+    parser.add_argument("--style-guidelines",
+                        help="Documentation style guidelines", default="")
+    parser.add_argument(
+        "--safe-mode", help="Run in safe mode (no files modified)", action="store_true")
     parser.add_argument("--log-level", help="Logging level", default="INFO")
-    parser.add_argument("--schema", help="Path to function_schema.json", default="schemas/function_schema.json")
-    parser.add_argument("--doc-output-dir", help="Directory to save documentation files", default="documentation")
-    parser.add_argument("--project-id", help="Unique identifier for the project", required=True)
+    parser.add_argument("--schema", help="Path to function_schema.json",
+                        default="schemas/function_schema.json")
+    parser.add_argument(
+        "--doc-output-dir", help="Directory to save documentation files", default="documentation")
+    parser.add_argument(
+        "--project-id", help="Unique identifier for the project", required=True)
     return parser.parse_args()
+
 
 async def main():
     """Main function."""
@@ -86,14 +99,17 @@ async def main():
         excluded_files = set(DEFAULT_EXCLUDED_FILES)
         skip_types_set = set(DEFAULT_SKIP_TYPES)
         if args.skip_types:
-            skip_types_set.update(ext.strip() for ext in args.skip_types.split(","))
+            skip_types_set.update(ext.strip()
+                                  for ext in args.skip_types.split(","))
 
-        project_info, style_guidelines = load_config(config_path, excluded_dirs, excluded_files, skip_types_set)
+        project_info, style_guidelines = load_config(
+            config_path, excluded_dirs, excluded_files, skip_types_set)
         project_info = args.project_info or project_info
         style_guidelines = args.style_guidelines or style_guidelines
 
         function_schema = load_function_schema(args.schema)
-        file_paths = get_all_file_paths(repo_path, excluded_dirs, excluded_files, skip_types_set)
+        file_paths = get_all_file_paths(
+            repo_path, excluded_dirs, excluded_files, skip_types_set)
 
         # Initialize DocumentationProcessManager
         manager = DocumentationProcessManager(

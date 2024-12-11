@@ -47,7 +47,8 @@ class GoHandler(BaseHandler):
         """
         try:
             # Path to the Go parser script
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "go_parser.go")
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "go_parser.go")
             # Prepare input data for the parser
             input_data = {"code": code, "language": "go"}
             input_json = json.dumps(input_data)
@@ -60,19 +61,23 @@ class GoHandler(BaseHandler):
 
             # Parse the output JSON structure
             structure = json.loads(result.stdout)
-            logger.debug(f"Extracted Go code structure successfully from file: {file_path}")
+            logger.debug(
+                f"Extracted Go code structure successfully from file: {file_path}")
             return structure
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running go_parser.go for file {file_path}: {e.stderr}")
+            logger.error(
+                f"Error running go_parser.go for file {file_path}: {e.stderr}")
             return {}
 
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing output from go_parser.go for file {file_path}: {e}")
+            logger.error(
+                f"Error parsing output from go_parser.go for file {file_path}: {e}")
             return {}
 
         except Exception as e:
-            logger.error(f"Unexpected error extracting Go structure from file {file_path}: {e}")
+            logger.error(
+                f"Unexpected error extracting Go structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -92,9 +97,11 @@ class GoHandler(BaseHandler):
         logger.debug("Inserting comments into Go code.")
         try:
             # Path to the Go inserter script
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "go_inserter.go")
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "go_inserter.go")
             # Prepare input data for the inserter
-            input_data = {"code": code, "documentation": documentation, "language": "go"}
+            input_data = {"code": code,
+                          "documentation": documentation, "language": "go"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running Go inserter script: {script_path}")
 
@@ -112,7 +119,8 @@ class GoHandler(BaseHandler):
             return code
 
         except Exception as e:
-            logger.error(f"Unexpected error inserting comments into Go code: {e}")
+            logger.error(
+                f"Unexpected error inserting comments into Go code: {e}")
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
@@ -128,7 +136,8 @@ class GoHandler(BaseHandler):
         """
         logger.debug("Starting Go code validation.")
         if not file_path:
-            logger.warning("File path not provided for Go validation. Skipping validation.")
+            logger.warning(
+                "File path not provided for Go validation. Skipping validation.")
             return True  # Assuming no validation without a file
 
         try:
@@ -136,24 +145,29 @@ class GoHandler(BaseHandler):
             temp_file = f"{file_path}.temp.go"
             with open(temp_file, "w", encoding="utf-8") as f:
                 f.write(code)
-            logger.debug(f"Wrote temporary Go file for validation: {temp_file}")
+            logger.debug(
+                f"Wrote temporary Go file for validation: {temp_file}")
 
             # Run 'go fmt' to format the code and check syntax
-            fmt_process = subprocess.run(["go", "fmt", temp_file], capture_output=True, text=True)
+            fmt_process = subprocess.run(
+                ["go", "fmt", temp_file], capture_output=True, text=True)
 
             # Check the result of 'go fmt'
             if fmt_process.returncode != 0:
-                logger.error(f"go fmt validation failed for {file_path}:\n{fmt_process.stderr}")
+                logger.error(
+                    f"go fmt validation failed for {file_path}:\n{fmt_process.stderr}")
                 return False
             else:
                 logger.debug("go fmt validation passed.")
 
             # Run 'go vet' to check for potential issues
-            vet_process = subprocess.run(["go", "vet", temp_file], capture_output=True, text=True)
+            vet_process = subprocess.run(
+                ["go", "vet", temp_file], capture_output=True, text=True)
 
             # Check the result of 'go vet'
             if vet_process.returncode != 0:
-                logger.error(f"go vet validation failed for {file_path}:\n{vet_process.stderr}")
+                logger.error(
+                    f"go vet validation failed for {file_path}:\n{vet_process.stderr}")
                 return False
             else:
                 logger.debug("go vet validation passed.")
@@ -165,7 +179,8 @@ class GoHandler(BaseHandler):
             return True
 
         except FileNotFoundError:
-            logger.error("Go is not installed or not found in PATH. Please install Go.")
+            logger.error(
+                "Go is not installed or not found in PATH. Please install Go.")
             return False
 
         except Exception as e:

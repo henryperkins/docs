@@ -46,27 +46,33 @@ class JavaHandler(BaseHandler):
             Dict[str, Any]: A detailed structure of the code components.
         """
         try:
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "java_parser.js")
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "java_parser.js")
             input_data = {"code": code, "language": "java"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running Java parser script: {script_path}")
 
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             structure = json.loads(result.stdout)
-            logger.debug(f"Extracted Java code structure successfully from file: {file_path}")
+            logger.debug(
+                f"Extracted Java code structure successfully from file: {file_path}")
             return structure
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running java_parser.js for file {file_path}: {e.stderr}")
+            logger.error(
+                f"Error running java_parser.js for file {file_path}: {e.stderr}")
             return {}
 
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing output from java_parser.js for file {file_path}: {e}")
+            logger.error(
+                f"Error parsing output from java_parser.js for file {file_path}: {e}")
             return {}
 
         except Exception as e:
-            logger.error(f"Unexpected error extracting Java structure from file {file_path}: {e}")
+            logger.error(
+                f"Unexpected error extracting Java structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -85,15 +91,19 @@ class JavaHandler(BaseHandler):
         """
         logger.debug("Inserting Javadoc docstrings into Java code.")
         try:
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "java_inserter.js")
-            input_data = {"code": code, "documentation": documentation, "language": "java"}
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "java_inserter.js")
+            input_data = {"code": code,
+                          "documentation": documentation, "language": "java"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running Java inserter script: {script_path}")
 
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             modified_code = result.stdout
-            logger.debug("Completed inserting Javadoc docstrings into Java code.")
+            logger.debug(
+                "Completed inserting Javadoc docstrings into Java code.")
             return modified_code
 
         except subprocess.CalledProcessError as e:
@@ -117,7 +127,8 @@ class JavaHandler(BaseHandler):
         """
         logger.debug("Starting Java code validation.")
         if not file_path:
-            logger.warning("File path not provided for javac validation. Skipping javac.")
+            logger.warning(
+                "File path not provided for javac validation. Skipping javac.")
             return True  # Assuming no validation without a file
 
         try:
@@ -125,14 +136,17 @@ class JavaHandler(BaseHandler):
             temp_file = f"{file_path}.temp.java"
             with open(temp_file, "w", encoding="utf-8") as f:
                 f.write(code)
-            logger.debug(f"Wrote temporary Java file for validation: {temp_file}")
+            logger.debug(
+                f"Wrote temporary Java file for validation: {temp_file}")
 
             # Compile the temporary Java file
-            process = subprocess.run(["javac", temp_file], capture_output=True, text=True)
+            process = subprocess.run(
+                ["javac", temp_file], capture_output=True, text=True)
 
             # Remove the temporary file and class file if compilation was successful
             if process.returncode != 0:
-                logger.error(f"javac validation failed for {file_path}:\n{process.stderr}")
+                logger.error(
+                    f"javac validation failed for {file_path}:\n{process.stderr}")
                 return False
             else:
                 logger.debug("javac validation passed.")
@@ -144,7 +158,8 @@ class JavaHandler(BaseHandler):
             return True
 
         except FileNotFoundError:
-            logger.error("javac is not installed or not found in PATH. Please install the JDK.")
+            logger.error(
+                "javac is not installed or not found in PATH. Please install the JDK.")
             return False
 
         except Exception as e:

@@ -67,9 +67,9 @@ def get_handler(language: str, function_schema: Dict[str, Any]) -> Optional[Base
 
 
 def insert_docstrings(
-    original_code: str, 
-    documentation: Dict[str, Any], 
-    language: str, 
+    original_code: str,
+    documentation: Dict[str, Any],
+    language: str,
     schema_path: str  # schema_path is now required
 ) -> str:
     """
@@ -97,13 +97,15 @@ def insert_docstrings(
         logger.error(f"Error loading function schema: {e}")
         return original_code  # Return original code on schema loading error
     except Exception as e:  # Catch-all for other unexpected errors
-        logger.error(f"An unexpected error occurred during schema loading: {e}", exc_info=True)
+        logger.error(
+            f"An unexpected error occurred during schema loading: {e}", exc_info=True)
         return original_code
 
     # Retrieve the appropriate handler for the specified language
     handler = get_handler(language, function_schema)
     if not handler:
-        logger.warning(f"Unsupported language '{language}'. Skipping docstring insertion.")
+        logger.warning(
+            f"Unsupported language '{language}'. Skipping docstring insertion.")
         return original_code
 
     if documentation is None:

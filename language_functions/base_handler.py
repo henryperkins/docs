@@ -18,6 +18,7 @@ from metrics import MetricsAnalyzer  # Import for type hinting
 
 logger = logging.getLogger(__name__)
 
+
 class BaseLanguageHandler(ABC):
     """
     Abstract base class for language-specific code handlers.

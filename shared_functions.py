@@ -24,6 +24,7 @@ DEFAULT_HALSTEAD_THRESHOLDS = {
 }
 DEFAULT_MAINTAINABILITY_THRESHOLDS = {"low": 65, "medium": 85, "high": 100}
 
+
 def calculate_prompt_tokens(base_info: str, context: str, chunk_content: str, schema: str) -> int:
     """
     Calculates total tokens for the prompt content using TokenManager.
@@ -42,6 +43,7 @@ def calculate_prompt_tokens(base_info: str, context: str, chunk_content: str, sc
         token_result = TokenManager.count_tokens(text)
         total += token_result.token_count
     return total
+
 
 def format_prompt(base_info: str, context: str, chunk_content: str, schema: Dict[str, Any]) -> List[Dict[str, str]]:
     """
@@ -63,6 +65,7 @@ def format_prompt(base_info: str, context: str, chunk_content: str, schema: Dict
         {"role": "assistant", "content": chunk_content},
         {"role": "schema", "content": schema_str}
     ]
+
 
 def log_error(message: str, exc: Exception):
     """Logs errors with traceback information."""

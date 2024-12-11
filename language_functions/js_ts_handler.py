@@ -14,9 +14,11 @@ from language_functions.base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
+
 class JSDocStyle(Enum):
     JSDOC = "jsdoc"
     TSDOC = "tsdoc"
+
 
 @dataclass
 class MetricsResult:
@@ -25,11 +27,13 @@ class MetricsResult:
     halstead: Dict[str, float]
     function_metrics: Dict[str, Dict[str, Any]]
 
+
 class JSTsHandler(BaseHandler):
 
     def __init__(self, function_schema: Dict[str, Any]):
         self.function_schema = function_schema
-        self.script_dir = os.path.join(os.path.dirname(__file__), "..", "scripts")
+        self.script_dir = os.path.join(
+            os.path.dirname(__file__), "..", "scripts")
 
     async def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -82,7 +86,8 @@ class JSTsHandler(BaseHandler):
 
             # React analysis
             if self._is_react_file(file_path):
-                react_info = self._analyze_react_components(code, is_typescript)
+                react_info = self._analyze_react_components(
+                    code, is_typescript)
                 if react_info is not None:
                     structured_data["react_components"] = react_info
 
@@ -95,7 +100,8 @@ class JSTsHandler(BaseHandler):
             return structured_data
 
         except Exception as e:
-            logger.error(f"Error extracting structure: {str(e)}", exc_info=True)
+            logger.error(
+                f"Error extracting structure: {str(e)}", exc_info=True)
             return self._get_empty_structure(f"Error: {str(e)}")
 
     def _map_functions(self, functions: List[Dict], function_metrics: Dict) -> List[Dict]:
@@ -109,7 +115,8 @@ class JSTsHandler(BaseHandler):
                 "docstring": func.get("docstring", ""),
                 "args": func.get("params", []),
                 "async": func.get("async", False),
-                "returns": {"type": func.get("returnType", ""), "description": ""},  # Map return type
+                # Map return type
+                "returns": {"type": func.get("returnType", ""), "description": ""},
                 "complexity": metrics.get("complexity", 0),
                 "halstead": metrics.get("halstead", {})
             })
@@ -119,7 +126,8 @@ class JSTsHandler(BaseHandler):
         """Maps class data to the schema."""
         mapped_classes = []
         for cls in classes:
-            mapped_methods = self._map_functions(cls.get("methods", []), function_metrics)
+            mapped_methods = self._map_functions(
+                cls.get("methods", []), function_metrics)
             mapped_classes.append({
                 "name": cls.get("name", ""),
                 "docstring": cls.get("docstring", ""),
@@ -140,7 +148,8 @@ class JSTsHandler(BaseHandler):
         """
         logger.info("Inserting docstrings...")
         try:
-            is_typescript = self._is_typescript_file(documentation.get("file_path"))
+            is_typescript = self._is_typescript_file(
+                documentation.get("file_path"))
             doc_style = JSDocStyle.TSDOC if is_typescript else JSDocStyle.JSDOC
 
             input_data = {
@@ -158,7 +167,8 @@ class JSTsHandler(BaseHandler):
             return updated_code if updated_code is not None else code
 
         except Exception as e:
-            logger.error(f"Error inserting documentation: {str(e)}", exc_info=True)
+            logger.error(
+                f"Error inserting documentation: {str(e)}", exc_info=True)
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
@@ -197,13 +207,15 @@ class JSTsHandler(BaseHandler):
                 if result.returncode == 0:
                     logger.debug("ESLint validation passed.")
                 else:
-                    logger.error(f"ESLint validation failed: {result.stdout}\n{result.stderr}")
+                    logger.error(
+                        f"ESLint validation failed: {result.stdout}\n{result.stderr}")
                 return result.returncode == 0
             finally:
                 try:
                     os.unlink(temp_path)
                 except OSError as e:
-                    logger.error(f"Error deleting temporary file {temp_path}: {e}")
+                    logger.error(
+                        f"Error deleting temporary file {temp_path}: {e}")
 
         except Exception as e:
             logger.error(f"Validation error: {str(e)}", exc_info=True)
@@ -235,12 +247,15 @@ class JSTsHandler(BaseHandler):
                 return None
 
             if not isinstance(result, dict):
-                logger.error(f"Metrics result is not a dictionary: {type(result)}")
+                logger.error(
+                    f"Metrics result is not a dictionary: {type(result)}")
                 return None
 
-            required_keys = ["complexity", "maintainability", "halstead", "functions"]
+            required_keys = ["complexity",
+                             "maintainability", "halstead", "functions"]
             if not all(key in result for key in required_keys):
-                missing_keys = [key for key in required_keys if key not in result]
+                missing_keys = [
+                    key for key in required_keys if key not in result]
                 logger.error(f"Metrics result is missing keys: {missing_keys}")
                 return None
 
@@ -282,7 +297,8 @@ class JSTsHandler(BaseHandler):
             return result
 
         except Exception as e:
-            logger.error(f"Error analyzing React components: {str(e)}", exc_info=True)
+            logger.error(
+                f"Error analyzing React components: {str(e)}", exc_info=True)
             return None
 
     def _get_parser_options(self, is_typescript: bool) -> Dict[str, Any]:
@@ -382,21 +398,24 @@ class JSTsHandler(BaseHandler):
                 logger.error(f"Script not found: {script_path}")
                 return None
 
-            logger.debug(f"Running script: {script_path} with input data: {input_data}")
+            logger.debug(
+                f"Running script: {script_path} with input data: {input_data}")
 
             # Convert input data to JSON string with proper encoding handling
             try:
                 input_json = json.dumps(input_data, ensure_ascii=False)
-                input_bytes = input_json.encode('utf-8', errors='surrogateescape')
+                input_bytes = input_json.encode(
+                    'utf-8', errors='surrogateescape')
             except UnicodeEncodeError as e:
-                logger.error(f"Unicode encoding error in input data: {e}", exc_info=True)
+                logger.error(
+                    f"Unicode encoding error in input data: {e}", exc_info=True)
                 return None
 
             process = subprocess.run(
                 ['node', script_path],
                 input=input_json,  # Pass the JSON string
                 capture_output=True,
-                text=True, 
+                text=True,
                 check=True,
                 timeout=60
             )
@@ -414,7 +433,8 @@ class JSTsHandler(BaseHandler):
                 if script_name == "js_ts_inserter.js":
                     # If inserter script returns plain code, not JSON
                     return output
-                logger.error(f"{error_message}: Invalid JSON output. Error: {e}")
+                logger.error(
+                    f"{error_message}: Invalid JSON output. Error: {e}")
                 return None
 
         except subprocess.CalledProcessError as e:
@@ -424,5 +444,6 @@ class JSTsHandler(BaseHandler):
             logger.error(f"{error_message}: Script timed out after 60 seconds")
             return None
         except Exception as e:
-            logger.error(f"{error_message}: Unexpected error: {e}", exc_info=True)
+            logger.error(
+                f"{error_message}: Unexpected error: {e}", exc_info=True)
             return None

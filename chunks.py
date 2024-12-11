@@ -9,6 +9,7 @@ from code_chunk import CodeChunk, ChunkType, ChunkMetadata
 
 logger = logging.getLogger(__name__)
 
+
 class ChunkManager:
     """Manages code chunking operations."""
 
@@ -46,13 +47,17 @@ class ChunkManager:
                         current_token_count = 0
 
                     current_chunk_start = node.lineno
-                    current_chunk_lines.extend(code.splitlines()[node.lineno - 1:node.end_lineno])
-                    current_token_count += self.token_manager.count_tokens("\n".join(current_chunk_lines)).token_count
+                    current_chunk_lines.extend(
+                        code.splitlines()[node.lineno - 1:node.end_lineno])
+                    current_token_count += self.token_manager.count_tokens(
+                        "\n".join(current_chunk_lines)).token_count
 
                     while current_token_count >= self.max_tokens - self.overlap:
-                        split_point = self._find_split_point(node, current_chunk_lines)
+                        split_point = self._find_split_point(
+                            node, current_chunk_lines)
                         if split_point is None:
-                            logger.warning(f"Chunk too large to split: {node.name} in {file_path}")
+                            logger.warning(
+                                f"Chunk too large to split: {node.name} in {file_path}")
                             break
 
                         chunk_lines = current_chunk_lines[:split_point]
@@ -65,11 +70,14 @@ class ChunkManager:
 
                         current_chunk_start += len(chunk_lines)
                         current_chunk_lines = current_chunk_lines[split_point:]
-                        current_token_count = self.token_manager.count_tokens("\n".join(current_chunk_lines)).token_count
+                        current_token_count = self.token_manager.count_tokens(
+                            "\n".join(current_chunk_lines)).token_count
 
                 elif current_chunk_lines:
-                    current_chunk_lines.append(code.splitlines()[node.lineno - 1])
-                    current_token_count += self.token_manager.count_tokens(code.splitlines()[node.lineno - 1]).token_count
+                    current_chunk_lines.append(
+                        code.splitlines()[node.lineno - 1])
+                    current_token_count += self.token_manager.count_tokens(
+                        code.splitlines()[node.lineno - 1]).token_count
 
                     if current_token_count >= self.max_tokens - self.overlap:
                         chunks.append(self._create_chunk_from_lines(
@@ -108,7 +116,8 @@ class ChunkManager:
 
         for i, line in enumerate(code.splitlines(), 1):
             current_chunk_lines.append(line)
-            current_token_count += self.token_manager.count_tokens(line).token_count
+            current_token_count += self.token_manager.count_tokens(
+                line).token_count
 
             if current_token_count >= self.max_tokens - self.overlap:
                 chunks.append(self._create_chunk_from_lines(

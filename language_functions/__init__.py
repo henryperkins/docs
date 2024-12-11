@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["get_handler", "insert_docstrings"]
 
+
 def get_handler(language: str, function_schema: Dict[str, Any], metrics_analyzer: MetricsAnalyzer) -> Optional[BaseHandler]:
     """
     Factory function to retrieve the appropriate language handler.
@@ -67,7 +68,7 @@ def get_handler(language: str, function_schema: Dict[str, Any], metrics_analyzer
 
     # Normalize the language string to lowercase to ensure case-insensitive matching
     language = language.lower()
-    
+
     # Map of supported languages to their handlers
     handlers = {
         "python": PythonHandler,

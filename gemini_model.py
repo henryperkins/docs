@@ -16,6 +16,7 @@ from token_utils import TokenManager
 
 logger = logging.getLogger(__name__)
 
+
 class GeminiModel:
     def __init__(self, api_key: str, endpoint: str):
         self.api_key = api_key
@@ -42,7 +43,8 @@ class GeminiModel:
                     logger.info("Gemini documentation generated successfully.")
                     return data.get("documentation", {})
                 else:
-                    logger.error(f"Error generating documentation from Gemini: {response.status}")
+                    logger.error(
+                        f"Error generating documentation from Gemini: {response.status}")
                     return {}
 
     def calculate_tokens(self, base_info: str, context: str, chunk_content: str, schema: str) -> int:
@@ -74,4 +76,4 @@ class GeminiModel:
             {"role": "schema", "content": schema_str}
         ]
         logger.debug("Generated prompt for Gemini model.")
-        return prompt    
+        return prompt

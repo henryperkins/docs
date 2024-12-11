@@ -15,24 +15,31 @@ from collections import deque
 # Assuming these are imported from another module
 from code_chunk import CodeChunk, ChunkMetadata, ChunkLocation
 from token_utils import TokenManager, TokenizationError
-from dependency_analyzer import DependencyAnalyzer  # Import the unified DependencyAnalyzer
+# Import the unified DependencyAnalyzer
+from dependency_analyzer import DependencyAnalyzer
 
 logger = logging.getLogger(__name__)
 
 # Custom Exceptions
+
+
 class ChunkNotFoundError(Exception):
     """Raised when a requested chunk cannot be found."""
     pass
 
+
 class InvalidChunkError(Exception):
     """Raised when a chunk is invalid or corrupted."""
     pass
+
 
 class CacheError(Exception):
     """Raised when cache operations fail."""
     pass
 
 # Node Class for Hierarchical Structure
+
+
 class Node:
     """Node in the context tree."""
 
@@ -81,6 +88,8 @@ class Node:
         return descendants
 
 # HierarchicalContextManager Class
+
+
 class HierarchicalContextManager:
     """Manages code chunks and documentation with a tree structure, caching, dependency graphs, and semantic similarity."""
 
@@ -160,7 +169,8 @@ class HierarchicalContextManager:
             async with self._lock:
                 # Check for overlapping chunks
                 if self._has_overlap(location):
-                    logger.warning(f"Overlapping chunk detected at {location.get_hierarchy_path()}")
+                    logger.warning(
+                        f"Overlapping chunk detected at {location.get_hierarchy_path()}")
 
                 # Add to tree
                 path = location.get_hierarchy_path().split(".")
@@ -380,7 +390,8 @@ class HierarchicalContextManager:
                         # Validate cache
                         node = self._find_node_by_id(chunk_id)
                         if node and node.metadata:
-                            cached_hash = cached.get('metadata', {}).get('hash')
+                            cached_hash = cached.get(
+                                'metadata', {}).get('hash')
                             if cached_hash == node.metadata.hash:
                                 doc = cached['documentation']
                                 self._docs[chunk_id] = doc
@@ -427,8 +438,9 @@ class HierarchicalContextManager:
 
             # Check if content actually changed
             if (node.metadata and
-                node.metadata.hash == new_metadata.hash):
-                logger.debug(f"Chunk {chunk.chunk_id} unchanged, skipping update")
+                    node.metadata.hash == new_metadata.hash):
+                logger.debug(
+                    f"Chunk {chunk.chunk_id} unchanged, skipping update")
                 return
 
             # Update node
@@ -554,7 +566,8 @@ class HierarchicalContextManager:
         if len(self._docs) > self._max_cache_size:
             sorted_docs = sorted(
                 self._docs.items(),
-                key=lambda x: x[1].get('metadata', {}).get('last_modified', datetime.min)
+                key=lambda x: x[1].get('metadata', {}).get(
+                    'last_modified', datetime.min)
             )
             to_remove = sorted_docs[:-self._max_cache_size]
             for chunk_id, _ in to_remove:

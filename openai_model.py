@@ -7,6 +7,7 @@ from typing import List, Dict, Any
 # Set up logging for OpenAI model integration
 logger = logging.getLogger(__name__)
 
+
 class OpenAIModel:
     def __init__(self, api_key: str):
         openai.api_key = api_key

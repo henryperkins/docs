@@ -8,9 +8,12 @@ from typing import Any, Dict, Optional, List
 logger = logging.getLogger(__name__)
 
 # Custom Exceptions
+
+
 class MetricsCalculationError(Exception):
     """Base exception for metrics calculation errors."""
     pass
+
 
 @dataclass
 class ComplexityMetrics:
@@ -23,6 +26,7 @@ class ComplexityMetrics:
     halstead_bugs: float = 0.0
     halstead_time: float = 0.0
     type_hint_coverage: float = 0.0
+
 
 @dataclass
 class ProviderMetrics:
@@ -55,10 +59,14 @@ class ProviderMetrics:
 
     def get_summary(self) -> Dict[str, Any]:
         """Returns a summary of provider metrics."""
-        error_rate = (self.api_errors / self.api_calls * 100) if self.api_calls > 0 else 0
-        tokens_per_call = (self.total_tokens / self.api_calls) if self.api_calls > 0 else 0
-        hit_rate = (self.cache_hits / (self.cache_hits + self.cache_misses) * 100) if (self.cache_hits + self.cache_misses) > 0 else 0
-        retries_per_call = (self.retry_count / self.api_calls) if self.api_calls > 0 else 0
+        error_rate = (self.api_errors / self.api_calls *
+                      100) if self.api_calls > 0 else 0
+        tokens_per_call = (self.total_tokens /
+                           self.api_calls) if self.api_calls > 0 else 0
+        hit_rate = (self.cache_hits / (self.cache_hits + self.cache_misses)
+                    * 100) if (self.cache_hits + self.cache_misses) > 0 else 0
+        retries_per_call = (self.retry_count /
+                            self.api_calls) if self.api_calls > 0 else 0
 
         return {
             "api_calls": self.api_calls,
@@ -81,6 +89,7 @@ class ProviderMetrics:
             "successful_chunks": self.successful_chunks
         }
 
+
 @dataclass
 class ProcessingMetrics:
     """Enhanced processing metrics with detailed tracking."""
@@ -92,7 +101,8 @@ class ProcessingMetrics:
     failed_files: int = 0
     total_chunks: int = 0
     successful_chunks: int = 0
-    provider_metrics: Dict[str, ProviderMetrics] = field(default_factory=lambda: {})
+    provider_metrics: Dict[str, ProviderMetrics] = field(
+        default_factory=lambda: {})
     error_types: Dict[str, int] = field(default_factory=dict)
     processing_times: List[float] = field(default_factory=list)
 
@@ -176,6 +186,7 @@ class ProcessingMetrics:
             }
         }
 
+
 class MetricsManager:
     """Centralized manager for metrics calculation and tracking."""
 
@@ -184,7 +195,8 @@ class MetricsManager:
 
     def record_api_call(self, provider: str, latency: float, tokens: int, success: bool, error_type: Optional[str] = None):
         """Records an API call for a specific provider."""
-        provider_metrics = self.processing_metrics.get_provider_metrics(provider)
+        provider_metrics = self.processing_metrics.get_provider_metrics(
+            provider)
         provider_metrics.api_calls += 1
         if success:
             provider_metrics.update_latency(latency)
@@ -194,7 +206,8 @@ class MetricsManager:
 
     def record_file_processing(self, success: bool, processing_time: float, error_type: Optional[str] = None):
         """Records the result of processing a file."""
-        self.processing_metrics.record_file_result(success, processing_time, error_type)
+        self.processing_metrics.record_file_result(
+            success, processing_time, error_type)
 
     def get_summary(self) -> Dict[str, Any]:
         """Returns a summary of all metrics."""

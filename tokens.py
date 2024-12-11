@@ -12,11 +12,13 @@ from metrics_utils import EnhancedEmbeddingCalculator, CodeMetadata, EmbeddingMa
 
 logger = logging.getLogger(__name__)
 
+
 class TokenizerModel(Enum):
     """Supported tokenizer models."""
     GPT4 = "cl100k_base"
     GPT3 = "p50k_base"
     CODEX = "p50k_edit"
+
 
 @dataclass
 class TokenizationResult:
@@ -26,6 +28,7 @@ class TokenizationResult:
     encoding_name: str
     special_tokens: Dict[str, int] = None
     error: Optional[str] = None
+
 
 class TokenManager:
     """
@@ -43,7 +46,8 @@ class TokenManager:
     _encoders = {}  # Cache for different encoders
     _default_model = TokenizerModel.GPT4
     _lock = threading.Lock()  # Lock for thread safety
-    _embedding_manager: Optional[EmbeddingManager] = None  # Lazy initialization
+    # Lazy initialization
+    _embedding_manager: Optional[EmbeddingManager] = None
 
     @classmethod
     def get_encoder(cls, model: TokenizerModel = None) -> tiktoken.Encoding:
@@ -52,17 +56,21 @@ class TokenManager:
             try:
                 model = model or cls._default_model
                 if model not in cls._encoders:
-                    logger.debug(f"Creating new encoder for model: {model.value}")
+                    logger.debug(
+                        f"Creating new encoder for model: {model.value}")
                     cls._encoders[model] = tiktoken.get_encoding(model.value)
                 return cls._encoders[model]
             except Exception as e:
-                logger.error(f"Failed to create encoder for model {model}: {e}")
+                logger.error(
+                    f"Failed to create encoder for model {model}: {e}")
                 raise TokenizationError(f"Failed to create encoder: {str(e)}")
 
     @classmethod
     def count_tokens(cls, text: Union[str, List[str]], model: TokenizerModel = None, include_special_tokens: bool = False) -> TokenizationResult:
         """Counts tokens in the provided text with enhanced error handling."""
-        logger.debug(f"Counting tokens for text: {text[:50]}...")  # Truncate text for logging
+        logger.debug(
+            # Truncate text for logging
+            f"Counting tokens for text: {text[:50]}...")
         try:
             if not text:
                 logger.warning("Empty input provided for token counting.")
@@ -75,7 +83,8 @@ class TokenManager:
                 text = " ".join(text)
 
             tokens = encoder.encode(text)
-            logger.debug(f"Encoded tokens: {tokens[:10]}...")  # Truncate tokens for logging
+            # Truncate tokens for logging
+            logger.debug(f"Encoded tokens: {tokens[:10]}...")
 
             special_tokens = None
             if include_special_tokens:
@@ -97,7 +106,9 @@ class TokenManager:
     @classmethod
     def decode_tokens(cls, tokens: List[int], model: TokenizerModel = None) -> str:
         """Decodes a list of tokens back to text."""
-        logger.debug(f"Decoding tokens: {tokens[:10]}...")  # Truncate tokens for logging
+        logger.debug(
+            # Truncate tokens for logging
+            f"Decoding tokens: {tokens[:10]}...")
         try:
             if not tokens:
                 logger.warning("Empty token list provided for decoding.")
@@ -105,7 +116,8 @@ class TokenManager:
 
             encoder = cls.get_encoder(model)
             decoded_text = encoder.decode(tokens)
-            logger.debug(f"Decoded text: {decoded_text[:50]}...")  # Truncate text for logging
+            # Truncate text for logging
+            logger.debug(f"Decoded text: {decoded_text[:50]}...")
             return decoded_text
 
         except TokenizationError:
@@ -133,7 +145,8 @@ class TokenManager:
         """Checks if the text exceeds the specified token limit."""
         try:
             result = cls.count_tokens(text, model)
-            logger.debug(f"Token count {result.token_count} compared to max {max_tokens}")
+            logger.debug(
+                f"Token count {result.token_count} compared to max {max_tokens}")
             return result.token_count <= max_tokens
         except TokenizationError as e:
             logger.error(f"Validation failed: {e}")
@@ -164,7 +177,8 @@ class TokenManager:
             if current_chunk:
                 decoded_chunk = encoder.decode(current_chunk)
                 chunks.append(decoded_chunk)
-                logger.debug(f"Created final chunk with {current_count} tokens.")
+                logger.debug(
+                    f"Created final chunk with {current_count} tokens.")
 
             logger.info(f"Total chunks created: {len(chunks)}")
             return chunks
@@ -201,7 +215,8 @@ class TokenManager:
                     results.append(result)
                     logger.debug(f"Text {idx+1}: {result.token_count} tokens.")
                 except Exception as e:
-                    logger.error(f"Error in batch tokenization for text {idx+1}: {e}")
+                    logger.error(
+                        f"Error in batch tokenization for text {idx+1}: {e}")
                     results.append(TokenizationResult(
                         tokens=[],
                         token_count=0,
@@ -215,11 +230,11 @@ class TokenManager:
             logger.error(f"Batch tokenization failed: {e}")
             # Return empty results with errors
             return [TokenizationResult(
-                        tokens=[],
-                        token_count=0,
-                        encoding_name="",
-                        error=str(e)
-                    ) for _ in texts]
+                tokens=[],
+                token_count=0,
+                encoding_name="",
+                error=str(e)
+            ) for _ in texts]
 
     @classmethod
     def clear_cache(cls):
@@ -243,7 +258,8 @@ class TokenManager:
             return embedding
         except Exception as e:
             logger.error(f"Failed to generate enhanced embedding: {e}")
-            raise TokenizationError(f"Failed to generate enhanced embedding: {str(e)}")
+            raise TokenizationError(
+                f"Failed to generate enhanced embedding: {str(e)}")
 
     @classmethod
     def calculate_similarity(cls, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
@@ -254,12 +270,14 @@ class TokenManager:
                 cls._embedding_manager = EmbeddingManager()
                 logger.debug("Initialized EmbeddingManager.")
 
-            similarity = cls._embedding_manager.compare_embeddings(embedding1, embedding2)
+            similarity = cls._embedding_manager.compare_embeddings(
+                embedding1, embedding2)
             logger.debug(f"Calculated similarity: {similarity}")
             return similarity
         except Exception as e:
             logger.error(f"Failed to calculate similarity: {e}")
-            raise TokenizationError(f"Failed to calculate similarity: {str(e)}")
+            raise TokenizationError(
+                f"Failed to calculate similarity: {str(e)}")
 
     @classmethod
     def set_metadata_weights(cls, new_weights: Dict[str, float]) -> None:
@@ -274,4 +292,5 @@ class TokenManager:
             logger.info("Metadata weights updated successfully.")
         except Exception as e:
             logger.error(f"Failed to set metadata weights: {e}")
-            raise TokenizationError(f"Failed to set metadata weights: {str(e)}")
+            raise TokenizationError(
+                f"Failed to set metadata weights: {str(e)}")

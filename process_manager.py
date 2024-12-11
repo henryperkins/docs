@@ -26,6 +26,7 @@ from metrics import MetricsManager
 
 logger = logging.getLogger(__name__)
 
+
 class DocumentationRequest(BaseModel):
     """API request model."""
     file_paths: List[str]
@@ -52,6 +53,7 @@ class DocumentationRequest(BaseModel):
             raise ValueError("Priority must be low, normal, or high")
         return v
 
+
 class DocumentationResponse(BaseModel):
     """API response model."""
     task_id: str
@@ -62,8 +64,10 @@ class DocumentationResponse(BaseModel):
     metrics: Optional[Dict[str, Any]] = None
     estimated_completion: Optional[datetime] = None
 
+
 _manager_instance = None
 _manager_lock = threading.Lock()
+
 
 def get_manager_instance(metrics_manager: MetricsManager) -> 'DocumentationProcessManager':
     """Gets or creates DocumentationProcessManager instance."""
@@ -80,6 +84,7 @@ def get_manager_instance(metrics_manager: MetricsManager) -> 'DocumentationProce
                 metrics_manager=metrics_manager
             )
     return _manager_instance
+
 
 class APIHandler:
     """Handles API interactions with AI providers."""
@@ -99,13 +104,16 @@ class APIHandler:
                     response.raise_for_status()
                     return await response.json()
             except aiohttp.ClientError as e:
-                logger.warning(f"API call failed on attempt {attempt + 1}: {e}")
+                logger.warning(
+                    f"API call failed on attempt {attempt + 1}: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(delay)
                     delay *= 2  # Exponential backoff
                 else:
-                    logger.error(f"API call failed after {retries} attempts: {e}")
+                    logger.error(
+                        f"API call failed after {retries} attempts: {e}")
                     raise
+
 
 class DocumentationProcessManager:
     """Manages the documentation generation process using AI models."""
@@ -149,7 +157,8 @@ class DocumentationProcessManager:
 
         try:
             async with aiohttp.ClientSession() as session:
-                api_handler = APIHandler(self.provider_configs[request.provider], session)
+                api_handler = APIHandler(
+                    self.provider_configs[request.provider], session)
 
                 total_files = len(request.file_paths)
                 completed_files = 0
@@ -160,7 +169,8 @@ class DocumentationProcessManager:
                             code = f.read()
 
                         # Create chunks using ChunkManager
-                        chunks = self.chunk_manager.create_chunks(code, file_path, language="python")
+                        chunks = self.chunk_manager.create_chunks(
+                            code, file_path, language="python")
 
                         # Add chunks to context manager
                         for chunk in chunks:
@@ -172,14 +182,16 @@ class DocumentationProcessManager:
 
                         # Use TokenManager to count tokens
                         token_result = TokenManager.count_tokens(code)
-                        logger.info(f"Token count for {file_path}: {token_result.token_count}")
+                        logger.info(
+                            f"Token count for {file_path}: {token_result.token_count}")
 
                         # Example API call
                         api_response = await api_handler.call_provider_api(
                             endpoint=self.provider_configs[request.provider].endpoint,
                             payload={"data": "example"}
                         )
-                        logger.info(f"API response for {file_path}: {api_response}")
+                        logger.info(
+                            f"API response for {file_path}: {api_response}")
 
                         results.append({
                             "file_path": file_path,
@@ -190,8 +202,10 @@ class DocumentationProcessManager:
                         })
 
                         # Record successful processing
-                        processing_time = (datetime.now() - start_time).total_seconds()
-                        self.metrics_manager.record_file_processing(success=True, processing_time=processing_time)
+                        processing_time = (
+                            datetime.now() - start_time).total_seconds()
+                        self.metrics_manager.record_file_processing(
+                            success=True, processing_time=processing_time)
 
                     except Exception as e:
                         logger.error(f"Error processing file {file_path}: {e}")
@@ -200,8 +214,10 @@ class DocumentationProcessManager:
                             "success": False,
                             "error": str(e)
                         })
-                        processing_time = (datetime.now() - start_time).total_seconds()
-                        self.metrics_manager.record_file_processing(success=False, processing_time=processing_time, error_type=str(e))
+                        processing_time = (
+                            datetime.now() - start_time).total_seconds()
+                        self.metrics_manager.record_file_processing(
+                            success=False, processing_time=processing_time, error_type=str(e))
 
                     # Update progress
                     completed_files += 1
@@ -210,7 +226,8 @@ class DocumentationProcessManager:
 
         except Exception as e:
             logger.error(f"Critical error in process_files: {e}")
-            self._task_status[task_id] = {"status": "failed", "progress": 100.0}
+            self._task_status[task_id] = {
+                "status": "failed", "progress": 100.0}
             raise
 
         # Finalize task status
@@ -265,8 +282,10 @@ class DocumentationProcessManager:
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 
+
 # FastAPI app setup
 app = FastAPI(title="Documentation Generator API")
+
 
 @app.post("/api/documentation/generate", response_model=DocumentationResponse)
 async def generate_documentation(
@@ -297,6 +316,7 @@ async def generate_documentation(
             status_code=500,
             detail=f"Documentation generation failed: {str(e)}"
         )
+
 
 @app.get("/api/documentation/status/{task_id}", response_model=DocumentationResponse)
 async def get_status(task_id: str) -> Dict[str, Any]:

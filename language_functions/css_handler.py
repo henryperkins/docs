@@ -47,30 +47,36 @@ class CSSHandler(BaseHandler):
         """
         try:
             # Path to the CSS parser script
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "css_parser.js")
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "css_parser.js")
             # Prepare input data for the parser
             input_data = {"code": code, "language": "css"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running CSS parser script: {script_path}")
 
             # Run the parser script using Node.js
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             # Parse the output JSON structure
             structure = json.loads(result.stdout)
-            logger.debug(f"Extracted CSS code structure successfully from file: {file_path}")
+            logger.debug(
+                f"Extracted CSS code structure successfully from file: {file_path}")
             return structure
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running css_parser.js for file {file_path}: {e.stderr}")
+            logger.error(
+                f"Error running css_parser.js for file {file_path}: {e.stderr}")
             return {}
 
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing output from css_parser.js for file {file_path}: {e}")
+            logger.error(
+                f"Error parsing output from css_parser.js for file {file_path}: {e}")
             return {}
 
         except Exception as e:
-            logger.error(f"Unexpected error extracting CSS structure from file {file_path}: {e}")
+            logger.error(
+                f"Unexpected error extracting CSS structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -90,14 +96,17 @@ class CSSHandler(BaseHandler):
         logger.debug("Inserting comments into CSS code.")
         try:
             # Path to the CSS inserter script
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "css_inserter.js")
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "css_inserter.js")
             # Prepare input data for the inserter
-            input_data = {"code": code, "documentation": documentation, "language": "css"}
+            input_data = {"code": code,
+                          "documentation": documentation, "language": "css"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running CSS inserter script: {script_path}")
 
             # Run the inserter script using Node.js
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             modified_code = result.stdout
             logger.debug("Completed inserting comments into CSS code.")
@@ -108,7 +117,8 @@ class CSSHandler(BaseHandler):
             return code
 
         except Exception as e:
-            logger.error(f"Unexpected error inserting comments into CSS code: {e}")
+            logger.error(
+                f"Unexpected error inserting comments into CSS code: {e}")
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
@@ -125,7 +135,8 @@ class CSSHandler(BaseHandler):
         logger.debug("Starting CSS code validation.")
         try:
             # Use stylelint to validate CSS code
-            process = subprocess.run(["stylelint", "--stdin"], input=code, capture_output=True, text=True)
+            process = subprocess.run(
+                ["stylelint", "--stdin"], input=code, capture_output=True, text=True)
 
             # Check the result of the validation
             if process.returncode != 0:

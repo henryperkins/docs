@@ -46,27 +46,33 @@ class HTMLHandler(BaseHandler):
             Dict[str, Any]: A detailed structure of the HTML components.
         """
         try:
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "html_parser.js")
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "html_parser.js")
             input_data = {"code": code, "language": "html"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running HTML parser script: {script_path}")
 
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             structure = json.loads(result.stdout)
-            logger.debug(f"Extracted HTML code structure successfully from file: {file_path}")
+            logger.debug(
+                f"Extracted HTML code structure successfully from file: {file_path}")
             return structure
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running html_parser.js for file {file_path}: {e.stderr}")
+            logger.error(
+                f"Error running html_parser.js for file {file_path}: {e.stderr}")
             return {}
 
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing output from html_parser.js for file {file_path}: {e}")
+            logger.error(
+                f"Error parsing output from html_parser.js for file {file_path}: {e}")
             return {}
 
         except Exception as e:
-            logger.error(f"Unexpected error extracting HTML structure from file {file_path}: {e}")
+            logger.error(
+                f"Unexpected error extracting HTML structure from file {file_path}: {e}")
             return {}
 
     def insert_docstrings(self, code: str, documentation: Dict[str, Any]) -> str:
@@ -85,12 +91,15 @@ class HTMLHandler(BaseHandler):
         """
         logger.debug("Inserting comments into HTML code.")
         try:
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "html_inserter.js")
-            input_data = {"code": code, "documentation": documentation, "language": "html"}
+            script_path = os.path.join(os.path.dirname(
+                __file__), "..", "scripts", "html_inserter.js")
+            input_data = {"code": code,
+                          "documentation": documentation, "language": "html"}
             input_json = json.dumps(input_data)
             logger.debug(f"Running HTML inserter script: {script_path}")
 
-            result = subprocess.run(["node", script_path], input=input_json, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["node", script_path], input=input_json, capture_output=True, text=True, check=True)
 
             modified_code = result.stdout
             logger.debug("Completed inserting comments into HTML code.")
@@ -101,7 +110,8 @@ class HTMLHandler(BaseHandler):
             return code
 
         except Exception as e:
-            logger.error(f"Unexpected error inserting comments into HTML code: {e}")
+            logger.error(
+                f"Unexpected error inserting comments into HTML code: {e}")
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
@@ -118,7 +128,8 @@ class HTMLHandler(BaseHandler):
         logger.debug("Starting HTML code validation.")
         try:
             # Using 'tidy' for HTML validation
-            process = subprocess.run(["tidy", "-errors", "-quiet", "-utf8"], input=code, capture_output=True, text=True)
+            process = subprocess.run(
+                ["tidy", "-errors", "-quiet", "-utf8"], input=code, capture_output=True, text=True)
 
             if process.returncode > 0:
                 logger.error(f"HTML validation failed:\n{process.stderr}")
@@ -128,7 +139,8 @@ class HTMLHandler(BaseHandler):
             return True
 
         except FileNotFoundError:
-            logger.error("tidy is not installed or not found in PATH. Please install it for HTML validation.")
+            logger.error(
+                "tidy is not installed or not found in PATH. Please install it for HTML validation.")
             return False
 
         except Exception as e:
