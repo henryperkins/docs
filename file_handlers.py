@@ -12,7 +12,8 @@ from chunks import ChunkManager
 from code_chunk import CodeChunk
 from dependency_analyzer import DependencyAnalyzer
 from context import HierarchicalContextManager
-from utils import should_process_file, get_language, FileHandler, write_documentation_report, handle_api_error
+from utils import should_process_file, get_language, FileHandler, handle_api_error
+from write_documentation_report import write_documentation_report
 from metrics import MetricsManager, ProcessingResult
 
 logger = logging.getLogger(__name__)

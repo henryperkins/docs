@@ -368,12 +368,6 @@ def load_config(
         return "", ""
 
 
-async def write_documentation_report(*args, **kwargs):
-    """Proxy to write_documentation_report module's async function."""
-    from write_documentation_report import write_documentation_report as _write_doc_report
-    return await _write_doc_report(*args, **kwargs)
-
-
 def handle_api_error(e: Exception, attempt: int, max_retries: int) -> bool:
     """Handles API errors and determines if a retry should occur."""
     error_type = type(e).__name__
