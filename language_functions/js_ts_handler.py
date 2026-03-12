@@ -173,56 +173,43 @@ class JSTsHandler(BaseHandler):
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
-        """
-        Validates JavaScript/TypeScript code using ESLint.
-
-        Checklist:
-        - [x] Validation Tool: Uses ESLint.
-        - [x] Error Handling: Handles validation errors.
-        - [x] Temporary Files: Uses and cleans up temporary files.
-        """
-        logger.info("Validating code...")
+        """Validates JS/TS code by parsing with acorn/babel (syntax-only, no lint rules)."""
+        logger.info("Validating JS/TS code (syntax check)...")
         try:
-            if not file_path:
-                logger.warning("File path not provided for validation")
+            is_typescript = self._is_typescript_file(file_path) if file_path else False
+            # Use Node.js to parse — catches syntax errors without lint opinions
+            check_script = (
+                "const code = require('fs').readFileSync('/dev/stdin','utf8');"
+                "try { const acorn = require('acorn');"
+                "const jsx = require('acorn-jsx');"
+                "acorn.Parser.extend(jsx()).parse(code, {ecmaVersion:'latest', sourceType:'module'});"
+                "process.exit(0); } catch(e) { console.error(e.message); process.exit(1); }"
+            ) if not is_typescript else (
+                "const code = require('fs').readFileSync('/dev/stdin','utf8');"
+                "try { require('@typescript-eslint/typescript-estree').parse(code, "
+                "{jsx:true, range:true}); process.exit(0); } "
+                "catch(e) { console.error(e.message); process.exit(1); }"
+            )
+            result = subprocess.run(
+                ["node", "-e", check_script],
+                input=code, capture_output=True, text=True, timeout=15,
+                cwd=self.script_dir,
+                env={**os.environ, "NODE_PATH": os.path.join(self.script_dir, "node_modules")},
+            )
+            if result.returncode == 0:
+                logger.debug("JS/TS syntax validation passed.")
                 return True
-
-            is_typescript = self._is_typescript_file(file_path)
-            config_path = self._get_eslint_config(is_typescript)
-
-            with tempfile.NamedTemporaryFile(
-                mode='w',
-                suffix='.ts' if is_typescript else '.js',
-                encoding='utf-8',
-                delete=False
-            ) as tmp:
-                tmp.write(code)
-                temp_path = tmp.name
-
-            try:
-                result = subprocess.run(
-                    ["eslint", "--config", config_path, temp_path],
-                    capture_output=True,
-                    text=True
-                )
-                if result.returncode == 0:
-                    logger.debug("ESLint validation passed.")
-                else:
-                    logger.error(
-                        f"ESLint validation failed: {result.stdout}\n{result.stderr}")
-                return result.returncode == 0
-            finally:
-                try:
-                    os.unlink(temp_path)
-                except OSError as e:
-                    logger.error(
-                        f"Error deleting temporary file {temp_path}: {e}")
-
+            else:
+                logger.warning(f"JS/TS syntax error: {result.stderr.strip()}")
+                return False
         except FileNotFoundError:
-            logger.warning("ESLint not found. Skipping JS/TS validation (assuming valid).")
+            logger.warning("Node.js not found. Skipping JS/TS validation (assuming valid).")
+            return True
+        except subprocess.TimeoutExpired:
+            logger.warning("JS/TS validation timed out. Assuming valid.")
             return True
         except Exception as e:
-            logger.error(f"Validation error: {str(e)}", exc_info=True)
+            logger.warning(f"JS/TS validation error: {e}. Assuming valid.")
             return True
 
     def _calculate_metrics(self, code: str, is_typescript: bool) -> Optional[MetricsResult]:
