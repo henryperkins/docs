@@ -98,10 +98,14 @@ class APIHandler:
         """Calls the provider API with retry and timeout logic."""
         retries = self.config.max_retries
         delay = self.config.retry_delay
+        headers = {
+            "api-key": self.config.api_key,
+            "Content-Type": "application/json"
+        }
 
         for attempt in range(retries):
             try:
-                async with self.session.post(endpoint, json=payload, timeout=self.config.timeout) as response:
+                async with self.session.post(endpoint, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=self.config.timeout)) as response:
                     response.raise_for_status()
                     return await response.json()
             except aiohttp.ClientError as e:
@@ -187,10 +191,24 @@ class DocumentationProcessManager:
                         logger.info(
                             f"Token count for {file_path}: {token_result.token_count}")
 
-                        # Example API call
+                        # Build Azure OpenAI chat completion request
+                        config = self.provider_configs[request.provider]
+                        api_url = (
+                            f"{config.endpoint}/openai/deployments/"
+                            f"{config.deployment_name}/chat/completions"
+                            f"?api-version={config.api_version}"
+                        )
+                        payload = {
+                            "messages": [
+                                {"role": "system", "content": "You are a documentation generator. Generate comprehensive docstrings and documentation for the given code."},
+                                {"role": "user", "content": f"Generate documentation for this code:\n\n{code[:3000]}"}
+                            ],
+                            "max_completion_tokens": config.max_tokens,
+                            "temperature": config.temperature
+                        }
                         api_response = await api_handler.call_provider_api(
-                            endpoint=self.provider_configs[request.provider].endpoint,
-                            payload={"data": "example"}
+                            endpoint=api_url,
+                            payload=payload
                         )
                         logger.info(
                             f"API response for {file_path}: {api_response}")
