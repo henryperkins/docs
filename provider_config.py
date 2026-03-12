@@ -21,7 +21,7 @@ class ProviderConfig(BaseModel):
     max_retries: int = 3
     retry_delay: float = 1.0
     cache_enabled: bool = True
-    timeout: float = 30.0
+    timeout: float = 120.0
     chunk_overlap: int = 200
     min_chunk_size: int = 100
     max_parallel_chunks: int = 3
@@ -88,7 +88,7 @@ def load_provider_configs() -> Dict[str, ProviderConfig]:
                 retry_delay=float(os.getenv("AZURE_RETRY_DELAY", "1.0")),
                 cache_enabled=os.getenv(
                     "AZURE_CACHE_ENABLED", "True") == "True",
-                timeout=float(os.getenv("AZURE_TIMEOUT", "30.0")),
+                timeout=float(os.getenv("AZURE_TIMEOUT", "120.0")),
                 chunk_overlap=int(os.getenv("AZURE_CHUNK_OVERLAP", "200")),
                 min_chunk_size=int(os.getenv("AZURE_MIN_CHUNK_SIZE", "100")),
                 max_parallel_chunks=int(

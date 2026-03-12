@@ -108,9 +108,9 @@ class APIHandler:
                 async with self.session.post(endpoint, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=self.config.timeout)) as response:
                     response.raise_for_status()
                     return await response.json()
-            except aiohttp.ClientError as e:
+            except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError) as e:
                 logger.warning(
-                    f"API call failed on attempt {attempt + 1}: {e}")
+                    f"API call failed on attempt {attempt + 1}: {type(e).__name__}: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(delay)
                     delay *= 2  # Exponential backoff
@@ -278,14 +278,15 @@ class DocumentationProcessManager:
             }
 
         except Exception as e:
-            logger.error(f"Error processing file {file_path}: {e}")
+            error_msg = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+            logger.error(f"Error processing file {file_path}: {error_msg}", exc_info=True)
             processing_time = (datetime.now() - start_time).total_seconds()
             try:
                 self.metrics_manager.record_file_processing(
-                    success=False, processing_time=processing_time, error_type=str(e))
+                    success=False, processing_time=processing_time, error_type=error_msg)
             except Exception as me:
                 logger.warning(f"Metrics recording failed: {me}")
-            return {"file_path": file_path, "success": False, "error": str(e)}
+            return {"file_path": file_path, "success": False, "error": error_msg}
 
     @staticmethod
     def _detect_language(file_path: str) -> str:
