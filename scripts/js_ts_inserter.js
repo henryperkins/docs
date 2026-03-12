@@ -156,20 +156,21 @@ function insertDocstrings(code, documentation, options = {}) {
     traverse(ast, {
         // --- Named function declarations ---
         FunctionDeclaration(path) {
+            // Skip if parent is export default — handled by ExportDefaultDeclaration
+            if (path.parent.type === 'ExportDefaultDeclaration') return;
             const name = path.node.id && path.node.id.name;
             if (name && docMap.has(name)) {
                 attachComment(path.node, docMap.get(name), preserveExisting);
             }
         },
 
-        // --- Export default function ---
+        // --- Export default function/class ---
         ExportDefaultDeclaration(path) {
             const decl = path.node.declaration;
-            if (decl && decl.type === 'FunctionDeclaration' && decl.id) {
-                const name = decl.id.name;
-                if (docMap.has(name)) {
-                    attachComment(path.node, docMap.get(name), preserveExisting);
-                }
+            if (!decl) return;
+            const name = decl.id && decl.id.name;
+            if (name && docMap.has(name)) {
+                attachComment(path.node, docMap.get(name), preserveExisting);
             }
         },
 
@@ -192,6 +193,7 @@ function insertDocstrings(code, documentation, options = {}) {
 
         // --- Class declarations ---
         ClassDeclaration(path) {
+            if (path.parent.type === 'ExportDefaultDeclaration') return;
             const name = path.node.id && path.node.id.name;
             if (name && docMap.has(name)) {
                 attachComment(path.node, docMap.get(name), preserveExisting);
