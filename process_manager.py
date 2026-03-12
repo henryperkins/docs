@@ -147,120 +147,150 @@ class DocumentationProcessManager:
         self._task_status: Dict[str, Dict[str, Any]] = {}
 
     async def process_files(self, request: DocumentationRequest, task_id: str) -> Dict[str, Any]:
-        """
-        Processes files to generate documentation.
-
-        Args:
-            request: Documentation request containing file paths and other parameters.
-            task_id: Unique identifier for the task.
-
-        Returns:
-            A dictionary containing the processing results and metrics.
-        """
-        results = []
+        """Processes files to generate documentation with concurrency."""
         self._task_status[task_id] = {"status": "in_progress", "progress": 0.0}
+        semaphore = asyncio.Semaphore(request.max_concurrency or self.max_concurrency)
+        completed = {"count": 0}
+        total_files = len(request.file_paths)
+
+        async def _process_one(file_path: str):
+            async with semaphore:
+                result = await self._process_single_file(file_path, request, session, api_handler)
+                completed["count"] += 1
+                self._task_status[task_id]["progress"] = (completed["count"] / total_files) * 100
+                return result
 
         try:
             async with aiohttp.ClientSession() as session:
                 api_handler = APIHandler(
                     self.provider_configs[request.provider], session)
 
-                total_files = len(request.file_paths)
-                completed_files = 0
+                results = await asyncio.gather(
+                    *[_process_one(fp) for fp in request.file_paths],
+                    return_exceptions=True
+                )
 
-                for file_path in request.file_paths:
-                    start_time = datetime.now()
-                    try:
-                        with open(file_path, 'r') as f:
-                            code = f.read()
-
-                        # Create chunks using ChunkManager
-                        chunks = self.chunk_manager.create_chunks(
-                            code, file_path, language="python")
-
-                        # Add chunks to context manager
-                        for chunk in chunks:
-                            await self.context_manager.add_code_chunk(chunk)
-
-                        # Analyze dependencies using DependencyAnalyzer
-                        analyzer = DependencyAnalyzer()
-                        dependencies = analyzer.analyze(code)
-
-                        # Use TokenManager to count tokens
-                        token_result = TokenManager.count_tokens(code)
-                        logger.info(
-                            f"Token count for {file_path}: {token_result.token_count}")
-
-                        # Build Azure OpenAI chat completion request
-                        config = self.provider_configs[request.provider]
-                        api_url = (
-                            f"{config.endpoint}/openai/deployments/"
-                            f"{config.deployment_name}/chat/completions"
-                            f"?api-version={config.api_version}"
-                        )
-                        payload = {
-                            "messages": [
-                                {"role": "system", "content": "You are a documentation generator. Generate comprehensive docstrings and documentation for the given code."},
-                                {"role": "user", "content": f"Generate documentation for this code:\n\n{code[:3000]}"}
-                            ],
-                            "max_completion_tokens": config.max_tokens,
-                            "temperature": config.temperature
-                        }
-                        api_response = await api_handler.call_provider_api(
-                            endpoint=api_url,
-                            payload=payload
-                        )
-                        logger.info(
-                            f"API response for {file_path}: {api_response}")
-
-                        results.append({
-                            "file_path": file_path,
-                            "success": True,
-                            "dependencies": dependencies,
-                            "token_count": token_result.token_count,
-                            "api_response": api_response
-                        })
-
-                        # Record successful processing
-                        processing_time = (
-                            datetime.now() - start_time).total_seconds()
-                        self.metrics_manager.record_file_processing(
-                            success=True, processing_time=processing_time)
-
-                    except Exception as e:
-                        logger.error(f"Error processing file {file_path}: {e}")
-                        results.append({
-                            "file_path": file_path,
-                            "success": False,
-                            "error": str(e)
-                        })
-                        processing_time = (
-                            datetime.now() - start_time).total_seconds()
-                        self.metrics_manager.record_file_processing(
-                            success=False, processing_time=processing_time, error_type=str(e))
-
-                    # Update progress
-                    completed_files += 1
-                    progress = (completed_files / total_files) * 100
-                    self._task_status[task_id]["progress"] = progress
+                final_results = []
+                for fp, r in zip(request.file_paths, results):
+                    if isinstance(r, Exception):
+                        final_results.append({"file_path": fp, "success": False, "error": str(r)})
+                    else:
+                        final_results.append(r)
+                results = final_results
 
         except Exception as e:
             logger.error(f"Critical error in process_files: {e}")
-            self._task_status[task_id] = {
-                "status": "failed", "progress": 100.0}
+            self._task_status[task_id] = {"status": "failed", "progress": 100.0}
             raise
 
-        # Finalize task status
         self._task_status[task_id] = {
-            "status": "completed",
-            "progress": 100.0,
-            "results": results
+            "status": "completed", "progress": 100.0, "results": results
         }
-
-        # Remove task from active tasks
         self._active_tasks.pop(task_id, None)
-
         return self._task_status[task_id]
+
+    async def _process_single_file(
+        self,
+        file_path: str,
+        request: 'DocumentationRequest',
+        session: aiohttp.ClientSession,
+        api_handler: 'APIHandler'
+    ) -> Dict[str, Any]:
+        """Processes a single file: chunk, analyze, call API, write output."""
+        start_time = datetime.now()
+        try:
+            with open(file_path, 'r') as f:
+                code = f.read()
+
+            language = self._detect_language(file_path)
+            chunks = self.chunk_manager.create_chunks(code, file_path, language=language)
+
+            for chunk in chunks:
+                try:
+                    await self.context_manager.add_code_chunk(chunk)
+                except Exception as e:
+                    logger.debug(f"Context add failed for {file_path}: {e}")
+
+            analyzer = DependencyAnalyzer()
+            dependencies = analyzer.analyze(code)
+
+            token_result = TokenManager.count_tokens(code)
+            logger.info(f"Token count for {file_path}: {token_result.token_count}")
+
+            config = self.provider_configs[request.provider]
+            api_url = (
+                f"{config.endpoint}/openai/deployments/"
+                f"{config.deployment_name}/chat/completions"
+                f"?api-version={config.api_version}"
+            )
+            payload = {
+                "messages": [
+                    {"role": "system", "content": "You are a documentation generator. Generate comprehensive docstrings and documentation for the given code."},
+                    {"role": "user", "content": f"Generate documentation for this code:\n\n{code[:3000]}"}
+                ],
+                "max_completion_tokens": config.max_tokens,
+                "temperature": config.temperature
+            }
+            api_response = await api_handler.call_provider_api(
+                endpoint=api_url, payload=payload
+            )
+
+            # Extract and write documentation
+            doc_content = None
+            if api_response and "choices" in api_response:
+                message = api_response["choices"][0].get("message", {})
+                doc_content = message.get("content", "")
+
+            if doc_content and not request.safe_mode:
+                from write_documentation_report import write_documentation_report
+                documentation = {
+                    "file_path": file_path,
+                    "language": language,
+                    "content": doc_content,
+                    "dependencies": list(dependencies),
+                    "token_count": token_result.token_count,
+                    "generate_markdown": False,
+                }
+                await write_documentation_report(
+                    documentation=documentation,
+                    language=language,
+                    file_path=file_path,
+                    repo_root=str(self.repo_root),
+                    output_dir=str(self.output_dir),
+                    project_id=request.project_id,
+                )
+                logger.info(f"Documentation written for {file_path}")
+            elif request.safe_mode:
+                logger.info(f"Safe mode: skipping write for {file_path}")
+
+            processing_time = (datetime.now() - start_time).total_seconds()
+            try:
+                self.metrics_manager.record_file_processing(
+                    success=True, processing_time=processing_time)
+            except Exception as me:
+                logger.warning(f"Metrics recording failed: {me}")
+
+            return {
+                "file_path": file_path,
+                "success": True,
+                "dependencies": dependencies,
+                "token_count": token_result.token_count,
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing file {file_path}: {e}")
+            processing_time = (datetime.now() - start_time).total_seconds()
+            try:
+                self.metrics_manager.record_file_processing(
+                    success=False, processing_time=processing_time, error_type=str(e))
+            except Exception as me:
+                logger.warning(f"Metrics recording failed: {me}")
+            return {"file_path": file_path, "success": False, "error": str(e)}
+
+    @staticmethod
+    def _detect_language(file_path: str) -> str:
+        from utils import get_language
+        return get_language(file_path) or "unknown"
 
     async def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Retrieves the status of a specific task."""
