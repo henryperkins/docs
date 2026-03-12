@@ -152,10 +152,14 @@ class CodeChunk:
         """Calculates complexity using radon."""
         logger.debug(f"Calculating complexity for chunk (lines {self.start_line}-{self.end_line})")
         try:
-            complexity_blocks = cc_visit(code)
+            import textwrap
+            dedented = textwrap.dedent(code)
+            complexity_blocks = cc_visit(dedented)
             calculated_complexity = sum(block.complexity for block in complexity_blocks)
             logger.debug(f"Calculated complexity: {calculated_complexity}")
             return calculated_complexity
+        except SyntaxError:
+            return None
         except Exception as e:
             logger.error(f"Error calculating complexity: {e}")
             return None
