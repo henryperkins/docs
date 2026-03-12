@@ -41,7 +41,12 @@ DEFAULT_EXCLUDED_PATTERNS = {
     'extensions': {
         '.pyc', '.pyo', '.pyd', '.so', '.o', '.obj', '.dll', '.dylib', '.egg', '.whl', '.cache',
         '.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.ico', '.mov', '.mp4', '.avi',
-        '.mp3', '.wav', '.zip', '.tar.gz', '.tgz', '.rar'
+        '.mp3', '.wav', '.zip', '.tar.gz', '.tgz', '.rar',
+        # Binary data formats
+        '.webp', '.avif', '.heic', '.heif', '.bmp', '.tiff', '.svg',
+        '.woff', '.woff2', '.ttf', '.otf', '.eot',
+        '.safetensors', '.faiss', '.bin', '.pkl', '.pickle',
+        '.db', '.sqlite', '.sqlite3'
     }
 }
 

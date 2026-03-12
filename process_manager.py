@@ -199,8 +199,12 @@ class DocumentationProcessManager:
         """Processes a single file: chunk, analyze, call API, write output."""
         start_time = datetime.now()
         try:
-            with open(file_path, 'r') as f:
-                code = f.read()
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    code = f.read()
+            except UnicodeDecodeError:
+                logger.debug(f"Skipping binary file: {file_path}")
+                return {"file_path": file_path, "success": True, "skipped": "binary"}
 
             language = self._detect_language(file_path)
             chunks = self.chunk_manager.create_chunks(code, file_path, language=language)
