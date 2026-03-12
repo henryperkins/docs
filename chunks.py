@@ -74,21 +74,24 @@ class ChunkManager:
                             "\n".join(current_chunk_lines)).token_count
 
                 elif current_chunk_lines:
-                    current_chunk_lines.append(
-                        code.splitlines()[node.lineno - 1])
-                    current_token_count += self.token_manager.count_tokens(
-                        code.splitlines()[node.lineno - 1]).token_count
+                    if hasattr(node, 'lineno') and node.lineno is not None:
+                        line_idx = node.lineno - 1
+                        lines = code.splitlines()
+                        if 0 <= line_idx < len(lines):
+                            current_chunk_lines.append(lines[line_idx])
+                            current_token_count += self.token_manager.count_tokens(
+                                lines[line_idx]).token_count
 
-                    if current_token_count >= self.max_tokens - self.overlap:
-                        chunks.append(self._create_chunk_from_lines(
-                            current_chunk_lines,
-                            current_chunk_start,
-                            file_path,
-                            "python"
-                        ))
-                        current_chunk_lines = []
-                        current_token_count = 0
-                        current_chunk_start = node.lineno
+                            if current_token_count >= self.max_tokens - self.overlap:
+                                chunks.append(self._create_chunk_from_lines(
+                                    current_chunk_lines,
+                                    current_chunk_start,
+                                    file_path,
+                                    "python"
+                                ))
+                                current_chunk_lines = []
+                                current_token_count = 0
+                                current_chunk_start = node.lineno + 1
 
             if current_chunk_lines:
                 chunks.append(self._create_chunk_from_lines(
