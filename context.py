@@ -166,8 +166,7 @@ class HierarchicalContextManager:
             metadata = ChunkMetadata(
                 token_count=token_result.token_count,
                 dependencies=set()
-            )
-            metadata.update_hash(chunk.chunk_content)
+            ).update_hash(chunk.chunk_content)
 
             async with self._lock:
                 # Check for overlapping chunks
@@ -436,8 +435,7 @@ class HierarchicalContextManager:
             new_metadata = ChunkMetadata(
                 token_count=token_result.token_count,
                 dependencies=node.metadata.dependencies if node.metadata else set()
-            )
-            new_metadata.update_hash(chunk.chunk_content)
+            ).update_hash(chunk.chunk_content)
 
             # Check if content actually changed
             if (node.metadata and

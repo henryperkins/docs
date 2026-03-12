@@ -7,6 +7,7 @@ Coordinates file processing, model interactions, and documentation generation.
 
 import asyncio
 import logging
+import os
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
@@ -131,7 +132,7 @@ class DocumentationProcessManager:
         self.output_dir = Path(output_dir).resolve()
         self.provider_configs = provider_configs
         self.max_concurrency = max_concurrency
-        self.metrics_manager = metrics_manager
+        self.metrics_manager = metrics_manager or MetricsManager()
 
         # Initialize managers
         self.chunk_manager = ChunkManager(max_tokens=4096, overlap=200)
@@ -164,6 +165,7 @@ class DocumentationProcessManager:
                 completed_files = 0
 
                 for file_path in request.file_paths:
+                    start_time = datetime.now()
                     try:
                         with open(file_path, 'r') as f:
                             code = f.read()

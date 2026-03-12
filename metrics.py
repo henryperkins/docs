@@ -29,6 +29,16 @@ class ComplexityMetrics:
 
 
 @dataclass
+class ProcessingResult:
+    """Result from processing a code chunk."""
+    success: bool
+    content: Optional[Any] = None
+    error: Optional[str] = None
+    retries: int = 0
+    processing_time: float = 0.0
+
+
+@dataclass
 class ProviderMetrics:
     """Tracks metrics for an AI provider."""
     api_calls: int = 0

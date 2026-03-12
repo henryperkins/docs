@@ -16,6 +16,7 @@ from chunks import ChunkManager
 from dependency_analyzer import DependencyAnalyzer
 from context import HierarchicalContextManager
 from utils import sanitize_filename
+from shared_functions import DEFAULT_COMPLEXITY_THRESHOLDS, DEFAULT_HALSTEAD_THRESHOLDS, DEFAULT_MAINTAINABILITY_THRESHOLDS
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,6 @@ class BadgeGenerator:
     )
 
     @classmethod
-    @lru_cache(maxsize=128)
     def generate_badge(cls, config: BadgeConfig) -> str:
         """Generates a Markdown badge with caching."""
         try:
@@ -422,9 +422,9 @@ class DocumentationGenerator:
         """Gets language-specific information."""
         from utils import LANGUAGE_MAPPING
 
-        for ext, info in LANGUAGE_MAPPING.items():
-            if info["name"] == language:
-                return info
+        for ext, lang_name in LANGUAGE_MAPPING.items():
+            if lang_name == language:
+                return {"name": lang_name, "extension": ext}
         return {"name": language}
 
     async def _render_template(

@@ -73,14 +73,16 @@ class ChunkMetadata:
     token_count: int = 0
     dependencies: Set[int] = field(default_factory=set)
     used_by: Set[int] = field(default_factory=set)
-    complexity: Optional[float] = None  # Cached complexity
+    complexity: Optional[float] = None
+    hash: Optional[str] = None
 
-    def __post_init__(self):
-        # Complexity is handled in CodeChunk.__post_init__
-        pass  # No need for __post_init__ here
+    def update_hash(self, content: str) -> 'ChunkMetadata':
+        """Returns a new ChunkMetadata with the hash set from content."""
+        new_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        return replace(self, hash=new_hash)
 
 
-dataclass(frozen=True)
+@dataclass(frozen=True)
 class CodeChunk:
     """Immutable representation of a code chunk with metadata."""
 
@@ -98,7 +100,7 @@ class CodeChunk:
     chunk_id: int = field(init=False)
     _chunk_counter = itertools.count()
     _tokens: Optional[List[int]] = field(default=None, init=False, repr=False)
-    metadata: ChunkMetadata = field(init=False) # Only define metadata and _tokens ONCE
+    metadata: Optional[ChunkMetadata] = field(default=None)
 
 
     @property
@@ -135,7 +137,6 @@ class CodeChunk:
 
         except TokenizationError as e:
             logger.error(f"Tokenization error in chunk: {str(e)}")
-            object.__setattr__(self, "token_count", 0)
             object.__setattr__(self, "_tokens", [])
             # Create metadata with default values in case of error
             metadata = ChunkMetadata(
@@ -293,9 +294,14 @@ class CodeChunk:
         chunk_type = chunk1.metadata.chunk_type  # Simplistic approach; can be enhanced
 
         # Calculate complexity
-        complexity = chunk1.metadata.complexity
-        if chunk2.metadata.complexity is not None:
-            complexity += chunk2.metadata.complexity
+        c1 = chunk1.metadata.complexity
+        c2 = chunk2.metadata.complexity
+        if c1 is not None and c2 is not None:
+            complexity = c1 + c2
+        elif c2 is not None:
+            complexity = c2
+        else:
+            complexity = c1
 
         new_metadata = ChunkMetadata(
             start_line=chunk1.start_line,
@@ -314,7 +320,6 @@ class CodeChunk:
             function_name=chunk1.function_name or chunk2.function_name,
             class_name=chunk1.class_name or chunk2.class_name,
             chunk_content=combined_content,
-            token_count=tokens.token_count,
             language=chunk1.language,
             is_async=chunk1.is_async or chunk2.is_async,
             decorator_list=list(set(chunk1.decorator_list + chunk2.decorator_list)),
@@ -397,18 +402,16 @@ class CodeChunk:
             function_name=self.function_name,
             class_name=self.class_name,
             chunk_content=chunk1_content,
-            token_count=tokens1.token_count,
             language=self.language,
             is_async=self.is_async,
             decorator_list=self.decorator_list,
             docstring=self.docstring,
             parent_chunk_id=self.parent_chunk_id,
-            metadata=replace(self.metadata, end_line=split_point - 1)
+            metadata=replace(self.metadata, end_line=split_point - 1) if self.metadata else None
         )
 
         # Create second chunk
         chunk2_content = ''.join(lines[split_idx:])
-        tokens2 = TokenManager.count_tokens(chunk2_content)
 
         chunk2 = CodeChunk(
             file_path=self.file_path,
@@ -417,13 +420,12 @@ class CodeChunk:
             function_name=self.function_name,
             class_name=self.class_name,
             chunk_content=chunk2_content,
-            token_count=tokens2.token_count,
             language=self.language,
             is_async=self.is_async,
             decorator_list=self.decorator_list,
             docstring=self.docstring,
             parent_chunk_id=self.parent_chunk_id,
-            metadata=replace(self.metadata, start_line=split_point)
+            metadata=replace(self.metadata, start_line=split_point) if self.metadata else None
         )
 
         return [chunk1, chunk2]

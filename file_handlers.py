@@ -9,6 +9,7 @@ import random
 from provider_config import ProviderConfig
 from tokens import TokenManager
 from chunks import ChunkManager
+from code_chunk import CodeChunk
 from dependency_analyzer import DependencyAnalyzer
 from context import HierarchicalContextManager
 from utils import should_process_file, get_language, FileHandler, write_documentation_report, handle_api_error
