@@ -222,3 +222,135 @@ class MetricsManager:
     def get_summary(self) -> Dict[str, Any]:
         """Returns a summary of all metrics."""
         return self.processing_metrics.get_summary()
+
+
+# --- Code metrics analysis (used by language handlers) ---
+
+@dataclass
+class MetricsThresholds:
+    """Thresholds for code quality metrics."""
+    complexity_high: int = 15
+    complexity_warning: int = 10
+    maintainability_low: float = 20.0
+    halstead_effort_high: float = 1_000_000.0
+
+
+@dataclass
+class MetricsResult:
+    """Result from code metrics calculation."""
+    success: bool
+    metrics: Optional[Dict[str, Any]]
+    error: Optional[str]
+
+
+def _make_empty_metrics() -> Dict[str, Any]:
+    """Returns a fresh copy of the empty metrics template."""
+    return {
+        "complexity": 0,
+        "halstead": {"volume": 0, "difficulty": 0, "effort": 0},
+        "maintainability_index": 100.0,
+    }
+
+DEFAULT_EMPTY_METRICS: Dict[str, Any] = _make_empty_metrics()
+
+
+def get_default_halstead_metrics() -> Dict[str, Any]:
+    """Returns default zero-valued Halstead metrics."""
+    return {"volume": 0, "difficulty": 0, "effort": 0}
+
+
+def normalize_score(value: float, min_val: float, max_val: float) -> float:
+    """Clamps and scales a value to the 0-100 range."""
+    if max_val <= min_val:
+        return 100.0
+    clamped = max(min_val, min(value, max_val))
+    return ((clamped - min_val) / (max_val - min_val)) * 100.0
+
+
+def validate_metrics(metrics: Dict[str, Any]) -> bool:
+    """Checks that required keys exist and values are numeric."""
+    required_keys = {"complexity", "halstead", "maintainability_index"}
+    if not required_keys.issubset(metrics.keys()):
+        return False
+    if not isinstance(metrics.get("halstead"), dict):
+        return False
+    for key in ("volume", "difficulty", "effort"):
+        if key not in metrics["halstead"]:
+            return False
+        if not isinstance(metrics["halstead"][key], (int, float)):
+            return False
+    if not isinstance(metrics.get("complexity"), (int, float)):
+        return False
+    if not isinstance(metrics.get("maintainability_index"), (int, float)):
+        return False
+    return True
+
+
+def calculate_quality_score(metrics: Dict[str, Any]) -> float:
+    """Weighted composite quality score from 0-100."""
+    complexity = metrics.get("complexity", 0)
+    mi = metrics.get("maintainability_index", 0)
+    effort = metrics.get("halstead", {}).get("effort", 0)
+
+    complexity_score = normalize_score(50 - complexity, 0, 50)
+    mi_score = normalize_score(mi, 0, 100)
+    effort_score = normalize_score(2_000_000 - effort, 0, 2_000_000)
+
+    return 0.30 * complexity_score + 0.40 * mi_score + 0.30 * effort_score
+
+
+async def calculate_code_metrics(
+    code: str, file_path: str, language: str = "python"
+) -> 'MetricsResult':
+    """Calculates code metrics using radon (Python only)."""
+    if language != "python":
+        return MetricsResult(success=True, metrics=_make_empty_metrics(), error=None)
+    try:
+        from radon.complexity import cc_visit
+        from radon.metrics import h_visit, mi_visit
+
+        blocks = cc_visit(code)
+        total_cc = sum(b.complexity for b in blocks) if blocks else 0
+
+        h = h_visit(code)
+        if hasattr(h, "total") and h.total:
+            halstead = {
+                "volume": h.total.volume or 0,
+                "difficulty": h.total.difficulty or 0,
+                "effort": h.total.effort or 0,
+            }
+        else:
+            halstead = get_default_halstead_metrics()
+
+        mi = mi_visit(code, True)
+
+        metrics = {
+            "complexity": total_cc,
+            "halstead": halstead,
+            "maintainability_index": mi,
+        }
+        return MetricsResult(success=True, metrics=metrics, error=None)
+
+    except Exception as e:
+        logger.error(f"Error calculating metrics for {file_path}: {e}")
+        return MetricsResult(success=False, metrics=_make_empty_metrics(), error=str(e))
+
+
+class MetricsAnalyzer:
+    """Accumulates per-file metrics results and produces a summary."""
+
+    def __init__(self, thresholds: Optional[MetricsThresholds] = None):
+        self.thresholds = thresholds or MetricsThresholds()
+        self._results: List['MetricsResult'] = []
+
+    def add_result(self, result: 'MetricsResult') -> None:
+        self._results.append(result)
+
+    def get_summary(self) -> Dict[str, Any]:
+        successful = [r for r in self._results if r.success]
+        failed = [r for r in self._results if not r.success]
+        return {
+            "total": len(self._results),
+            "successful": len(successful),
+            "failed": len(failed),
+        }
