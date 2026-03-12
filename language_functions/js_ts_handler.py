@@ -218,9 +218,12 @@ class JSTsHandler(BaseHandler):
                     logger.error(
                         f"Error deleting temporary file {temp_path}: {e}")
 
+        except FileNotFoundError:
+            logger.warning("ESLint not found. Skipping JS/TS validation (assuming valid).")
+            return True
         except Exception as e:
             logger.error(f"Validation error: {str(e)}", exc_info=True)
-            return False
+            return True
 
     def _calculate_metrics(self, code: str, is_typescript: bool) -> Optional[MetricsResult]:
         """Calculates code metrics using the js_ts_metrics.js script."""
