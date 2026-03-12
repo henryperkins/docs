@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class CppHandler(BaseHandler):
     """Handler for the C++ programming language."""
 
-    def __init__(self, function_schema: Dict[str, Any]):
+    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer=None):
         """
         Initializes the `CppHandler` with a function schema.
 
@@ -30,6 +30,7 @@ class CppHandler(BaseHandler):
             function_schema (Dict[str, Any]): The schema defining functions for documentation generation.
         """
         self.function_schema = function_schema
+        self.metrics_analyzer = metrics_analyzer
 
     def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         """

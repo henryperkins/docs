@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class GoHandler(BaseHandler):
     """Handler for the Go programming language."""
 
-    def __init__(self, function_schema: Dict[str, Any]):
+    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer=None):
         """
         Initializes the `GoHandler` with a function schema.
 
@@ -30,6 +30,7 @@ class GoHandler(BaseHandler):
             function_schema (Dict[str, Any]): The schema defining functions for documentation generation.
         """
         self.function_schema = function_schema
+        self.metrics_analyzer = metrics_analyzer
 
     async def extract_structure(self, code: str, file_path: str = None) -> Dict[str, Any]:
         """

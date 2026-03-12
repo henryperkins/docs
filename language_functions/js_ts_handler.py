@@ -30,8 +30,9 @@ class MetricsResult:
 
 class JSTsHandler(BaseHandler):
 
-    def __init__(self, function_schema: Dict[str, Any]):
+    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer=None):
         self.function_schema = function_schema
+        self.metrics_analyzer = metrics_analyzer
         self.script_dir = os.path.join(
             os.path.dirname(__file__), "..", "scripts")
 

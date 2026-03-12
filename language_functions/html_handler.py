@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class HTMLHandler(BaseHandler):
     """Handler for the HTML language."""
 
-    def __init__(self, function_schema: Dict[str, Any]):
+    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer=None):
         """
         Initializes the HTMLHandler with a function schema.
 
@@ -30,6 +30,7 @@ class HTMLHandler(BaseHandler):
             function_schema (Dict[str, Any]): The schema used for function operations.
         """
         self.function_schema = function_schema
+        self.metrics_analyzer = metrics_analyzer
 
     async def extract_structure(self, code: str, file_path: str, metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
