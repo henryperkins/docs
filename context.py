@@ -9,7 +9,10 @@ import aiofiles
 import shutil
 import hashlib
 import networkx as nx
-from sentence_transformers import SentenceTransformer
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None
 from collections import deque
 
 # Assuming these are imported from another module
@@ -127,7 +130,7 @@ class HierarchicalContextManager:
 
         # Dependency Graph for Advanced Relationship Management
         self._dependency_graph = nx.DiGraph()
-        self._embedding_model = SentenceTransformer(embedding_model)
+        self._embedding_model = SentenceTransformer(embedding_model) if SentenceTransformer else None
 
     async def add_code_chunk(self, chunk: CodeChunk) -> None:
         """

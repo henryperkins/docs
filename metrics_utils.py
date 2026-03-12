@@ -20,15 +20,26 @@ from typing import Dict, Any, Optional, Union, List, Callable, TypeVar, Iterable
 from concurrent.futures import ThreadPoolExecutor
 
 # External dependencies
-from git import Repo, GitError, InvalidGitRepositoryError, NoSuchPathError
 from radon.metrics import h_visit, mi_visit
 from radon.complexity import cc_visit, ComplexityVisitor
-from sentence_transformers import SentenceTransformer
-from transformers import AutoModel, AutoTokenizer
-import torch
-from sklearn.decomposition import PCA
 import ast
 import numpy as np
+
+# Optional heavy ML dependencies
+try:
+    from git import Repo, GitError, InvalidGitRepositoryError, NoSuchPathError
+except ImportError:
+    Repo = GitError = InvalidGitRepositoryError = NoSuchPathError = None
+
+try:
+    from sentence_transformers import SentenceTransformer
+    from transformers import AutoModel, AutoTokenizer
+    import torch
+    from sklearn.decomposition import PCA
+    _HAS_ML_DEPS = True
+except ImportError:
+    SentenceTransformer = AutoModel = AutoTokenizer = torch = PCA = None
+    _HAS_ML_DEPS = False
 
 # Configure logging
 logger = logging.getLogger(__name__)

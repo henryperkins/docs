@@ -7,7 +7,12 @@ from enum import Enum, auto
 import threading
 import numpy as np
 
-from metrics_utils import EnhancedEmbeddingCalculator, CodeMetadata, EmbeddingManager
+try:
+    from metrics_utils import EnhancedEmbeddingCalculator, CodeMetadata, EmbeddingManager
+except ImportError:
+    EnhancedEmbeddingCalculator = None
+    CodeMetadata = None
+    EmbeddingManager = None
 
 
 class TokenizationError(Exception):

@@ -67,9 +67,9 @@ class ChunkLocation:
 @dataclass(frozen=True)  # ChunkMetadata is immutable
 class ChunkMetadata:
     """Stores metadata about a code chunk, including complexity."""
-    start_line: int
-    end_line: int
-    chunk_type: ChunkType
+    start_line: int = 0
+    end_line: int = 0
+    chunk_type: ChunkType = ChunkType.MODULE
     token_count: int = 0
     dependencies: Set[int] = field(default_factory=set)
     used_by: Set[int] = field(default_factory=set)

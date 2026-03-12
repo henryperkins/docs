@@ -64,7 +64,7 @@ async def main():
     output_dir = args.doc_output_dir
 
     # Load provider configurations
-    provider_configs = load_provider_configs(config_path)
+    provider_configs = load_provider_configs()
 
     # Validate API configuration based on provider
     if args.provider not in provider_configs:
@@ -115,31 +115,26 @@ async def main():
         manager = DocumentationProcessManager(
             repo_root=repo_path,
             output_dir=output_dir,
-            provider=args.provider,
-            azure_config={
-                "api_key": provider_config.api_key,
-                "endpoint": provider_config.endpoint,
-                "deployment_name": provider_config.deployment_name,
-                "api_version": provider_config.api_version
-            },
-            gemini_config={
-                "api_key": provider_config.api_key,
-                "endpoint": provider_config.endpoint
-            },
-            openai_config={
-                "api_key": provider_config.api_key
-            },
-            function_schema=function_schema,
+            provider_configs=provider_configs,
             max_concurrency=args.concurrency
         )
 
-        results = await manager.process_files(
+        # Build request
+        from process_manager import DocumentationRequest
+        request = DocumentationRequest(
             file_paths=file_paths,
-            skip_types=skip_types_set,
+            skip_types=list(skip_types_set),
             project_info=project_info,
             style_guidelines=style_guidelines,
-            safe_mode=args.safe_mode
+            safe_mode=args.safe_mode,
+            project_id=args.project_id,
+            provider=args.provider,
+            max_concurrency=args.concurrency
         )
+
+        import uuid
+        task_id = str(uuid.uuid4())
+        results = await manager.process_files(request, task_id)
 
         logger.info(f"Documentation generation completed. Results: {results}")
 
