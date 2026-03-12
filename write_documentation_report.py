@@ -488,8 +488,12 @@ async def write_documentation_report(
             )
 
             relative_path = Path(file_path).relative_to(repo_root)
+            # Preserve directory structure in output
+            safe_parts = [sanitize_filename(part) for part in relative_path.parts]
+            output_subdir = project_output_dir / Path(*safe_parts[:-1]) if len(safe_parts) > 1 else project_output_dir
+            await aiofiles.os.makedirs(output_subdir, exist_ok=True)
             safe_filename = sanitize_filename(relative_path.name)
-            base_path = project_output_dir / safe_filename
+            base_path = output_subdir / safe_filename
 
             json_path = base_path.with_suffix(".json")
             try:

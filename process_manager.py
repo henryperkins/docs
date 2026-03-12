@@ -146,12 +146,36 @@ class DocumentationProcessManager:
         self._active_tasks: Dict[str, asyncio.Task] = {}
         self._task_status: Dict[str, Dict[str, Any]] = {}
 
+    def _get_already_processed(self, project_id: str) -> set:
+        """Returns set of source basenames already documented (for resume)."""
+        output_dir = self.output_dir / project_id
+        if not output_dir.exists():
+            return set()
+        processed = set()
+        for root, _, files in os.walk(output_dir):
+            for f in files:
+                if f.endswith('.json'):
+                    processed.add(f[:-5])  # strip .json suffix
+        return processed
+
     async def process_files(self, request: DocumentationRequest, task_id: str) -> Dict[str, Any]:
         """Processes files to generate documentation with concurrency."""
         self._task_status[task_id] = {"status": "in_progress", "progress": 0.0}
         semaphore = asyncio.Semaphore(request.max_concurrency or self.max_concurrency)
         completed = {"count": 0}
-        total_files = len(request.file_paths)
+
+        # Resume support: skip files already documented
+        already_done = self._get_already_processed(request.project_id)
+        from utils import sanitize_filename
+        file_paths = [
+            fp for fp in request.file_paths
+            if sanitize_filename(Path(fp).name).rsplit('.', 1)[0] not in already_done
+        ]
+        skipped = len(request.file_paths) - len(file_paths)
+        if skipped:
+            logger.info(f"Resuming: skipping {skipped} already-documented files")
+
+        total_files = len(file_paths)
 
         async def _process_one(file_path: str):
             async with semaphore:
@@ -165,13 +189,17 @@ class DocumentationProcessManager:
                 api_handler = APIHandler(
                     self.provider_configs[request.provider], session)
 
-                results = await asyncio.gather(
-                    *[_process_one(fp) for fp in request.file_paths],
-                    return_exceptions=True
-                )
+                if not file_paths:
+                    logger.info("All files already documented, nothing to process")
+                    results = []
+                else:
+                    results = await asyncio.gather(
+                        *[_process_one(fp) for fp in file_paths],
+                        return_exceptions=True
+                    )
 
                 final_results = []
-                for fp, r in zip(request.file_paths, results):
+                for fp, r in zip(file_paths, results):
                     if isinstance(r, Exception):
                         final_results.append({"file_path": fp, "success": False, "error": str(r)})
                     else:
@@ -207,6 +235,12 @@ class DocumentationProcessManager:
                 return {"file_path": file_path, "success": True, "skipped": "binary"}
 
             language = self._detect_language(file_path)
+
+            # Skip non-code files (markdown, csv, text, etc.)
+            if self._is_non_code_file(file_path):
+                logger.debug(f"Skipping non-code file: {file_path}")
+                return {"file_path": file_path, "success": True, "skipped": "non-code"}
+
             chunks = self.chunk_manager.create_chunks(code, file_path, language=language)
 
             for chunk in chunks:
@@ -296,6 +330,12 @@ class DocumentationProcessManager:
     def _detect_language(file_path: str) -> str:
         from utils import get_language
         return get_language(file_path) or "unknown"
+
+    @staticmethod
+    def _is_non_code_file(file_path: str) -> bool:
+        from utils import NON_CODE_EXTENSIONS
+        ext = Path(file_path).suffix.lower()
+        return ext in NON_CODE_EXTENSIONS
 
     async def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Retrieves the status of a specific task."""
