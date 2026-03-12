@@ -1241,19 +1241,21 @@ class BadgeGenerator:
     def generate_all_badges(cls, metrics: Dict[str, Any]) -> str:
         badges = []
         try:
-            if complexity := metrics.get("complexity"):
+            if (complexity := metrics.get("complexity")) is not None:
                 badges.append(cls.generate_badge(BadgeConfig(
                     metric_name="Complexity", value=complexity,
                     thresholds=DEFAULT_COMPLEXITY_THRESHOLDS, logo="codeClimate",
                 )))
             if halstead := metrics.get("halstead"):
+                logo_map = {"volume": "stackOverflow", "difficulty": "codewars", "effort": "atlassian"}
                 for name, key in [("Volume", "volume"), ("Difficulty", "difficulty"), ("Effort", "effort")]:
-                    if val := halstead.get(key):
+                    if (val := halstead.get(key)) is not None:
                         badges.append(cls.generate_badge(BadgeConfig(
                             metric_name=name, value=val,
                             thresholds=DEFAULT_HALSTEAD_THRESHOLDS[key],
+                            logo=logo_map[key],
                         )))
-            if mi := metrics.get("maintainability_index"):
+            if (mi := metrics.get("maintainability_index")) is not None:
                 badges.append(cls.generate_badge(BadgeConfig(
                     metric_name="Maintainability", value=mi,
                     thresholds=DEFAULT_MAINTAINABILITY_THRESHOLDS, logo="codeclimate",
