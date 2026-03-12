@@ -17,7 +17,7 @@ from collections import deque
 
 # Assuming these are imported from another module
 from code_chunk import CodeChunk, ChunkMetadata, ChunkLocation
-from tokens import TokenManager, TokenizationError
+from tokens import TokenManager, TokenizationError, TokenizerModel
 # Import the unified DependencyAnalyzer
 from dependency_analyzer import DependencyAnalyzer
 
@@ -151,7 +151,7 @@ class HierarchicalContextManager:
             # Count tokens
             token_result = TokenManager.count_tokens(
                 chunk.chunk_content,
-                model=self._token_model
+                model=TokenizerModel(self._token_model)
             )
 
             location = ChunkLocation(
@@ -429,7 +429,7 @@ class HierarchicalContextManager:
             # Calculate new metadata
             token_result = TokenManager.count_tokens(
                 chunk.chunk_content,
-                model=self._token_model
+                model=TokenizerModel(self._token_model)
             )
 
             new_metadata = ChunkMetadata(
