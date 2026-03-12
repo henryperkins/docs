@@ -8,13 +8,6 @@ from dataclasses import dataclass
 from jinja2 import Environment, PackageLoader, select_autoescape, Template
 import aiofiles
 import aiofiles.os
-from functools import lru_cache
-
-from provider_config import load_provider_configs
-from tokens import TokenManager
-from chunks import ChunkManager
-from dependency_analyzer import DependencyAnalyzer
-from context import HierarchicalContextManager
 from utils import sanitize_filename
 from shared_functions import DEFAULT_COMPLEXITY_THRESHOLDS, DEFAULT_HALSTEAD_THRESHOLDS, DEFAULT_MAINTAINABILITY_THRESHOLDS
 
