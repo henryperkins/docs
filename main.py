@@ -127,7 +127,8 @@ async def main():
             repo_root=repo_path,
             output_dir=output_dir,
             provider_configs=provider_configs,
-            max_concurrency=args.concurrency
+            max_concurrency=args.concurrency,
+            schema_path=args.schema,
         )
 
         # Build request
