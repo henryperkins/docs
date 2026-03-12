@@ -94,7 +94,28 @@ def load_provider_configs() -> Dict[str, ProviderConfig]:
                 max_parallel_chunks=int(
                     os.getenv("AZURE_MAX_PARALLEL_CHUNKS", "3"))
             ),
-            # Add other providers similarly
+            "openai": ProviderConfig(
+                name="openai",
+                endpoint=os.getenv("OPENAI_ENDPOINT", "https://api.openai.com/v1"),
+                api_key=os.getenv("OPENAI_API_KEY", "your-openai-api-key"),
+                model_name=os.getenv("OPENAI_MODEL_NAME", "gpt-4o"),
+                max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "4096")),
+                temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.7")),
+                max_retries=int(os.getenv("OPENAI_MAX_RETRIES", "3")),
+                retry_delay=float(os.getenv("OPENAI_RETRY_DELAY", "1.0")),
+                timeout=float(os.getenv("OPENAI_TIMEOUT", "60.0")),
+            ),
+            "gemini": ProviderConfig(
+                name="gemini",
+                endpoint=os.getenv("GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com/v1"),
+                api_key=os.getenv("GEMINI_API_KEY", "your-gemini-api-key"),
+                model_name=os.getenv("GEMINI_MODEL_NAME", "gemini-pro"),
+                max_tokens=int(os.getenv("GEMINI_MAX_TOKENS", "4096")),
+                temperature=float(os.getenv("GEMINI_TEMPERATURE", "0.7")),
+                max_retries=int(os.getenv("GEMINI_MAX_RETRIES", "3")),
+                retry_delay=float(os.getenv("GEMINI_RETRY_DELAY", "1.0")),
+                timeout=float(os.getenv("GEMINI_TIMEOUT", "60.0")),
+            ),
         }
 
     return configs
