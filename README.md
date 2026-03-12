@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT%204-blue.svg)
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/yourusername/yourrepo/ci.yml?branch=main)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/henryperkins/docs/ci.yml?branch=main)
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@
 
 The AI-Driven Code Documentation Generator automates the creation of structured documentation for codebases. Utilizing OpenAI's GPT-4 (or Azure OpenAI) and advanced parsing techniques, it extracts code structures and generates insightful docstrings. This tool enhances maintainability and collaboration for projects of any size.
 
-![Demo](https://github.com/yourusername/yourrepo/raw/main/demo.gif)
+![Demo](https://github.com/henryperkins/docs/raw/main/demo.gif)
 
 ## Features
 
@@ -86,8 +86,8 @@ The AI-Driven Code Documentation Generator automates the creation of structured 
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/yourrepo.git
-cd yourrepo
+git clone https://github.com/henryperkins/docs.git
+cd docs
 ```
 
 ### Set Up a Virtual Environment
@@ -227,7 +227,7 @@ For questions or support, contact [hperkin4@asu.edu](mailto:hperkin4@asu.edu).
 
 You can also reach out through:
 
-- [GitHub Issues](https://github.com/yourusername/yourrepo/issues)
-- [Discussion Forum](https://github.com/yourusername/yourrepo/discussions)
+- [GitHub Issues](https://github.com/henryperkins/docs/issues)
+- [Discussion Forum](https://github.com/henryperkins/docs/discussions)
 
 *Enhance your codebase documentation effortlessly with AI-driven precision.*

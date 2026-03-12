@@ -28,7 +28,7 @@ class BaseLanguageHandler(ABC):
     `validate_code` methods.
     """
 
-	 def __init__(self, function_schema: Dict[str, Any], metrics_analyzer: MetricsAnalyzer):
+    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer: MetricsAnalyzer):
         """
         Initializes the BaseLanguageHandler.
 
@@ -57,7 +57,7 @@ class BaseLanguageHandler(ABC):
                             to the provided `function_schema`.
         """
         raise NotImplementedError
-        
+
     def insert_docstrings(self, code: str, documentation: Dict[str, Any], docstring_format: str = "default") -> str:
         """
         Inserts docstrings into the code based on the documentation.
@@ -78,7 +78,7 @@ class BaseLanguageHandler(ABC):
         return code  # Return the original code if no specific logic is implemented
 
     @abc.abstractmethod
-	 def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
         """
         Validates the modified code for syntax correctness.
 
@@ -94,7 +94,8 @@ class BaseLanguageHandler(ABC):
             bool: True if the code is valid, False otherwise.
         """
         raise NotImplementedError
-	 @abc.abstractmethod # Make this abstract if all handlers need to implement it
+
+    @abc.abstractmethod
     def _calculate_complexity(self, code: str) -> Optional[float]:
         """
         Calculates code complexity.

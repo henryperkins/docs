@@ -1,6 +1,4 @@
 # Dependencies
-.git/*
-.github/*
 /node_modules
 /.pnp
 .pnp.js
@@ -98,9 +96,7 @@ env/
 ehthumbs.db
 Thumbs.db
 pyproject.toml
-SECURITY.md
 .flake8
-README.md
 
 # Documentation generation
 /docs/_build/
