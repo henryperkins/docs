@@ -20,6 +20,7 @@ import threading
 import pathspec
 from functools import lru_cache
 import aiohttp
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,27 @@ DEFAULT_EXCLUDED_PATTERNS = {
         '.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.ico', '.mov', '.mp4', '.avi',
         '.mp3', '.wav', '.zip', '.tar.gz', '.tgz', '.rar'
     }
+}
+
+# Convenience aliases for backward compatibility
+DEFAULT_EXCLUDED_DIRS = DEFAULT_EXCLUDED_PATTERNS['dirs']
+DEFAULT_EXCLUDED_FILES = DEFAULT_EXCLUDED_PATTERNS['files']
+DEFAULT_SKIP_TYPES = DEFAULT_EXCLUDED_PATTERNS['extensions']
+
+# Language mappings
+LANGUAGE_MAPPING = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".go": "go",
+    ".cpp": "cpp",
+    ".c": "cpp",
+    ".java": "java",
 }
 
 
@@ -221,6 +243,134 @@ def get_all_file_paths(repo_path: Union[str, Path], excluded_dirs: Optional[Set[
     except Exception as e:
         logger.error(f"Error walking repository: {str(e)}")
         return []
+
+
+def get_language(file_path: Union[str, Path]) -> Optional[str]:
+    """Determines the programming language based on file extension."""
+    ext = str(Path(file_path).suffix).lower()
+    language = LANGUAGE_MAPPING.get(ext)
+    logger.debug(f"Detected language for '{file_path}': {language}")
+    return language
+
+
+def is_binary(file_path: Union[str, Path]) -> bool:
+    """Checks if a file is binary."""
+    try:
+        with open(file_path, "rb") as file:
+            return b"\0" in file.read(1024)
+    except Exception as e:
+        logger.error(f"Error checking if file is binary '{file_path}': {e}")
+        return True
+
+
+def should_process_file(file_path: Union[str, Path], skip_types: Set[str]) -> bool:
+    """Determines if a file should be processed."""
+    file_path = Path(file_path)
+
+    if not file_path.exists():
+        return False
+    if file_path.is_symlink():
+        return False
+    if "scripts" in file_path.parts:
+        return False
+
+    excluded_parts = {
+        'node_modules', '.bin', '.git', '__pycache__',
+        'build', 'dist', 'venv', '.venv'
+    }
+    if any(part in excluded_parts for part in file_path.parts):
+        return False
+
+    ext = file_path.suffix.lower()
+    if (not ext or
+        ext in skip_types or
+        ext in {'.flake8', '.gitignore', '.env', '.pyc', '.pyo', '.pyd', '.git'} or
+            ext.endswith('.d.ts')):
+        return False
+
+    if is_binary(file_path):
+        return False
+
+    return True
+
+
+def load_json_schema(schema_path: Union[str, Path]) -> Optional[Dict]:
+    """Loads and validates a JSON schema file."""
+    try:
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        logger.debug(f"Loaded JSON schema from '{schema_path}'")
+        return schema
+    except FileNotFoundError:
+        logger.error(f"Schema file not found: '{schema_path}'")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in schema file: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error loading schema: {e}")
+        return None
+
+
+def load_function_schema(schema_path: Union[str, Path]) -> Dict:
+    """Loads and validates function schema file."""
+    schema = load_json_schema(schema_path)
+    if schema is None:
+        raise ValueError("Failed to load schema file")
+
+    if "functions" not in schema:
+        raise ValueError("Schema missing 'functions' key")
+
+    try:
+        from jsonschema import Draft7Validator
+        Draft7Validator.check_schema(schema)
+    except Exception as e:
+        raise ValueError(f"Invalid schema format: {e}")
+
+    return schema
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitizes filename by removing invalid characters."""
+    return re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+
+
+def load_config(
+    config_path: Union[str, Path],
+    excluded_dirs: Set[str],
+    excluded_files: Set[str],
+    skip_types: Set[str]
+) -> tuple:
+    """Loads configuration file and updates exclusion sets."""
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        project_info = config.get("project_info", "")
+        style_guidelines = config.get("style_guidelines", "")
+
+        excluded_dirs.update(config.get("excluded_dirs", []))
+        excluded_files.update(config.get("excluded_files", []))
+        skip_types.update(config.get("skip_types", []))
+
+        logger.debug(f"Loaded configuration from '{config_path}'")
+        return project_info, style_guidelines
+
+    except FileNotFoundError:
+        logger.error(f"Config file not found: '{config_path}'")
+        return "", ""
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in config file: {e}")
+        return "", ""
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+        return "", ""
+
+
+def write_documentation_report(*args, **kwargs):
+    """Proxy to write_documentation_report module's generate function."""
+    from write_documentation_report import generate_documentation_report
+    return generate_documentation_report(*args, **kwargs)
 
 
 def handle_api_error(e: Exception, attempt: int, max_retries: int) -> bool:

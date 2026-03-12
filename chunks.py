@@ -4,7 +4,7 @@ from typing import List, Optional
 from pathlib import Path
 
 # Assuming these are imported from another module
-from token_utils import TokenManager, TokenizationError
+from tokens import TokenManager, TokenizationError
 from code_chunk import CodeChunk, ChunkType, ChunkMetadata
 
 logger = logging.getLogger(__name__)

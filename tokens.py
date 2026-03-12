@@ -7,8 +7,12 @@ from enum import Enum, auto
 import threading
 import numpy as np
 
-# Assuming these are imported from another module
-from metrics_utils import EnhancedEmbeddingCalculator, CodeMetadata, EmbeddingManager, TokenizationError
+from metrics_utils import EnhancedEmbeddingCalculator, CodeMetadata, EmbeddingManager
+
+
+class TokenizationError(Exception):
+    """Custom exception for tokenization errors."""
+    pass
 
 logger = logging.getLogger(__name__)
 

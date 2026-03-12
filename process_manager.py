@@ -17,8 +17,8 @@ import uuid
 import aiohttp
 
 from provider_config import load_provider_configs, ProviderConfig
-from token_utils import TokenManager
-from chunk import ChunkManager
+from tokens import TokenManager
+from chunks import ChunkManager
 from dependency_analyzer import DependencyAnalyzer
 from context import HierarchicalContextManager
 from utils import setup_logging, load_json_schema, handle_api_error

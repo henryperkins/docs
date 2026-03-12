@@ -11,8 +11,8 @@ import aiofiles.os
 from functools import lru_cache
 
 from provider_config import load_provider_configs
-from token_utils import TokenManager
-from chunk import ChunkManager
+from tokens import TokenManager
+from chunks import ChunkManager
 from dependency_analyzer import DependencyAnalyzer
 from context import HierarchicalContextManager
 from utils import sanitize_filename

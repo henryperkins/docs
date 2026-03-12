@@ -14,7 +14,7 @@ from collections import deque
 
 # Assuming these are imported from another module
 from code_chunk import CodeChunk, ChunkMetadata, ChunkLocation
-from token_utils import TokenManager, TokenizationError
+from tokens import TokenManager, TokenizationError
 # Import the unified DependencyAnalyzer
 from dependency_analyzer import DependencyAnalyzer
 
