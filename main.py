@@ -1,18 +1,13 @@
 # main.py
 
-import os
 import sys
 import logging
 import argparse
 import asyncio
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any
 from provider_config import load_provider_configs
-from azure_model import AzureModel
-from gemini_model import GeminiModel
-from openai_model import OpenAIModel
 from process_manager import DocumentationProcessManager
-from utils import DEFAULT_EXCLUDED_FILES, DEFAULT_EXCLUDED_DIRS, DEFAULT_SKIP_TYPES, load_config, load_function_schema, get_all_file_paths, setup_logging
+from utils import DEFAULT_EXCLUDED_FILES, DEFAULT_EXCLUDED_DIRS, DEFAULT_SKIP_TYPES, load_config, get_all_file_paths, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -71,29 +66,7 @@ async def main():
         logger.error(f"Unsupported provider: {args.provider}")
         sys.exit(1)
 
-    provider_config = provider_configs[args.provider]
-
     try:
-        # Initialize the appropriate model based on provider
-        client = None
-        if args.provider == "azure":
-            client = AzureModel(
-                api_key=provider_config.api_key,
-                endpoint=provider_config.endpoint,
-                deployment_name=provider_config.deployment_name,
-                api_version=provider_config.api_version
-            )
-        elif args.provider == "gemini":
-            client = GeminiModel(
-                api_key=provider_config.api_key,
-                endpoint=provider_config.endpoint
-            )
-        elif args.provider == "openai":
-            client = OpenAIModel(api_key=provider_config.api_key)
-        else:
-            logger.error(f"Unsupported provider: {args.provider}")
-            sys.exit(1)
-
         # Load configuration, schema, and file paths
         excluded_dirs = set(DEFAULT_EXCLUDED_DIRS)
         excluded_files = set(DEFAULT_EXCLUDED_FILES)
@@ -107,7 +80,6 @@ async def main():
         project_info = args.project_info or project_info
         style_guidelines = args.style_guidelines or style_guidelines
 
-        function_schema = load_function_schema(args.schema)
         file_paths = get_all_file_paths(
             repo_path, excluded_dirs, excluded_files, skip_types_set)
 
