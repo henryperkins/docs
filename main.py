@@ -4,6 +4,9 @@ import sys
 import logging
 import argparse
 import asyncio
+import tempfile
+import shutil
+import subprocess
 from dotenv import load_dotenv
 from provider_config import load_provider_configs
 from process_manager import DocumentationProcessManager
@@ -12,11 +15,40 @@ from utils import DEFAULT_EXCLUDED_FILES, DEFAULT_EXCLUDED_DIRS, DEFAULT_SKIP_TY
 logger = logging.getLogger(__name__)
 
 
+def is_git_url(path: str) -> bool:
+    """Check if the path looks like a git URL."""
+    return (
+        path.startswith("https://") or
+        path.startswith("http://") or
+        path.startswith("git@") or
+        path.startswith("ssh://") or
+        path.endswith(".git")
+    )
+
+
+def clone_repo(url: str) -> str:
+    """Clone a git repo to a temp directory and return the path."""
+    clone_dir = tempfile.mkdtemp(prefix="docgen_")
+    logger.info(f"Cloning {url} to {clone_dir}...")
+    try:
+        subprocess.run(
+            ["git", "clone", "--depth", "1", url, clone_dir],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        logger.info(f"Clone complete: {clone_dir}")
+        return clone_dir
+    except subprocess.CalledProcessError as e:
+        shutil.rmtree(clone_dir, ignore_errors=True)
+        raise RuntimeError(f"Failed to clone {url}: {e.stderr.strip()}")
+
+
 def parse_arguments():
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Generate and insert docstrings using Azure OpenAI, Gemini, or OpenAI models.")
-    parser.add_argument("repo_path", help="Path to the code repository")
+    parser.add_argument("repo_path", help="Path to the code repository or a git URL (https/ssh)")
     parser.add_argument(
         "-c", "--config", help="Path to config.json", default="config.json")
     parser.add_argument(
@@ -55,6 +87,13 @@ async def main():
     logger.info("Starting documentation generation process...")
 
     repo_path = args.repo_path
+    cloned_dir = None
+
+    # Auto-clone if a git URL is provided
+    if is_git_url(repo_path):
+        cloned_dir = clone_repo(repo_path)
+        repo_path = cloned_dir
+
     config_path = args.config
     output_dir = args.doc_output_dir
 
@@ -113,6 +152,10 @@ async def main():
     except Exception as e:
         logger.critical(f"Unhandled exception: {e}", exc_info=True)
         sys.exit(1)
+    finally:
+        if cloned_dir:
+            logger.info(f"Cleaning up cloned repo: {cloned_dir}")
+            shutil.rmtree(cloned_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     try:
