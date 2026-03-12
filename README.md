@@ -23,8 +23,6 @@
 
 The AI-Driven Code Documentation Generator automates the creation of structured documentation for codebases. Utilizing OpenAI's GPT-4 (or Azure OpenAI) and advanced parsing techniques, it extracts code structures and generates insightful docstrings. This tool enhances maintainability and collaboration for projects of any size.
 
-![Demo](https://github.com/henryperkins/docs/raw/main/demo.gif)
-
 ## Features
 
 - **Multi-Language Support**: Automatically generates documentation for Python, JavaScript, TypeScript, Go, C++, Java, HTML, and CSS.

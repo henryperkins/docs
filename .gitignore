@@ -95,8 +95,6 @@ env/
 .Trashes
 ehthumbs.db
 Thumbs.db
-pyproject.toml
-.flake8
 
 # Documentation generation
 /docs/_build/

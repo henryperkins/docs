@@ -27,7 +27,6 @@
     "package-lock.json",
     "README.md",
     "output.md",
-    "docs_generation.log",
     "tsconfig.json"
   ],
   "skip_types": [
