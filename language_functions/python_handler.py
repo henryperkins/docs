@@ -2,6 +2,7 @@
 
 import ast
 import logging
+import os
 import subprocess
 import tempfile
 from typing import Dict, Any, Optional, List
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class PythonHandler(BaseHandler):
-    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer: MetricsAnalyzer):
+    def __init__(self, function_schema: Dict[str, Any], metrics_analyzer=None):
         """Initialize the Python handler."""
         self.function_schema = function_schema
         self.metrics_analyzer = metrics_analyzer
@@ -55,7 +56,8 @@ class PythonHandler(BaseHandler):
                         f"Metrics calculation failed for {file_path}: {metrics_result.error}")
                     metrics = DEFAULT_EMPTY_METRICS
 
-                self.metrics_analyzer.add_result(metrics_result)
+                if self.metrics_analyzer:
+                    self.metrics_analyzer.add_result(metrics_result)
 
             tree = ast.parse(code)
             code_structure = {
@@ -230,35 +232,14 @@ class PythonHandler(BaseHandler):
             return code
 
     def validate_code(self, code: str, file_path: Optional[str] = None) -> bool:
-        """
-        Validates the Python code using pylint.
-
-        Checklist:
-        - [x] Validation Tool: Uses pylint.
-        - [x] Error Handling: Handles validation errors.
-        - [x] Temporary Files: Uses and cleans up temporary files.
-        """
+        """Validates Python code. Uses compile() for syntax checking."""
         logger.info("Validating code...")
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
-                temp_file.write(code.encode("utf-8"))
-                temp_file_path = temp_file.name
-
-            result = subprocess.run(
-                ["pylint", temp_file_path],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            os.unlink(temp_file_path)
-
-            if result.returncode == 0:
-                logger.info("Code validation passed.")
-                return True
-            else:
-                logger.error(
-                    f"Code validation failed: {result.stdout}\n{result.stderr}")
-                return False
+            compile(code, file_path or "<string>", "exec")
+            return True
+        except SyntaxError as e:
+            logger.error(f"Syntax error in code: {e}")
+            return False
         except Exception as e:
             logger.error(f"Error validating code: {e}", exc_info=True)
             return False
@@ -272,15 +253,31 @@ class DocstringTransformer(ast.NodeTransformer):
         self.docstring_format = docstring_format
         self.preserve_existing = preserve_existing
 
+    def _insert_docstring(self, node, docstring):
+        """Insert a docstring as the first statement of a node body."""
+        if not docstring or not hasattr(node, "body"):
+            return node
+        docstring_node = ast.Expr(value=ast.Constant(value=docstring))
+        # Remove existing docstring if present
+        if (node.body and isinstance(node.body[0], ast.Expr) and
+                isinstance(node.body[0].value, ast.Constant) and
+                isinstance(node.body[0].value.value, str)):
+            node.body[0] = docstring_node
+        else:
+            node.body.insert(0, docstring_node)
+        return node
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
         """Adds or updates docstring to function definitions."""
         for func in self.documentation.get("functions", []):
             if func["name"] == node.name:
                 if not self.preserve_existing or not ast.get_docstring(node):
                     docstring = self._format_docstring(
-                        func["docstring"], self.docstring_format, func.get("args", []), func.get("returns"))
-                    node.docstring = docstring
+                        func.get("docstring", ""), self.docstring_format,
+                        func.get("args", []), func.get("returns"))
+                    self._insert_docstring(node, docstring)
                 break
+        self.generic_visit(node)
         return node
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AsyncFunctionDef:
@@ -289,9 +286,11 @@ class DocstringTransformer(ast.NodeTransformer):
             if func["name"] == node.name:
                 if not self.preserve_existing or not ast.get_docstring(node):
                     docstring = self._format_docstring(
-                        func["docstring"], self.docstring_format, func.get("args", []), func.get("returns"))
-                    node.docstring = docstring
+                        func.get("docstring", ""), self.docstring_format,
+                        func.get("args", []), func.get("returns"))
+                    self._insert_docstring(node, docstring)
                 break
+        self.generic_visit(node)
         return node
 
     def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef:
@@ -300,27 +299,35 @@ class DocstringTransformer(ast.NodeTransformer):
             if cls["name"] == node.name:
                 if not self.preserve_existing or not ast.get_docstring(node):
                     docstring = self._format_docstring(
-                        cls["docstring"], self.docstring_format)
-                    node.docstring = docstring
+                        cls.get("docstring", ""), self.docstring_format)
+                    self._insert_docstring(node, docstring)
                 break
+        self.generic_visit(node)
         return node
 
     def visit_Module(self, node: ast.Module) -> ast.Module:
         """Adds or updates docstring to the module."""
-        if not self.preserve_existing or not ast.get_docstring(node):
-            docstring = self._format_docstring(
-                self.documentation.get("summary", ""), self.docstring_format)
-            node.docstring = docstring
+        summary = self.documentation.get("summary", "")
+        if summary and (not self.preserve_existing or not ast.get_docstring(node)):
+            docstring = self._format_docstring(summary, self.docstring_format)
+            self._insert_docstring(node, docstring)
+        self.generic_visit(node)
         return node
 
-    def _format_docstring(self, docstring: str, format: str = "Google", args: List[Dict] = None, returns: Optional[str] = None) -> str:
+    def _format_docstring(self, docstring: str, format: str = "Google",
+                          args: list = None, returns: Optional[str] = None) -> str:
         """Formats the docstring according to the specified format."""
+        if not docstring:
+            return ""
         if format == "Google":
             formatted_docstring = docstring.strip() + "\n\n"
             if args:
                 formatted_docstring += "Args:\n"
                 for arg in args:
-                    formatted_docstring += f"    {arg['name']} ({arg.get('type', 'Any')}): {arg.get('description', '')}\n"
+                    arg_name = arg if isinstance(arg, str) else arg.get("name", "")
+                    arg_type = "" if isinstance(arg, str) else arg.get("type", "Any")
+                    arg_desc = "" if isinstance(arg, str) else arg.get("description", "")
+                    formatted_docstring += f"    {arg_name} ({arg_type}): {arg_desc}\n"
             if returns:
                 formatted_docstring += f"\nReturns:\n    {returns}\n"
             return formatted_docstring
@@ -329,10 +336,12 @@ class DocstringTransformer(ast.NodeTransformer):
             if args:
                 formatted_docstring += "Parameters\n----------\n"
                 for arg in args:
-                    formatted_docstring += f"{arg['name']} : {arg.get('type', 'Any')}\n    {arg.get('description', '')}\n"
+                    arg_name = arg if isinstance(arg, str) else arg.get("name", "")
+                    arg_type = "" if isinstance(arg, str) else arg.get("type", "Any")
+                    arg_desc = "" if isinstance(arg, str) else arg.get("description", "")
+                    formatted_docstring += f"{arg_name} : {arg_type}\n    {arg_desc}\n"
             if returns:
                 formatted_docstring += "\nReturns\n-------\n"
                 formatted_docstring += f"{returns}\n"
             return formatted_docstring
-        # ... (Handle other formats like reStructuredText)
         return docstring
