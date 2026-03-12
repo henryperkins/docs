@@ -1,11 +1,11 @@
 """
 process_manager.py
 
-Documentation generation process manager with integrated token, chunk, and context management.
-Coordinates file processing, model interactions, and documentation generation.
+Documentation generation process manager with integrated pipeline.
 """
 
 import asyncio
+import json
 import logging
 import os
 from typing import Dict, Any, List, Optional
@@ -22,7 +22,7 @@ from tokens import TokenManager
 from chunks import ChunkManager
 from dependency_analyzer import DependencyAnalyzer
 from context import HierarchicalContextManager
-from utils import setup_logging, load_json_schema, handle_api_error
+from utils import setup_logging, load_function_schema
 from metrics import MetricsManager
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,8 @@ class DocumentationProcessManager:
         provider_configs: Dict[str, ProviderConfig],
         max_concurrency: int = 5,
         cache_dir: Optional[str] = None,
-        metrics_manager: MetricsManager = None
+        metrics_manager: MetricsManager = None,
+        schema_path: Optional[str] = None,
     ):
         self.repo_root = Path(repo_root).resolve()
         self.output_dir = Path(output_dir).resolve()
@@ -141,6 +142,19 @@ class DocumentationProcessManager:
         # Initialize managers
         self.chunk_manager = ChunkManager(max_tokens=4096, overlap=200)
         self.context_manager = HierarchicalContextManager(cache_dir=cache_dir)
+
+        # Load function schema for structured output
+        self.function_schema = None
+        if schema_path:
+            try:
+                self.function_schema = load_function_schema(schema_path)
+                logger.info(f"Loaded function schema from {schema_path}")
+            except Exception as e:
+                logger.warning(f"Could not load function schema: {e}. Falling back to generic prompts.")
+
+        # Code metrics analyzer
+        from metrics import MetricsAnalyzer
+        self.metrics_analyzer = MetricsAnalyzer()
 
         # Task tracking
         self._active_tasks: Dict[str, asyncio.Task] = {}
@@ -224,9 +238,10 @@ class DocumentationProcessManager:
         session: aiohttp.ClientSession,
         api_handler: 'APIHandler'
     ) -> Dict[str, Any]:
-        """Processes a single file: chunk, analyze, call API, write output."""
+        """Processes a single file: extract structure, call API with function schema, insert docstrings, write docs."""
         start_time = datetime.now()
         try:
+            # Read file
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     code = f.read()
@@ -236,70 +251,138 @@ class DocumentationProcessManager:
 
             language = self._detect_language(file_path)
 
-            # Skip non-code files (markdown, csv, text, etc.)
+            # Skip non-code files
             if self._is_non_code_file(file_path):
                 logger.debug(f"Skipping non-code file: {file_path}")
                 return {"file_path": file_path, "success": True, "skipped": "non-code"}
 
-            chunks = self.chunk_manager.create_chunks(code, file_path, language=language)
+            # Try to get a language handler for structured pipeline
+            handler = None
+            extracted_structure = None
+            if self.function_schema:
+                from language_functions import get_handler
+                handler = get_handler(language, self.function_schema, self.metrics_analyzer)
 
-            for chunk in chunks:
+            if handler:
+                # === STRUCTURED PIPELINE ===
+                # Note: some handlers (Cpp, Java, Go) define extract_structure as
+                # a regular def, not async def. Use inspect to handle both.
+                import inspect
                 try:
-                    await self.context_manager.add_code_chunk(chunk)
+                    result = handler.extract_structure(code, file_path)
+                    if inspect.isawaitable(result):
+                        extracted_structure = await result
+                    else:
+                        extracted_structure = result
                 except Exception as e:
-                    logger.debug(f"Context add failed for {file_path}: {e}")
+                    logger.warning(f"Structure extraction failed for {file_path}: {e}")
+                    extracted_structure = None
 
-            analyzer = DependencyAnalyzer()
-            dependencies = analyzer.analyze(code)
-
-            token_result = TokenManager.count_tokens(code)
-            logger.info(f"Token count for {file_path}: {token_result.token_count}")
-
+            # Build API request
             config = self.provider_configs[request.provider]
             api_url = (
                 f"{config.endpoint}/openai/deployments/"
                 f"{config.deployment_name}/chat/completions"
                 f"?api-version={config.api_version}"
             )
-            payload = {
-                "messages": [
-                    {"role": "system", "content": "You are a documentation generator. Generate comprehensive docstrings and documentation for the given code."},
-                    {"role": "user", "content": f"Generate documentation for this code:\n\n{code[:3000]}"}
-                ],
-                "max_completion_tokens": config.max_tokens,
-                "temperature": config.temperature
-            }
+
+            if handler and extracted_structure and self.function_schema:
+                # Structured request with function calling
+                payload = {
+                    "messages": [
+                        {"role": "system", "content": (
+                            "You are a code documentation generator. Analyze the provided code structure "
+                            "and generate comprehensive documentation. Fill in docstrings for all functions "
+                            "and classes. Use Google-style docstrings for Python."
+                        )},
+                        {"role": "user", "content": (
+                            f"File: {file_path}\nLanguage: {language}\n\n"
+                            f"Extracted structure:\n{json.dumps(extracted_structure, indent=2, default=str)}\n\n"
+                            f"Source code:\n{code[:8000]}"
+                        )},
+                    ],
+                    "tools": [{
+                        "type": "function",
+                        "function": self.function_schema["functions"][0],
+                    }],
+                    "tool_choice": {"type": "function", "function": {"name": "generate_documentation"}},
+                    "max_completion_tokens": 4096,
+                    "temperature": config.temperature,
+                }
+            else:
+                # Generic request (unsupported language or no schema)
+                payload = {
+                    "messages": [
+                        {"role": "system", "content": "You are a documentation generator. Generate comprehensive docstrings and documentation for the given code."},
+                        {"role": "user", "content": f"Generate documentation for this code:\n\n{code[:8000]}"},
+                    ],
+                    "max_completion_tokens": config.max_tokens,
+                    "temperature": config.temperature,
+                }
+
+            # Call API
             api_response = await api_handler.call_provider_api(
                 endpoint=api_url, payload=payload
             )
 
-            # Extract and write documentation
+            # Parse response
+            structured = None
             doc_content = None
             if api_response and "choices" in api_response:
-                message = api_response["choices"][0].get("message", {})
-                doc_content = message.get("content", "")
+                choice = api_response["choices"][0]
+                message = choice.get("message", {})
+                tool_calls = message.get("tool_calls", [])
+                if tool_calls:
+                    try:
+                        structured = json.loads(tool_calls[0]["function"]["arguments"])
+                    except (json.JSONDecodeError, KeyError, IndexError) as e:
+                        logger.warning(f"Failed to parse structured response for {file_path}: {e}")
+                if not structured:
+                    doc_content = message.get("content", "")
 
-            if doc_content and not request.safe_mode:
-                from write_documentation_report import write_documentation_report
+            # Insert docstrings (if structured response and not safe mode)
+            if structured and handler and not request.safe_mode:
+                try:
+                    modified_code = handler.insert_docstrings(code, structured)
+                    if handler.validate_code(modified_code, file_path):
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(modified_code)
+                        logger.info(f"Docstrings inserted into {file_path}")
+                    else:
+                        logger.warning(f"Validation failed after docstring insertion for {file_path}, skipping source write")
+                except Exception as e:
+                    logger.warning(f"Docstring insertion failed for {file_path}: {e}")
+
+            # Build documentation dict for output
+            documentation = structured or {}
+            if not structured and doc_content:
                 documentation = {
+                    "content": doc_content,
                     "file_path": file_path,
                     "language": language,
-                    "content": doc_content,
-                    "dependencies": list(dependencies),
-                    "token_count": token_result.token_count,
-                    "generate_markdown": False,
                 }
-                await write_documentation_report(
-                    documentation=documentation,
-                    language=language,
-                    file_path=file_path,
-                    repo_root=str(self.repo_root),
-                    output_dir=str(self.output_dir),
-                    project_id=request.project_id,
-                )
-                logger.info(f"Documentation written for {file_path}")
-            elif request.safe_mode:
-                logger.info(f"Safe mode: skipping write for {file_path}")
+
+            documentation["file_path"] = file_path
+            documentation["language"] = language
+            documentation["generate_markdown"] = bool(structured)
+
+            # Calculate metrics for the documentation
+            file_metrics = None
+            if structured and extracted_structure:
+                file_metrics = extracted_structure.get("metrics")
+
+            # Write documentation output
+            from write_documentation_report import write_documentation_report
+            await write_documentation_report(
+                documentation=documentation,
+                language=language,
+                file_path=file_path,
+                repo_root=str(self.repo_root),
+                output_dir=str(self.output_dir),
+                project_id=request.project_id,
+                metrics=file_metrics,
+            )
+            logger.info(f"Documentation written for {file_path}")
 
             processing_time = (datetime.now() - start_time).total_seconds()
             try:
@@ -311,8 +394,8 @@ class DocumentationProcessManager:
             return {
                 "file_path": file_path,
                 "success": True,
-                "dependencies": dependencies,
-                "token_count": token_result.token_count,
+                "structured": structured is not None,
+                "language": language,
             }
 
         except Exception as e:
